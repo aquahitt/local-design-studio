@@ -1,0 +1,547 @@
+.ds-studio {
+  font-family:
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  background: #f5f6f8;
+  color: #202838;
+  min-height: 100dvh;
+  -webkit-font-smoothing: antialiased;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.ds-studio * {
+  box-sizing: border-box;
+}
+.ds-studio button,
+.ds-studio select,
+.ds-studio input {
+  font: inherit;
+}
+.ds-studio button,
+.ds-studio select {
+  min-height: 40px;
+  border-radius: 8px;
+  border: 1px solid #dde1e8;
+  background: white;
+  padding: 8px 12px;
+  color: #293343;
+}
+.ds-studio button {
+  cursor: pointer;
+  transition:
+    transform 120ms,
+    background-color 120ms;
+}
+.ds-studio button:hover {
+  background: #eef1f7;
+}
+.ds-studio button:active {
+  transform: scale(0.96);
+}
+.ds-studio button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.ds-studio button:focus-visible,
+.ds-studio input:focus-visible,
+.ds-studio textarea:focus-visible {
+  outline: 2px solid #315ad8;
+  outline-offset: 2px;
+}
+.ds-studio .accent {
+  background: #315ad8;
+  color: white;
+  border-color: #315ad8;
+}
+.ds-header {
+  height: 88px;
+  background: white;
+  display: flex;
+  align-items: center;
+  gap: 32px;
+  padding: 0 30px;
+  box-shadow: 0 1px 0 #00000009;
+}
+.ds-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 205px;
+}
+.ds-brand > span {
+  font-size: 28px;
+  font-weight: 700;
+  color: #315ad8;
+  background: #edf1fe;
+  padding: 0 12px;
+  border-radius: 10px;
+}
+.ds-header small {
+  display: block;
+  color: #7c8799;
+  font-size: 12px;
+}
+.ds-project {
+  flex: 1;
+}
+.ds-save {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: #687386;
+}
+.ds-save > span,
+.connection-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  background: #33906a;
+  border-radius: 50%;
+  margin-right: 4px;
+}
+.ds-layout {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  min-height: calc(100dvh - 88px);
+}
+.ds-nav {
+  padding: 28px 18px;
+  background: white;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-shadow: 1px 0 0 #00000009;
+}
+.eyebrow {
+  color: #8a95a7;
+  letter-spacing: 0.09em;
+  font-size: 10px;
+  font-weight: 650;
+  text-transform: uppercase;
+}
+.ds-nav > .eyebrow {
+  margin: 0 12px 16px;
+}
+.ds-nav > button {
+  border: 0;
+  text-align: left;
+  background: transparent;
+  padding: 10px 14px;
+  display: flex;
+  justify-content: space-between;
+}
+.ds-nav > button[aria-pressed="true"] {
+  background: #edf1fe;
+  color: #315ad8;
+  font-weight: 600;
+}
+.ds-nav-bottom {
+  margin-top: auto;
+  padding: 30px 12px 10px;
+  font-size: 12px;
+  color: #8a95a7;
+}
+.ds-nav-bottom strong {
+  color: #687386;
+}
+.ds-nav-bottom a {
+  color: #315ad8;
+}
+.ds-workspace {
+  min-width: 0;
+}
+.ds-toolbar {
+  min-height: 65px;
+  padding: 12px 30px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 1px 0 #00000006;
+}
+.ds-toolbar > div {
+  margin-right: auto;
+  color: #7c8799;
+  font-size: 12px;
+}
+.ds-toolbar label {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #7c8799;
+}
+.ds-content {
+  padding: 30px;
+  max-width: 1900px;
+  margin: auto;
+}
+.ds-content h1 {
+  font-size: 28px;
+  letter-spacing: -0.6px;
+  margin: 5px 0 8px;
+  text-wrap: balance;
+  line-height: 1.3;
+}
+.ds-content h2 {
+  font-size: 16px;
+  margin: 0;
+}
+.ds-content h3 {
+  font-size: 14px;
+}
+.ds-content p {
+  color: #7c8799;
+  text-wrap: pretty;
+  margin: 8px 0 22px;
+}
+.section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 25px;
+}
+.section-title input {
+  width: 230px;
+  min-height: 40px;
+  padding: 8px 13px;
+  background: white;
+  border: 1px solid #dde1e8;
+  border-radius: 8px;
+}
+.catalog-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 20px;
+}
+.catalog-card {
+  background: white;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow:
+    0 2px 5px #00000003,
+    0 0 0 1px #00000008;
+  min-width: 0;
+}
+.catalog-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px;
+  border-bottom: 1px solid #f1f3f6;
+}
+.catalog-card small {
+  font-size: 10px;
+  color: #9aa4b5;
+}
+.support {
+  font-size: 10px;
+  border-radius: 6px;
+  background: #f3f5fa;
+  color: #8a95a7;
+  padding: 3px 7px;
+}
+.catalog-card footer {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  background: #fafbfd;
+}
+.catalog-card footer select {
+  flex: 1;
+  min-width: 0;
+}
+.catalog-card .component-description {
+  padding: 0 16px;
+  font-size: 12px;
+}
+.token-actions {
+  display: flex;
+  gap: 10px;
+  margin: 24px 0;
+}
+.token-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(245px, 1fr));
+  gap: 14px;
+}
+.token-grid article {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 16px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 0 0 1px #00000008;
+  min-width: 0;
+}
+.token-swatch {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  border: 1px solid #00000010;
+  display: grid;
+  place-items: center;
+  color: #8a95a7;
+}
+.token-grid strong,
+.token-grid code,
+.token-grid small {
+  display: block;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.token-grid code {
+  color: #7c8799;
+  margin: 4px 0;
+}
+.token-grid small {
+  font-size: 10px;
+  color: #9aa4b5;
+}
+.editor-controls {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.document-editor {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr) 260px;
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 0 0 1px #00000009;
+  overflow: hidden;
+  min-height: 700px;
+}
+.layer-list {
+  padding: 15px 10px;
+  box-shadow: 1px 0 0 #00000008;
+}
+.layer-list button {
+  display: block;
+  width: 100%;
+  border: 0;
+  text-align: left;
+  margin: 3px 0;
+  background: transparent;
+}
+.layer-list button[aria-pressed="true"] {
+  background: #edf1fe;
+  color: #315ad8;
+}
+.layer-list small {
+  display: block;
+  font-size: 10px;
+  color: #8a95a7;
+}
+.layer-list p {
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.page-stage {
+  overflow: auto;
+  background: #e9edf3;
+  padding: 30px;
+  max-height: 900px;
+}
+.page-stage > div {
+  background: white;
+  box-shadow: 0 8px 30px #00000009;
+  transform-origin: top left;
+}
+.inspector {
+  padding: 18px;
+  border-left: 1px solid #eef0f4;
+}
+.inspector button {
+  margin-top: 10px;
+  width: 100%;
+  font-size: 12px;
+}
+.mono {
+  font-family: monospace;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.inspector label,
+.token-editor label {
+  font-size: 11px;
+  color: #687386;
+  display: block;
+}
+.inspector textarea,
+.token-editor textarea {
+  display: block;
+  margin-top: 8px;
+  width: 100%;
+  min-height: 210px;
+  font-family: monospace;
+  font-size: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid #dde1e8;
+  resize: vertical;
+}
+.token-editor {
+  max-width: 780px;
+  margin: 20px 0;
+}
+.token-editor textarea {
+  min-height: 320px;
+}
+.notice {
+  padding: 14px;
+  background: #fff7df;
+  color: #795d20;
+  border-radius: 8px;
+  font-size: 12px;
+  margin: 12px 0;
+}
+.notice p {
+  color: inherit;
+  font-size: 12px;
+  margin: 8px 0;
+}
+.ds-error {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #fff0f0;
+  color: #aa3030;
+  padding: 12px 30px;
+  font-size: 13px;
+}
+.ds-error button {
+  border: 0;
+  background: transparent;
+  min-width: 40px;
+}
+.proposal-card {
+  padding: 24px;
+  background: white;
+  border-radius: 14px;
+  margin: 16px 0;
+  box-shadow: 0 0 0 1px #00000009;
+}
+.proposal-card header {
+  display: flex;
+  justify-content: space-between;
+}
+.ds-content pre {
+  font-size: 12px;
+  background: #fff;
+  padding: 20px;
+  border-radius: 12px;
+  overflow: auto;
+  max-height: 75dvh;
+  color: #445069;
+}
+.proposal-card details {
+  margin: 16px 0;
+}
+.empty-state {
+  padding: 60px;
+  text-align: center;
+  background: white;
+  border-radius: 14px;
+  color: #8a95a7;
+}
+.loading {
+  padding: 70px;
+}
+.render-error {
+  color: #a04433;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 1000px) {
+  .ds-layout {
+    grid-template-columns: 180px minmax(0, 1fr);
+  }
+  .ds-content {
+    padding: 20px;
+  }
+  .ds-toolbar {
+    padding: 12px 20px;
+    flex-wrap: wrap;
+  }
+  .ds-toolbar > div {
+    width: 100%;
+  }
+  .ds-save {
+    display: none;
+  }
+  .document-editor {
+    grid-template-columns: 140px minmax(0, 1fr);
+  }
+  .document-editor > aside:last-child {
+    grid-column: 1/-1;
+  }
+  .ds-header {
+    padding: 0 20px;
+    gap: 18px;
+  }
+  .section-title {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+@media (max-width: 650px) {
+  .ds-header {
+    height: auto;
+    padding: 16px;
+    flex-wrap: wrap;
+  }
+  .ds-project {
+    display: none;
+  }
+  .ds-layout {
+    display: block;
+  }
+  .ds-nav {
+    padding: 8px;
+    flex-direction: row;
+    overflow: auto;
+  }
+  .ds-nav > .eyebrow,
+  .ds-nav-bottom {
+    display: none;
+  }
+  .ds-nav > button {
+    white-space: nowrap;
+  }
+  .ds-content {
+    padding: 16px;
+  }
+  .catalog-grid {
+    grid-template-columns: 1fr;
+  }
+  .document-editor {
+    grid-template-columns: 100px minmax(0, 1fr);
+  }
+  .page-stage {
+    padding: 15px;
+  }
+  .ds-toolbar {
+    padding: 12px 16px;
+  }
+  .ds-content h1 {
+    font-size: 24px;
+  }
+  .token-actions {
+    flex-wrap: wrap;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ds-studio button {
+    transition: none;
+  }
+  .ds-studio button:active {
+    transform: none;
+  }
+}

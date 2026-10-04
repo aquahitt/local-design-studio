@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { demo } from "../src/demo/document";
 test("external update changes nested metric", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/pilot");
   const canvas = page.frameLocator("iframe").first();
   await expect(canvas.getByText("240 000 ₽", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Внешняя правка" }).click();
@@ -15,7 +15,7 @@ test("external update changes nested metric", async ({ page }) => {
 test("nested text edits preserve selection and typing focus", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto("/pilot");
   const canvas = page.frameLocator("iframe").first();
   await canvas.getByText("Расходы на ремонт", { exact: true }).click();
   await expect(page.getByTestId("selection")).toHaveText("Выделено: note");
@@ -40,7 +40,7 @@ test("export reopens in a clean browser context and invalid import leaves screen
   page,
   browser,
 }) => {
-  await page.goto("/");
+  await page.goto("/pilot");
   await page.getByRole("button", { name: "Внешняя правка" }).click();
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Экспорт JSON" }).click();
@@ -50,7 +50,7 @@ test("export reopens in a clean browser context and invalid import leaves screen
   const saved = JSON.parse(await readFile(path, "utf8"));
   const fresh = await browser.newContext();
   const other = await fresh.newPage();
-  await other.goto("/");
+  await other.goto("/pilot");
   await other.getByLabel("Открыть JSON").setInputFiles(path);
   await expect(
     other
@@ -78,7 +78,7 @@ test("export reopens in a clean browser context and invalid import leaves screen
 
 test("captures phone and desktop previews", async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 1000 });
-  await page.goto("/");
+  await page.goto("/pilot");
   const canvas = page.frameLocator("iframe").first();
   await expect(canvas.getByText("240 000 ₽", { exact: true })).toBeVisible();
   const phone = page.getByRole("button", {
@@ -119,7 +119,7 @@ test("captures phone and desktop previews", async ({ page }) => {
 test("viewport choice is included in exported canonical document", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto("/pilot");
   const desktop = page.getByRole("button", {
     name: "Switch to Компьютер viewport",
     exact: true,
@@ -137,7 +137,7 @@ test("viewport choice is included in exported canonical document", async ({
 test("invalid editor input restores the last valid screen", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto("/pilot");
   const canvas = page.frameLocator("iframe").first();
   await canvas.getByText("Расходы на ремонт", { exact: true }).click();
   await page.getByRole("textbox").fill("x".repeat(1001));
@@ -156,7 +156,7 @@ test("invalid editor input restores the last valid screen", async ({
 test("external update rejects a non-metric node with the same ID", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto("/pilot");
   const imported = structuredClone(demo);
   imported.nodes[0].slots.content[0].slots.content[0] = {
     id: "total",

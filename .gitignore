@@ -1,6 +1,8 @@
 node_modules/
 dist/
 .studio/
+.studio-project/
 .env*
+*.local.json
 test-results/
 playwright-report/

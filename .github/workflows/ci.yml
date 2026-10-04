@@ -15,7 +15,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: '24.2.0'
+          node-version: "24.2.0"
           cache: npm
       - run: npm ci
       - run: npm test
@@ -24,4 +24,8 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run test:browser
         env:
-          CI: 'true'
+          CI: "true"
+      - run: npx playwright test tests/studio-external.spec.ts
+        env:
+          CI: "true"
+          STUDIO_LIBRARY_ROOT: ${{ github.workspace }}/examples/library/external
