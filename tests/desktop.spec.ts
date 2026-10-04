@@ -59,6 +59,9 @@ test("desktop creates, saves, reopens disk project and isolates preview", async 
             .pages[0].nodes[0].props.text,
       )
       .toBe("Saved from desktop");
+    await expect(
+      page.frameLocator("iframe").first().getByText("Saved from desktop", { exact: true }),
+    ).toBeVisible();
     const iframe = page.frames().find((f) => f.url().includes("/preview"))!;
     expect(await iframe.evaluate(() => typeof (window as any).require)).toBe(
       "undefined",
