@@ -1,3 +1,4 @@
+import { syncDirectory } from "../core/durability";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, lstat, open, readFile, rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
@@ -150,12 +151,7 @@ export async function writeSVGAsset(
     }
     await rename(temp, path);
     renamed = true;
-    const dir = await open(directory, "r");
-    try {
-      await dir.sync();
-    } finally {
-      await dir.close();
-    }
+    await syncDirectory(directory);
   } finally {
     if (!renamed) await unlink(temp).catch(() => {});
   }

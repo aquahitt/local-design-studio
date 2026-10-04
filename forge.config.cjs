@@ -49,6 +49,7 @@ module.exports = {
       config: {
         options: {
           name: "local-design-studio",
+          bin: "LocalDesignStudio",
           productName: "Local Design Studio",
           maintainer: "Local Design Studio contributors",
           homepage: "https://github.com/aquahitt/local-design-studio",
