@@ -38,7 +38,7 @@ export function PreviewApp() {
     for (const [key, value] of Object.entries(mode?.attributes ?? {}))
       document.documentElement.setAttribute(key, value);
     document.body.style.cssText =
-      "margin:0;padding:20px;background:var(--bg,#fff);color:var(--text-primary,#17202c);font-family:system-ui,sans-serif";
+      "margin:0;padding:20px;min-height:100vh;box-sizing:border-box;background:var(--bg,#fff);color:var(--text-primary,#17202c);font-family:system-ui,sans-serif";
     for (const t of library.tokens)
       document.body.style.setProperty(
         t.name,
