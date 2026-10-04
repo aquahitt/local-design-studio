@@ -125,7 +125,11 @@ export function StudioApp() {
     setProject((previous) =>
       previous?.revision === next.revision ? previous : next,
     );
-    setStatus("Сохранено локально · ревизия " + next.revision);
+    setStatus(
+      (__STUDIO_DEMO__
+        ? "Сохранено в браузере · ревизия "
+        : "Сохранено локально · ревизия ") + next.revision,
+    );
   }, []);
   useEffect(() => {
     let active = true;
@@ -318,7 +322,7 @@ export function StudioApp() {
   if (!project)
     return (
       <main className="ds-studio loading">
-        <strong>studio / local</strong>
+        <strong>{__STUDIO_DEMO__ ? "studio / demo" : "studio / local"}</strong>
         <p>{status}</p>
         {error && (
           <div role="alert">
@@ -337,8 +341,14 @@ export function StudioApp() {
         <div className="ds-brand">
           <span>s</span>
           <div>
-            <strong>studio / local</strong>
-            <small>Дизайн в твоих файлах</small>
+            <strong>
+              {__STUDIO_DEMO__ ? "studio / demo" : "studio / local"}
+            </strong>
+            <small>
+              {__STUDIO_DEMO__
+                ? "Попробуй студию без установки"
+                : "Дизайн в твоих файлах"}
+            </small>
           </div>
         </div>
         <div className="ds-project">
@@ -399,16 +409,29 @@ export function StudioApp() {
           <div className="ds-nav-bottom">
             <strong>Локальное ядро</strong>
             <p>
-              Один документ для человека и агента. AI подключается через MCP.
+              {__STUDIO_DEMO__
+                ? "Попробуй редактор на синтетическом проекте. Правки остаются в браузере."
+                : "Один документ для человека и агента. AI подключается через MCP."}
             </p>
-            <a href="/pilot">Открыть технический пилот ↗</a>
+            <a
+              href={
+                __STUDIO_DEMO__
+                  ? "https://github.com/aquahitt/local-design-studio#запуск"
+                  : "/pilot"
+              }
+            >
+              {__STUDIO_DEMO__
+                ? "Установить локально ↗"
+                : "Открыть технический пилот ↗"}
+            </a>
           </div>
         </aside>
         <div className="ds-workspace">
           <div className="ds-toolbar">
             <div>
               <span className="connection-dot" />
-              Файловый сервис · {project.pages.length} экранов
+              {__STUDIO_DEMO__ ? "Браузерное демо" : "Файловый сервис"} ·{" "}
+              {project.pages.length} экранов
             </div>
             <label>
               Тема{" "}
@@ -734,14 +757,35 @@ export function StudioApp() {
               <section>
                 <span className="eyebrow">MCP / общий документ</span>
                 <h1>Предложения агента</h1>
+                {__STUDIO_DEMO__ && (
+                  <div className="notice">
+                    <p>
+                      Интерактивный пример правки. AI и MCP здесь не подключены;
+                      настоящие агенты работают с установленной локальной
+                      студией.
+                    </p>
+                    <button
+                      onClick={() =>
+                        void client
+                          ?.request("demo/proposal", {})
+                          .then(() => client.proposals())
+                          .then(setProposals)
+                          .catch((e) => setError(e.message))
+                      }
+                    >
+                      Создать пример предложения
+                    </button>
+                  </div>
+                )}
                 <p>
                   По умолчанию агент предлагает правки, а ты подтверждаешь
                   применение. Один пакет — один шаг отмены.
                 </p>
                 {!proposals.length && (
                   <div className="empty-state">
-                    Пока нет предложений. Подключи агента по инструкции MCP в
-                    README.
+                    {__STUDIO_DEMO__
+                      ? "Пока нет предложений. Нажми «Создать пример предложения», чтобы попробовать подтверждение правки."
+                      : "Пока нет предложений. Подключи агента по инструкции MCP в README."}
                   </div>
                 )}
                 {proposals.map((p) => (
@@ -802,8 +846,9 @@ export function StudioApp() {
               <section>
                 <h1>Документ проекта</h1>
                 <p>
-                  Каноническая схема v2 · сохранена в локальном project.json.
-                  Ключи и пути подключения агента хранятся отдельно.
+                  {__STUDIO_DEMO__
+                    ? "Каноническая схема v2 · изменения сохраняются в браузере. JSON можно экспортировать."
+                    : "Каноническая схема v2 · сохранена в локальном project.json. Ключи и пути подключения агента хранятся отдельно."}
                 </p>
                 <pre data-testid="project-document">
                   {JSON.stringify(project, null, 2)}

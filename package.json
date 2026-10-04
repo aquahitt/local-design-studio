@@ -11,7 +11,10 @@
     "test:browser": "playwright test",
     "service": "tsx src/service/cli.ts",
     "mcp": "tsx src/service/mcp.ts",
-    "studio": "vite --host 127.0.0.1 --port 5178 --strictPort"
+    "studio": "vite --host 127.0.0.1 --port 5178 --strictPort",
+    "build:demo": "tsc --noEmit && vite build --mode demo && node scripts/demo-notices.mjs",
+    "preview:demo": "vite preview --mode demo --host 127.0.0.1",
+    "test:demo": "playwright test --config playwright.demo.config.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.0",

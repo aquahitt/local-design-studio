@@ -14,6 +14,10 @@ export class StudioClient {
     private uiToken: string,
   ) {}
   static async connect() {
+    if (__STUDIO_DEMO__) {
+      const { BrowserDemoClient } = await import("../demo/client");
+      return new BrowserDemoClient(window.localStorage);
+    }
     const response = await fetch("/api/session");
     if (!response.ok) throw new Error("Локальный сервис недоступен");
     const session = await response.json();

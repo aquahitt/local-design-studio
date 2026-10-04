@@ -1,3 +1,4 @@
+import { DemoBanner } from "./demo/Banner";
 import { createRoot } from "react-dom/client";
 import { App } from "./pilot/App";
 import { StudioApp } from "./studio/App";
@@ -8,11 +9,15 @@ import "./pilot/styles.css";
 const root = document.getElementById("root");
 if (!root) throw new Error("ROOT_MISSING");
 createRoot(root).render(
-  location.pathname === "/preview" ? (
+  location.pathname === import.meta.env.BASE_URL + "preview" ||
+    new URLSearchParams(location.search).has("preview") ? (
     <PreviewApp />
   ) : location.pathname.startsWith("/pilot") ? (
     <App />
   ) : (
-    <StudioApp />
+    <>
+      {__STUDIO_DEMO__ && <DemoBanner />}
+      <StudioApp />
+    </>
   ),
 );

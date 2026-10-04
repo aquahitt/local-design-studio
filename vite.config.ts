@@ -10,17 +10,24 @@ import {
 import { studioServicePlugin } from "./scripts/studio/plugin";
 export default defineConfig(({ mode }) => {
   const env = { ...loadEnv(mode, process.cwd(), "STUDIO_"), ...process.env };
-  const library = { externalRoot: env.STUDIO_LIBRARY_ROOT };
+  const demo = mode === "demo";
+  const library = { externalRoot: demo ? undefined : env.STUDIO_LIBRARY_ROOT };
   return {
+    base: demo ? "/local-design-studio/" : "/",
+    define: { __STUDIO_DEMO__: JSON.stringify(demo) },
     plugins: [
       studioLibraryPlugin(library),
       tailwind(),
       react(),
-      studioServicePlugin({
-        projectRoot:
-          env.STUDIO_PROJECT ?? resolve(process.cwd(), ".studio-project"),
-        metadata: getConfiguredLibraryMetadata(library),
-      }),
+      ...(!demo
+        ? [
+            studioServicePlugin({
+              projectRoot:
+                env.STUDIO_PROJECT ?? resolve(process.cwd(), ".studio-project"),
+              metadata: getConfiguredLibraryMetadata(library),
+            }),
+          ]
+        : []),
     ],
     server: { host: "127.0.0.1", port: 5178, strictPort: true },
     test: { environment: "node", include: ["src/**/*.test.{ts,tsx}"] },

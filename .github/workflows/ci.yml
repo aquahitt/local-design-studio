@@ -29,3 +29,6 @@ jobs:
         env:
           CI: "true"
           STUDIO_LIBRARY_ROOT: ${{ github.workspace }}/examples/library/external
+      - run: npm run test:demo
+        env:
+          CI: "true"

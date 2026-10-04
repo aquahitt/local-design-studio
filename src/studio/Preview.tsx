@@ -96,7 +96,11 @@ export function Preview({
     <iframe
       ref={ref}
       title={title}
-      src="/preview"
+      src={
+        __STUDIO_DEMO__
+          ? import.meta.env.BASE_URL + "index.html?preview=1"
+          : import.meta.env.BASE_URL + "preview"
+      }
       loading={component ? "lazy" : "eager"}
       onLoad={() =>
         ref.current?.contentWindow?.postMessage(
