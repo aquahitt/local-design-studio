@@ -1,3 +1,4 @@
+import { syncDirectory } from "../core/durability";
 import { toCoreTokens, type LibraryMetadata } from "../library/sdk";
 import {
   createServer,
@@ -66,12 +67,7 @@ async function atomic(path: string, value: unknown) {
     await file.close();
   }
   await rename(temp, path);
-  const directory = await open(join(path, ".."), "r");
-  try {
-    await directory.sync();
-  } finally {
-    await directory.close();
-  }
+  await syncDirectory(join(path, ".."));
 }
 async function rejectSymlink(path: string) {
   try {

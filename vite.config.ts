@@ -11,15 +11,22 @@ import { studioServicePlugin } from "./scripts/studio/plugin";
 export default defineConfig(({ mode }) => {
   const env = { ...loadEnv(mode, process.cwd(), "STUDIO_"), ...process.env };
   const demo = mode === "demo";
-  const library = { externalRoot: demo ? undefined : env.STUDIO_LIBRARY_ROOT };
+  const desktop = mode === "desktop";
+  const library = {
+    externalRoot: demo || desktop ? undefined : env.STUDIO_LIBRARY_ROOT,
+  };
   return {
     base: demo ? "/local-design-studio/" : "/",
-    define: { __STUDIO_DEMO__: JSON.stringify(demo) },
+    define: {
+      __STUDIO_DEMO__: JSON.stringify(demo),
+      __STUDIO_DESKTOP__: JSON.stringify(desktop),
+    },
+    build: desktop ? { outDir: "desktop-dist/renderer" } : {},
     plugins: [
       studioLibraryPlugin(library),
       tailwind(),
       react(),
-      ...(!demo
+      ...(!demo && !desktop
         ? [
             studioServicePlugin({
               projectRoot:

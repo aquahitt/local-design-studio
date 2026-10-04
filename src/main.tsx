@@ -1,3 +1,4 @@
+import { DesktopApp } from "./desktop/App";
 import { DemoBanner } from "./demo/Banner";
 import { createRoot } from "react-dom/client";
 import { App } from "./pilot/App";
@@ -12,6 +13,8 @@ createRoot(root).render(
   location.pathname === import.meta.env.BASE_URL + "preview" ||
     new URLSearchParams(location.search).has("preview") ? (
     <PreviewApp />
+  ) : __STUDIO_DESKTOP__ ? (
+    <DesktopApp />
   ) : location.pathname.startsWith("/pilot") ? (
     <App />
   ) : (

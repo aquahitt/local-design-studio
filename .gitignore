@@ -6,3 +6,5 @@ dist/
 *.local.json
 test-results/
 playwright-report/
+desktop-dist/
+out/

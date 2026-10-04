@@ -63,7 +63,8 @@ export function Preview({
   useEffect(() => {
     function receive(event: MessageEvent) {
       if (
-        event.origin !== location.origin ||
+        event.origin !==
+          (__STUDIO_DESKTOP__ ? "studio://preview" : location.origin) ||
         event.source !== ref.current?.contentWindow
       )
         return;
@@ -89,7 +90,7 @@ export function Preview({
           nodes,
           selected,
         },
-        location.origin,
+        __STUDIO_DESKTOP__ ? "studio://preview" : location.origin,
       );
   }, [ready, project, library, theme, component, nodes, selected]);
   return (
@@ -97,15 +98,17 @@ export function Preview({
       ref={ref}
       title={title}
       src={
-        __STUDIO_DEMO__
-          ? import.meta.env.BASE_URL + "index.html?preview=1"
-          : import.meta.env.BASE_URL + "preview"
+        __STUDIO_DESKTOP__
+          ? "studio://preview/preview"
+          : __STUDIO_DEMO__
+            ? import.meta.env.BASE_URL + "index.html?preview=1"
+            : import.meta.env.BASE_URL + "preview"
       }
       loading={component ? "lazy" : "eager"}
       onLoad={() =>
         ref.current?.contentWindow?.postMessage(
           { type: "studio-preview-ping" },
-          location.origin,
+          __STUDIO_DESKTOP__ ? "studio://preview" : location.origin,
         )
       }
       style={{

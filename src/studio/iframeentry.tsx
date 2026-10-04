@@ -15,9 +15,17 @@ export function PreviewApp() {
   const [input, setInput] = useState<Input | null>(null);
   useEffect(() => {
     const ready = () =>
-      parent.postMessage({ type: "studio-preview-ready" }, location.origin);
+      parent.postMessage(
+        { type: "studio-preview-ready" },
+        __STUDIO_DESKTOP__ ? "studio://app" : location.origin,
+      );
     function receive(event: MessageEvent) {
-      if (event.origin !== location.origin || event.source !== parent) return;
+      if (
+        event.origin !==
+          (__STUDIO_DESKTOP__ ? "studio://app" : location.origin) ||
+        event.source !== parent
+      )
+        return;
       if (event.data?.type === "studio-preview-ping") ready();
       if (event.data?.type === "studio-preview-render") setInput(event.data);
     }
@@ -76,7 +84,7 @@ export function PreviewApp() {
           onSelect={(id) =>
             parent.postMessage(
               { type: "studio-preview-select", id },
-              location.origin,
+              __STUDIO_DESKTOP__ ? "studio://app" : location.origin,
             )
           }
         />

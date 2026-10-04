@@ -3,3 +3,5 @@ declare module "virtual:studio-libraries" {
 }
 
 declare const __STUDIO_DEMO__: boolean;
+
+declare const __STUDIO_DESKTOP__: boolean;

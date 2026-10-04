@@ -2,6 +2,7 @@ import { readFile, readdir, writeFile, copyFile } from "node:fs/promises";
 import { join } from "node:path";
 const lock = JSON.parse(await readFile("package-lock.json", "utf8"));
 const notices = [];
+const output = process.argv[2] ?? "dist";
 for (const path of Object.keys(lock.packages).sort()) {
   if (!path) continue;
   let files;
@@ -23,9 +24,12 @@ for (const path of Object.keys(lock.packages).sort()) {
   }
 }
 await writeFile(
-  "dist/THIRD_PARTY_LICENSES.txt",
+  join(output, "THIRD_PARTY_LICENSES.txt"),
   notices.join("\n\n" + "=".repeat(80) + "\n\n"),
 );
-await copyFile("LICENSE", "dist/LICENSE.txt");
-await copyFile("THIRD_PARTY_NOTICES.md", "dist/THIRD_PARTY_NOTICES.md");
-await writeFile("dist/.nojekyll", "");
+await copyFile("LICENSE", join(output, "LICENSE.txt"));
+await copyFile(
+  "THIRD_PARTY_NOTICES.md",
+  join(output, "THIRD_PARTY_NOTICES.md"),
+);
+await writeFile(join(output, ".nojekyll"), "");

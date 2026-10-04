@@ -1,3 +1,4 @@
+import { syncDirectory } from "./durability";
 import { EventEmitter } from "node:events";
 import { mkdir, open, lstat, rename, unlink, readdir } from "node:fs/promises";
 import { constants } from "node:fs";
@@ -68,12 +69,7 @@ async function atomic(path: string, content: string) {
     }
     await rename(temporary, path);
     renamed = true;
-    const dir = await open(resolve(path, ".."), "r");
-    try {
-      await dir.sync();
-    } finally {
-      await dir.close();
-    }
+    await syncDirectory(resolve(path, ".."));
   } finally {
     if (!renamed) await unlink(temporary).catch(() => {});
   }
@@ -289,12 +285,7 @@ export class ProjectStore extends EventEmitter {
     await atomic(this.path("state.json"), stableStringify(state) + "\n");
     if (await exists(this.path("pending.json"))) {
       await unlink(this.path("pending.json"));
-      const dir = await open(this.path(""), "r");
-      try {
-        await dir.sync();
-      } finally {
-        await dir.close();
-      }
+      await syncDirectory(this.path(""));
     }
   }
   private enqueue<T>(task: () => Promise<T>): Promise<T> {

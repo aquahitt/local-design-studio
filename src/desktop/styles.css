@@ -1,0 +1,155 @@
+.desktop-launcher {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: clamp(32px, 7vh, 100px) 40px;
+  color: #182337;
+  -webkit-font-smoothing: antialiased;
+}
+.desktop-intro {
+  max-width: 720px;
+  margin-bottom: 40px;
+}
+.desktop-intro h1 {
+  font-size: 44px;
+  line-height: 1.12;
+  letter-spacing: -1.5px;
+  text-wrap: balance;
+  margin: 18px 0;
+}
+.desktop-intro p {
+  font-size: 17px;
+  line-height: 1.6;
+  color: #647184;
+  text-wrap: pretty;
+}
+.desktop-startgrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+.desktop-startgrid section {
+  padding: 28px;
+  border-radius: 20px;
+  background: white;
+  box-shadow:
+    0 2px 6px #18233708,
+    0 12px 40px #18233708;
+}
+.desktop-startgrid h2 {
+  font-size: 19px;
+  margin: 0 0 24px;
+}
+.desktop-new label {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 13px;
+}
+.desktop-new input {
+  padding: 13px;
+  border: 1px solid #dce2eb;
+  border-radius: 10px;
+}
+.desktop-launcher button {
+  min-height: 44px;
+  border-radius: 10px;
+  padding: 11px 16px;
+  cursor: pointer;
+  transition:
+    background-color 140ms,
+    transform 140ms;
+}
+.desktop-launcher button:active:not(:disabled) {
+  transform: scale(0.96);
+}
+.desktop-launcher button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+.desktop-new > .primary {
+  width: 100%;
+  margin: 16px 0 12px;
+  background: #315ad8;
+  color: white;
+  border: 0;
+}
+.desktop-new small {
+  display: block;
+  color: #647184;
+  line-height: 1.5;
+}
+.desktop-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 24px;
+}
+.desktop-recent > button {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  text-align: left;
+  background: #f5f7fb;
+  border: 0;
+  margin-bottom: 10px;
+}
+.desktop-recent span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: #647184;
+}
+.desktop-launcher footer {
+  margin-top: 32px;
+  font-size: 12px;
+  color: #647184;
+}
+.desktop-error {
+  margin-top: 20px;
+  padding: 16px;
+  background: #fff0ef;
+  border-radius: 12px;
+  color: #9f3228;
+  line-height: 1.5;
+}
+.desktop-projectbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 18px;
+  border-bottom: 1px solid #dce2eb;
+  background: white;
+  font-size: 13px;
+}
+.desktop-projectbar button {
+  min-height: 40px;
+}
+.desktop-projectbar span {
+  color: #647184;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.desktop-projectbar p {
+  color: #9f3228;
+}
+.desktop-launcher :focus-visible {
+  outline: 3px solid #315ad866;
+  outline-offset: 3px;
+}
+.desktop-startgrid > section {
+  min-width: 0;
+}
+.desktop-actions button {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid #dce2eb;
+  background: #f5f7fb;
+  color: #182337;
+  font-size: 13px;
+}
+.desktop-actions button:hover:not(:disabled) {
+  background: #edf1f8;
+}

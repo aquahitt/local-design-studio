@@ -1,0 +1,80 @@
+name: Desktop builds
+on:
+  pull_request:
+  push:
+    branches: [main, codex/desktop-mvp]
+    tags: ["desktop-v*"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            platform: darwin
+            arch: arm64
+          - os: macos-15-intel
+            platform: darwin
+            arch: x64
+          - os: windows-2025
+            platform: win32
+            arch: x64
+          - os: ubuntu-24.04
+            platform: linux
+            arch: x64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "24.2.0"
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - name: Package desktop application
+        run: npm run make:desktop
+      - name: Create macOS disk image
+        if: runner.os == 'macOS'
+        run: node scripts/desktop/dmg.mjs
+      - name: Test packaged application (macOS/Windows)
+        if: runner.os != 'Linux'
+        run: node scripts/desktop/test-packaged.mjs
+      - name: Install Linux runtime dependencies
+        if: runner.os == 'Linux'
+        run: npx playwright install-deps chromium
+      - name: Test packaged application (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a node scripts/desktop/test-packaged.mjs
+      - run: node scripts/desktop/checksums.mjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: desktop-${{ matrix.platform }}-${{ matrix.arch }}
+          path: out/make/**
+          if-no-files-found: error
+          retention-days: 14
+  release:
+    if: startsWith(github.ref, 'refs/tags/desktop-v')
+    needs: desktop
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: desktop-*
+          path: release-assets
+          merge-multiple: true
+      - name: Publish tested unsigned alpha release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: node scripts/desktop/publish.mjs
