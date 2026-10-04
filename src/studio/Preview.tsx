@@ -97,6 +97,7 @@ export function Preview({
       ref={ref}
       title={title}
       src="/preview"
+      loading={component ? "lazy" : "eager"}
       onLoad={() =>
         ref.current?.contentWindow?.postMessage(
           { type: "studio-preview-ping" },

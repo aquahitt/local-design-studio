@@ -545,3 +545,13 @@
     transform: none;
   }
 }
+
+.catalog-pagination {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: -12px 0 24px;
+  justify-content: flex-end;
+  color: #8794ab;
+  font-size: 12px;
+}

@@ -12,6 +12,8 @@ export function Catalog({
   onAdd: (type: string, props: Props) => void;
 }) {
   const [query, setQuery] = useState("");
+  const [pageIndex, setPageIndex] = useState(0);
+  const pageSize = 12;
   const [chosen, setChosen] = useState<Record<string, string>>({});
   const entries = Object.entries(library.components).filter(([type, c]) =>
     (type + " " + c.name + " " + (c.category ?? ""))
@@ -35,62 +37,86 @@ export function Catalog({
           aria-label="Поиск компонентов"
           placeholder="Поиск компонентов…"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setPageIndex(0);
+          }}
         />
       </div>
+      <div className="catalog-pagination">
+        <span>
+          {entries.length ? pageIndex * pageSize + 1 : 0}–
+          {Math.min((pageIndex + 1) * pageSize, entries.length)} из{" "}
+          {entries.length}
+        </span>
+        <button
+          disabled={pageIndex === 0}
+          onClick={() => setPageIndex((i) => i - 1)}
+        >
+          Предыдущие компоненты
+        </button>
+        <button
+          disabled={(pageIndex + 1) * pageSize >= entries.length}
+          onClick={() => setPageIndex((i) => i + 1)}
+        >
+          Следующие компоненты
+        </button>
+      </div>
       <div className="catalog-grid">
-        {entries.map(([type, definition]) => {
-          const fixture =
-            definition.fixtures.find((f) => f.name === chosen[type]) ??
-            definition.fixtures[0];
-          const props = { ...definition.defaultProps, ...fixture?.props };
-          return (
-            <article className="catalog-card" key={type}>
-              <header>
-                <div>
-                  <small>{definition.category ?? "Компонент"}</small>
-                  <h2>{definition.name}</h2>
-                </div>
-                <span className="support">
-                  {definition.support === "requires-context"
-                    ? "Нужен контекст"
-                    : "React"}
-                </span>
-              </header>
-              <Preview
-                library={library}
-                project={project}
-                theme={project.theme}
-                title={"Пример " + type}
-                component={{ type, props }}
-              />
-              <footer>
-                <select
-                  aria-label={"Состояние " + type}
-                  value={fixture?.name ?? ""}
-                  onChange={(e) =>
-                    setChosen({ ...chosen, [type]: e.target.value })
-                  }
-                >
-                  {definition.fixtures.map((f) => (
-                    <option key={f.name}>{f.name}</option>
-                  ))}
-                </select>
-                <button
-                  onClick={() => onAdd(type, props)}
-                  disabled={definition.support === "requires-context"}
-                >
-                  На экран +
-                </button>
-              </footer>
-              {definition.description && (
-                <p className="component-description">
-                  {definition.description}
-                </p>
-              )}
-            </article>
-          );
-        })}
+        {entries
+          .slice(pageIndex * pageSize, (pageIndex + 1) * pageSize)
+          .map(([type, definition]) => {
+            const fixture =
+              definition.fixtures.find((f) => f.name === chosen[type]) ??
+              definition.fixtures[0];
+            const props = { ...definition.defaultProps, ...fixture?.props };
+            return (
+              <article className="catalog-card" key={type}>
+                <header>
+                  <div>
+                    <small>{definition.category ?? "Компонент"}</small>
+                    <h2>{definition.name}</h2>
+                  </div>
+                  <span className="support">
+                    {definition.support === "requires-context"
+                      ? "Нужен контекст"
+                      : "React"}
+                  </span>
+                </header>
+                <Preview
+                  library={library}
+                  project={project}
+                  theme={project.theme}
+                  title={"Пример " + type}
+                  component={{ type, props }}
+                />
+                <footer>
+                  <select
+                    aria-label={"Состояние " + type}
+                    value={fixture?.name ?? ""}
+                    onChange={(e) =>
+                      setChosen({ ...chosen, [type]: e.target.value })
+                    }
+                  >
+                    {definition.fixtures.map((f) => (
+                      <option key={f.name}>{f.name}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={() => onAdd(type, props)}
+                    disabled={definition.support === "requires-context"}
+                  >
+                    На экран +
+                  </button>
+                </footer>
+                {definition.description && (
+                  <p className="component-description">
+                    {definition.description}
+                  </p>
+                )}
+              </article>
+            );
+          })}
       </div>
     </section>
   );

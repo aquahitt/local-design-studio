@@ -10,12 +10,18 @@ test("actual local library, theme and image fixture remain portable after save/r
   await page.setViewportSize({ width: 1600, height: 1000 });
   await page.goto("/");
   await expect(page.getByTestId("catalog-count")).toContainText("72");
+  expect(await page.locator("iframe").count()).toBeLessThanOrEqual(12);
   await expect(
     page.getByRole("button", { name: "Экраны", exact: true }),
   ).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.getByLabel("Тема проекта").selectOption("web-dark");
   const search = page.getByLabel("Поиск компонентов");
+  await search.fill("ConfirmDialog");
+  await expect(
+    page.frameLocator("iframe").first().getByRole("dialog"),
+  ).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await search.fill("ImageCarousel");
   const card = page.locator(".catalog-card").filter({
     has: page.getByRole("heading", { name: "ImageCarousel", exact: true }),
