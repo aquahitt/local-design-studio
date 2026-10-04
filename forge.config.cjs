@@ -10,9 +10,19 @@ module.exports = {
       !/^\/(desktop-dist(?:\/|$)|package\.json$|LICENSE$|THIRD_PARTY_NOTICES\.md$)/.test(
         path,
       ),
-    ...(process.env.APPLE_SIGN_IDENTITY
-      ? { osxSign: { identity: process.env.APPLE_SIGN_IDENTITY } }
-      : {}),
+    osxSign: process.env.APPLE_SIGN_IDENTITY
+      ? { identity: process.env.APPLE_SIGN_IDENTITY }
+      : {
+          identity: "-",
+          identityValidation: false,
+          hardenedRuntime: false,
+          preAutoEntitlements: false,
+          preEmbedProvisioningProfile: false,
+          optionsForFile: () => ({
+            entitlements: "desktop/entitlements-adhoc.plist",
+            hardenedRuntime: false,
+          }),
+        },
     ...(process.env.APPLE_ID &&
     process.env.APPLE_APP_PASSWORD &&
     process.env.APPLE_TEAM_ID

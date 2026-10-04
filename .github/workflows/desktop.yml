@@ -42,9 +42,15 @@ jobs:
       - run: npm test
       - name: Package desktop application
         run: npm run make:desktop
+      - name: Verify macOS bundle signature
+        if: runner.os == 'macOS'
+        run: node scripts/desktop/verify-mac.mjs
       - name: Create macOS disk image
         if: runner.os == 'macOS'
         run: node scripts/desktop/dmg.mjs
+      - name: Verify and launch application from DMG
+        if: runner.os == 'macOS'
+        run: node scripts/desktop/test-dmg.mjs
       - name: Test packaged application (macOS/Windows)
         if: runner.os != 'Linux'
         run: node scripts/desktop/test-packaged.mjs

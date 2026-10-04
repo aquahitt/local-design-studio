@@ -20,7 +20,7 @@ npm run test:demo
 
 ## Desktop-приложение
 
-[Скачать desktop alpha](https://github.com/aquahitt/local-design-studio/releases) — приложение со встроенным runtime, выбором папки и сохранением на диск. Node/npm и ручной запуск сервера не требуются. Alpha пока без подписи приложения; macOS/Windows могут препятствовать запуску. Встроены публичные example/builtin библиотеки. [Установка, ограничения и сборка](docs/desktop.md).
+[Скачать desktop alpha](https://github.com/aquahitt/local-design-studio/releases) — приложение со встроенным runtime, выбором папки и сохранением на диск. Node/npm и ручной запуск сервера не требуются. Alpha пока без доверенной подписи разработчика; macOS/Windows могут препятствовать запуску. Встроены публичные example/builtin библиотеки. [Установка, ограничения и сборка](docs/desktop.md).
 
 ## Запуск из исходников
 
