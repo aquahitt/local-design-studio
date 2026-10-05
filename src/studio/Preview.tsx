@@ -79,7 +79,7 @@ export function Preview({
         Number.isFinite(event.data.height)
       )
         setMeasuredHeight(
-          Math.max(120, Math.min(600, Math.ceil(event.data.height))),
+          Math.max(120, Math.min(1600, Math.ceil(event.data.height))),
         );
       if (
         event.data?.type === "studio-preview-select" &&

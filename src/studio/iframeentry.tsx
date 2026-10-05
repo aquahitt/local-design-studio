@@ -1,3 +1,4 @@
+import { observePreviewSize } from "./previewSizing";
 import { useEffect, useRef, useState } from "react";
 import { libraries } from "virtual:studio-libraries";
 import {
@@ -63,18 +64,12 @@ export function PreviewApp() {
   }, [input, library]);
   useEffect(() => {
     if (!input?.autoHeight || !input.component || !content.current) return;
-    const element = content.current;
-    const observer = new ResizeObserver(() =>
+    return observePreviewSize(content.current, (height) =>
       parent.postMessage(
-        {
-          type: "studio-preview-size",
-          height: element.getBoundingClientRect().height + 40,
-        },
+        { type: "studio-preview-size", height },
         __STUDIO_DESKTOP__ ? "studio://app" : location.origin,
       ),
     );
-    observer.observe(element);
-    return () => observer.disconnect();
   }, [input, library]);
   if (!input) return null;
   if (!library) return <p>Библиотека недоступна</p>;

@@ -65,3 +65,79 @@ test("board preserves fixture choice through filtering and fits a narrow screen"
     await page.evaluate(() => document.documentElement.scrollWidth),
   ).toBeLessThanOrEqual(390);
 });
+
+test("opening a fixed overlay grows the card and closing restores its height", async ({
+  page,
+}) => {
+  test.skip(
+    !process.env.STUDIO_LIBRARY_ROOT?.includes("stroi-homes"),
+    "Actual overlay fixture",
+  );
+  await page.goto("/");
+  await page.getByLabel("Поиск компонентов").fill("Modal");
+  const card = page.locator('.catalog-card[data-component-type="Modal"]');
+  const frame = card.frameLocator("iframe");
+  const size = () =>
+    card.locator("iframe").evaluate((el) => el.getBoundingClientRect().height);
+  await frame
+    .getByRole("button", { name: "Открыть Modal", exact: true })
+    .waitFor();
+  await expect.poll(size).toBe(120);
+  await frame
+    .getByRole("button", { name: "Открыть Modal", exact: true })
+    .click();
+  await expect(frame.getByRole("dialog")).toBeVisible();
+  await expect.poll(size).toBeGreaterThanOrEqual(640);
+  await frame.getByRole("dialog").press("Escape");
+  await expect(frame.getByRole("dialog")).toHaveCount(0);
+  await expect.poll(size).toBe(120);
+});
+
+for (const [type, trigger] of [
+  ["Sheet", "Открыть Sheet"],
+  ["OverflowActions", "Ещё"],
+]) {
+  test(`${type} opens entirely inside the expanded preview`, async ({
+    page,
+  }) => {
+    test.skip(
+      !process.env.STUDIO_LIBRARY_ROOT?.includes("stroi-homes"),
+      "Actual overlay fixture",
+    );
+    await page.goto("/");
+    await page.getByLabel("Поиск компонентов").fill(type);
+    const card = page.locator(`.catalog-card[data-component-type="${type}"]`);
+    const frame = card.frameLocator("iframe");
+    await frame.getByRole("button", { name: trigger, exact: true }).click();
+    await expect
+      .poll(() =>
+        card
+          .locator("iframe")
+          .evaluate((el) => el.getBoundingClientRect().height),
+      )
+      .toBeGreaterThanOrEqual(640);
+    const dialog = frame.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    await expect
+      .poll(() =>
+        dialog.evaluate((el) => {
+          const r = el.getBoundingClientRect();
+          return r.top >= -1 && r.bottom <= innerHeight + 1;
+        }),
+      )
+      .toBe(true);
+    if (type === "Sheet")
+      await page.screenshot({
+        path: "test-results/expanded-component-preview.png",
+      });
+    await dialog.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect
+      .poll(() =>
+        card
+          .locator("iframe")
+          .evaluate((el) => el.getBoundingClientRect().height),
+      )
+      .toBe(120);
+  });
+}
