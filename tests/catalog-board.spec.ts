@@ -141,3 +141,44 @@ for (const [type, trigger] of [
       .toBe(120);
   });
 }
+
+test("wide confirmation actions fit the card and remain interactive", async ({
+  page,
+}) => {
+  test.skip(
+    !process.env.STUDIO_LIBRARY_ROOT?.includes("stroi-homes"),
+    "Actual confirmation fixture",
+  );
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.getByLabel("Поиск компонентов").fill("ConfirmDialog");
+  const card = page.locator(
+    '.catalog-card[data-component-type="ConfirmDialog"]',
+  );
+  const frame = card.frameLocator("iframe");
+  await expect(frame.getByRole("dialog")).toBeVisible();
+  await expect
+    .poll(() =>
+      frame
+        .getByRole("button", { name: "Подтвердить", exact: true })
+        .evaluate((el) => {
+          const rect = el.getBoundingClientRect();
+          return rect.left >= 0 && rect.right <= innerWidth;
+        }),
+    )
+    .toBe(true);
+  await expect
+    .poll(() =>
+      card.locator("iframe").evaluate((el) => {
+        const rect = el.getBoundingClientRect();
+        const parent = el.parentElement!.getBoundingClientRect();
+        return rect.right <= parent.right + 1;
+      }),
+    )
+    .toBe(true);
+  await card.locator("iframe").scrollIntoViewIfNeeded();
+  await frame.getByRole("button", { name: "Подтвердить", exact: true }).click();
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth),
+  ).toBeLessThanOrEqual(390);
+});

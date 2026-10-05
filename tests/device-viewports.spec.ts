@@ -17,6 +17,10 @@ test("device and custom geometry persists, sets actual preview viewport, respect
     );
   await page.getByRole("button", { name: "Экраны", exact: true }).click();
   const screen = page.locator(".page-stage iframe");
+  await expect(page.getByLabel("Тип устройства")).toBeHidden();
+  await page
+    .getByRole("button", { name: "Настройки устройства", exact: true })
+    .click();
   await page.getByLabel("Тип устройства").selectOption("phone-pill");
   await expect(screen).toHaveCSS("height", "756px");
   await expect(screen).toHaveCSS("width", "390px");
@@ -44,6 +48,17 @@ test("device and custom geometry persists, sets actual preview viewport, respect
   await expect(screen).toHaveCSS("height", "369px");
   const rotated = (await read()).pages[0].viewport;
   await page.getByLabel("Ширина экрана").fill("720");
+  await page
+    .getByRole("button", { name: "Настройки устройства", exact: true })
+    .click();
+  await expect(page.getByLabel("Ширина экрана")).toBeHidden();
+  await expect(
+    page.getByRole("button", { name: "Настройки устройства", exact: true }),
+  ).toContainText("не сохранено");
+  await page
+    .getByRole("button", { name: "Настройки устройства", exact: true })
+    .click();
+  await expect(page.getByLabel("Ширина экрана")).toHaveValue("720");
   await page.getByLabel("Высота экрана").fill("900");
   await page.getByText("Системные зоны и вырез", { exact: true }).click();
   await page.getByLabel("Системная зона сверху").fill("32");
@@ -79,6 +94,10 @@ test("device and custom geometry persists, sets actual preview viewport, respect
     .toEqual(custom);
   await page.reload();
   await page.getByRole("button", { name: "Экраны", exact: true }).click();
+  await expect(page.getByLabel("Тип устройства")).toBeHidden();
+  await page
+    .getByRole("button", { name: "Настройки устройства", exact: true })
+    .click();
   await expect(page.getByLabel("Ширина экрана")).toHaveValue("720");
   await expect(page.getByLabel("Высота экрана")).toHaveValue("900");
   await expect(screen).toHaveCSS("height", "848px");
@@ -144,6 +163,9 @@ test("external page removal preserves a viewport draft, cannot apply it to anoth
   ]);
   try {
     await page.getByRole("button", { name: "Экраны", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Настройки устройства", exact: true })
+      .click();
     await page.getByLabel("Ширина экрана").fill("800");
     await apply([{ type: "removePage", pageId: original.screenId }]);
     await expect(

@@ -51,6 +51,9 @@ test("desktop creates, saves, reopens disk project and isolates preview", async 
     await page.getByLabel("Тема студии", { exact: true }).selectOption("dark");
     await expect(page.getByLabel("Тема проекта")).toHaveValue("light");
     await page.getByRole("button", { name: "Экраны", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Настройки устройства", exact: true })
+      .click();
     await page.getByLabel("Тип устройства").selectOption("phone-pill");
     await expect(page.locator(".page-stage iframe")).toHaveCSS(
       "height",
@@ -108,6 +111,9 @@ test("desktop creates, saves, reopens disk project and isolates preview", async 
       .getByRole("button", { name: "Desktop test", exact: false })
       .click();
     await page.getByRole("button", { name: "Экраны", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Настройки устройства", exact: true })
+      .click();
     await expect(page.getByLabel("Тип устройства")).toHaveValue("phone-pill");
     await expect(page.getByLabel("Высота экрана")).toHaveValue("844");
     await expect(page.locator(".page-stage iframe")).toHaveCSS(

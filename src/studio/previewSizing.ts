@@ -1,11 +1,11 @@
 /** Track both ordinary content and portalled/floating content inside a preview. */
 export function observePreviewSize(
   content: HTMLElement,
-  report: (height: number) => void,
+  report: (height: number, width: number) => void,
 ): () => void {
   let frame = 0;
   let disposed = false;
-  let previous = 0;
+  let previous = "";
   const schedule = () => {
     if (!disposed && !frame) frame = requestAnimationFrame(measure);
   };
@@ -23,6 +23,7 @@ export function observePreviewSize(
     const fixed = new Set<HTMLElement>();
     const visible: HTMLElement[] = [];
     let height = content.getBoundingClientRect().height + 40;
+    let width = innerWidth;
     for (const node of nodes) {
       if (!observed.has(node)) {
         resize.observe(node);
@@ -39,6 +40,12 @@ export function observePreviewSize(
       )
         continue;
       visible.push(node);
+      // Centred dialogs can overflow on both edges; reserve both margins.
+      width = Math.max(
+        width,
+        innerWidth + 2 * Math.max(0, -rect.left, rect.right - innerWidth),
+        node.scrollWidth > node.clientWidth + 1 ? node.scrollWidth + 40 : 0,
+      );
       if (style.position === "fixed") {
         fixed.add(node);
         // Full-screen backdrops/layout wrappers follow viewport height themselves.
@@ -69,9 +76,11 @@ export function observePreviewSize(
       }
     }
     height = Math.max(120, Math.min(1600, Math.ceil(height)));
-    if (height !== previous) {
-      previous = height;
-      report(height);
+    width = Math.min(1600, Math.ceil(width));
+    const size = `${height}:${width}`;
+    if (size !== previous) {
+      previous = size;
+      report(height, width);
     }
   }
   const mutation = new MutationObserver(schedule);

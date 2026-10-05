@@ -64,9 +64,9 @@ export function PreviewApp() {
   }, [input, library]);
   useEffect(() => {
     if (!input?.autoHeight || !input.component || !content.current) return;
-    return observePreviewSize(content.current, (height) =>
+    return observePreviewSize(content.current, (height, width) =>
       parent.postMessage(
-        { type: "studio-preview-size", height },
+        { type: "studio-preview-size", height, width },
         __STUDIO_DESKTOP__ ? "studio://app" : location.origin,
       ),
     );

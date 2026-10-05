@@ -61,6 +61,18 @@ export function Preview({
   onSelect,
 }: PreviewInput) {
   const ref = useRef<HTMLIFrameElement>(null);
+  const container = useRef<HTMLDivElement>(null);
+  const [availableWidth, setAvailableWidth] = useState(0);
+  const [contentWidth, setContentWidth] = useState(0);
+  useEffect(() => {
+    if (!autoHeight || !container.current) return;
+    const observer = new ResizeObserver(([entry]) =>
+      setAvailableWidth(entry.contentRect.width),
+    );
+    observer.observe(container.current);
+    return () => observer.disconnect();
+  }, [autoHeight]);
+  useEffect(() => setContentWidth(0), [component?.type, theme]);
   const [ready, setReady] = useState(false);
   const [measuredHeight, setMeasuredHeight] = useState(height);
   useEffect(() => {
@@ -80,6 +92,15 @@ export function Preview({
       )
         setMeasuredHeight(
           Math.max(120, Math.min(1600, Math.ceil(event.data.height))),
+        );
+      if (
+        autoHeight &&
+        event.data?.type === "studio-preview-size" &&
+        typeof event.data.width === "number" &&
+        Number.isFinite(event.data.width)
+      )
+        setContentWidth((previous) =>
+          Math.max(previous, Math.min(1600, Math.ceil(event.data.width))),
         );
       if (
         event.data?.type === "studio-preview-select" &&
@@ -106,7 +127,12 @@ export function Preview({
         __STUDIO_DESKTOP__ ? "studio://preview" : location.origin,
       );
   }, [ready, project, library, theme, component, autoHeight, nodes, selected]);
-  return (
+  const renderWidth = Math.max(availableWidth, contentWidth);
+  const scale =
+    autoHeight && availableWidth && renderWidth
+      ? Math.min(1, availableWidth / renderWidth)
+      : 1;
+  const frame = (
     <iframe
       ref={ref}
       title={title}
@@ -128,12 +154,28 @@ export function Preview({
       }
       style={{
         height: autoHeight ? measuredHeight : height,
-        width: "100%",
+        width: autoHeight && renderWidth ? renderWidth : "100%",
+        transform: scale < 1 ? `scale(${scale})` : undefined,
+        transformOrigin: "top left",
         border: 0,
         display: "block",
         background: "#fff",
       }}
     />
+  );
+  return autoHeight ? (
+    <div
+      ref={container}
+      style={{
+        width: "100%",
+        height: measuredHeight * scale,
+        overflow: "hidden",
+      }}
+    >
+      {frame}
+    </div>
+  ) : (
+    frame
   );
 }
 export function resolveProps(props: Props, project: Project): Props {

@@ -1,3 +1,4 @@
+import { DEVICE_PRESETS } from "./devicePresets";
 import { ViewportControls } from "./ViewportControls";
 import { DeviceFrame } from "./DeviceFrame";
 import { contentViewport } from "../core/viewport";
@@ -145,6 +146,7 @@ export function StudioApp() {
   const viewportPageSnapshot = useRef<ProjectPage | null>(null);
   const dirty = inspectorDirty || viewportDirty;
   const [shade, setShade] = useState(false);
+  const [deviceControlsOpen, setDeviceControlsOpen] = useState(false);
   useEffect(() => setShade(false), [pageId]);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("Подключение к локальным файлам…");
@@ -700,6 +702,19 @@ export function StudioApp() {
                         </option>
                       ))}
                     </select>
+                    <StudioButton
+                      aria-label="Настройки устройства"
+                      aria-expanded={deviceControlsOpen}
+                      aria-controls="device-controls"
+                      onClick={() => setDeviceControlsOpen((open) => !open)}
+                    >
+                      {(DEVICE_PRESETS.find(
+                        (preset) => preset.id === page.viewport.device?.preset,
+                      )?.name.split(" · ")[0] ?? "Свои размеры") +
+                        ` · ${page.viewport.width} × ${page.viewport.height ?? 850}`}
+                      {viewportDirty ? " · не сохранено" : ""}
+                      {deviceControlsOpen ? " ▴" : " ▾"}
+                    </StudioButton>
                   </div>
                 </div>
                 {!project.pages.some((p) => p.screenId === page.screenId) && (
@@ -708,30 +723,32 @@ export function StudioApp() {
                     или нажми «Сбросить размеры».
                   </p>
                 )}
-                <ViewportControls
-                  key={page.screenId}
-                  viewport={page.viewport}
-                  revision={project.revision}
-                  disabled={inspectorDirty}
-                  onDirty={setViewportDirty}
-                  shade={shade}
-                  onShadeChange={setShade}
-                  onApply={async (value, revision) => {
-                    await mutate(
-                      [
-                        {
-                          type: "setViewport",
-                          pageId: page.screenId,
-                          width: value.width,
-                          height: value.height,
-                          device: value.device ?? null,
-                        },
-                      ],
-                      "Изменить устройство и размеры",
-                      revision,
-                    );
-                  }}
-                />
+                <div id="device-controls" hidden={!deviceControlsOpen}>
+                  <ViewportControls
+                    key={page.screenId}
+                    viewport={page.viewport}
+                    revision={project.revision}
+                    disabled={inspectorDirty}
+                    onDirty={setViewportDirty}
+                    shade={shade}
+                    onShadeChange={setShade}
+                    onApply={async (value, revision) => {
+                      await mutate(
+                        [
+                          {
+                            type: "setViewport",
+                            pageId: page.screenId,
+                            width: value.width,
+                            height: value.height,
+                            device: value.device ?? null,
+                          },
+                        ],
+                        "Изменить устройство и размеры",
+                        revision,
+                      );
+                    }}
+                  />
+                </div>
                 <div className="document-editor">
                   <aside className="layer-list">
                     <h3>Слои</h3>
