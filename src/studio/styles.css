@@ -825,3 +825,7 @@
     width: 100%;
   }
 }
+
+.ds-core-notice {
+  font-size: 12px;
+}

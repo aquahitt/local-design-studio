@@ -104,7 +104,7 @@ export const studioLibrary: ComponentLibrary = {
       defaultProps: { placeholder: "Найти компонент…" },
       fixtures: [{ name: "Библиотека компонентов", props: {} }],
       render: (p) => (
-        <div className="ds-studio ds-component section-title">
+        <div className="ds-studio ds-component section-title catalog-heading">
           <StudioSearch
             aria-label="Поиск компонентов"
             placeholder={String(p.placeholder)}

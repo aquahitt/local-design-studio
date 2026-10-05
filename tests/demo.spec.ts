@@ -122,6 +122,15 @@ test("studio theme is independent and persistent; sidebar core stays visible; de
   await expect(previewButton).toHaveCSS("border-radius", radius);
   await expect(previewButton).toHaveCSS("background-color", "rgb(32, 38, 50)");
   await expect(shellButton).toHaveCSS("background-color", "rgb(255, 255, 255)");
+  const previewSearch = page
+    .frameLocator('.catalog-card[data-component-type="Search"] iframe')
+    .getByLabel("Поиск компонентов");
+  const shellSearch = page.getByLabel("Поиск компонентов", { exact: true });
+  const searchRadius = await shellSearch.evaluate(
+    (el) => getComputedStyle(el).borderRadius,
+  );
+  await expect(previewSearch).toHaveCSS("border-radius", searchRadius);
+  await expect(previewSearch).toHaveCSS("min-height", "46px");
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(theme).toBeVisible();
   await expect(footer.getByRole("link")).toBeVisible();
