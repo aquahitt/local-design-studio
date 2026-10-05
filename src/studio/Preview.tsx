@@ -114,7 +114,9 @@ export function Preview({
         __STUDIO_DESKTOP__
           ? "studio://preview/preview"
           : __STUDIO_DEMO__
-            ? import.meta.env.BASE_URL + "index.html?preview=1"
+            ? import.meta.env.BASE_URL +
+              "index.html?preview=1&renderer=" +
+              encodeURIComponent(import.meta.url)
             : import.meta.env.BASE_URL + "preview"
       }
       loading={component ? "lazy" : "eager"}

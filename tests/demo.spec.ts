@@ -131,6 +131,10 @@ test("studio theme is independent and persistent; sidebar core stays visible; de
   );
   await expect(previewSearch).toHaveCSS("border-radius", searchRadius);
   await expect(previewSearch).toHaveCSS("min-height", "46px");
+  await expect(page.locator("iframe").first()).toHaveAttribute(
+    "src",
+    /preview=1&renderer=/,
+  );
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(theme).toBeVisible();
   await expect(footer.getByRole("link")).toBeVisible();
