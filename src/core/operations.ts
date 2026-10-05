@@ -4,6 +4,7 @@ import {
   parseProject,
   stableStringify,
   type Project,
+  type ProjectGroup,
   type ProjectPage,
   type ProjectNode,
   type JSONRecord,
@@ -38,6 +39,7 @@ export type Operation =
   | { type: "addPage"; page: ProjectPage }
   | { type: "removePage"; pageId: string }
   | { type: "renamePage"; pageId: string; name: string }
+  | { type: "setGroups"; groups: ProjectGroup[] }
   | { type: "setTheme"; theme: string }
   | { type: "setTokens"; tokens: Tokens };
 export type Batch = {
@@ -87,6 +89,7 @@ export function applyBatch(project: Project, batch: Batch): Project {
     addPage: ["page"],
     removePage: ["pageId"],
     renamePage: ["pageId", "name"],
+    setGroups: ["groups"],
     setTheme: ["theme"],
     setTokens: ["tokens"],
   };
@@ -210,15 +213,24 @@ export function applyBatch(project: Project, batch: Batch): Project {
       case "removePage":
         page(op.pageId);
         next.pages = next.pages.filter((p) => p.screenId !== op.pageId);
+        for (const group of next.groups ?? [])
+          group.pages = group.pages.filter((id) => id !== op.pageId);
         break;
       case "renamePage":
         page(op.pageId).name = op.name;
+        break;
+      case "setGroups":
+        next.groups = structuredClone(op.groups);
         break;
       case "setTheme":
         next.theme = op.theme;
         break;
       case "setTokens":
         next.tokens = structuredClone(op.tokens);
+        for (const group of next.groups ?? [])
+          group.tokens = group.tokens.filter((name) =>
+            Object.hasOwn(next.tokens, name),
+          );
         break;
       default:
         throw new CoreError("UNKNOWN_OPERATION");

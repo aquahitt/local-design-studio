@@ -67,6 +67,26 @@ test("desktop creates, saves, reopens disk project and isolates preview", async 
       )
       .toBe(844);
     await page
+      .getByRole("button", { name: "Управлять группами", exact: true })
+      .click();
+    await page.getByLabel("Название новой группы").fill("Desktop group");
+    await page
+      .getByRole("button", { name: "Создать группу", exact: true })
+      .click();
+    await page
+      .getByRole("button", { name: "Сохранить группы", exact: true })
+      .click();
+    await expect(
+      page.getByRole("dialog", { name: "Управление группами" }),
+    ).toHaveCount(0);
+    await expect
+      .poll(
+        async () =>
+          JSON.parse(await readFile(join(root, "project.json"), "utf8"))
+            .groups[0].name,
+      )
+      .toBe("Desktop group");
+    await page
       .getByRole("button", { name: "Выделить demo-title", exact: true })
       .click();
     const props = page.getByLabel("Свойства JSON");
@@ -114,6 +134,9 @@ test("desktop creates, saves, reopens disk project and isolates preview", async 
     await page
       .getByRole("button", { name: "Настройки устройства", exact: true })
       .click();
+    await expect(
+      page.getByLabel("Группа проекта").locator("option"),
+    ).toContainText(["Все группы", "Без группы", "Desktop group"]);
     await expect(page.getByLabel("Тип устройства")).toHaveValue("phone-pill");
     await expect(page.getByLabel("Высота экрана")).toHaveValue("844");
     await expect(page.locator(".page-stage iframe")).toHaveCSS(

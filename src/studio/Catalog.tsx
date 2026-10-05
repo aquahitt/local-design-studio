@@ -1,3 +1,4 @@
+import { inGroup } from "./Groups";
 import { StudioSearch, StudioHeading } from "./DesignSystem";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
@@ -13,6 +14,7 @@ type CatalogProps = {
   library: ComponentLibrary;
   project: Project;
   onAdd: (type: string, props: Props) => void;
+  groupFilter?: string;
 };
 
 function CatalogCard({
@@ -111,7 +113,12 @@ export function Catalog(props: CatalogProps) {
   );
 }
 
-function CatalogBoard({ library, project, onAdd }: CatalogProps) {
+function CatalogBoard({
+  library,
+  project,
+  onAdd,
+  groupFilter = "",
+}: CatalogProps) {
   const [query, setQuery] = useState("");
   const [chosen, setChosen] = useState<Record<string, string>>({});
   const [category, setCategory] = useState<string | null>(null);
@@ -126,6 +133,7 @@ function CatalogBoard({ library, project, onAdd }: CatalogProps) {
     () =>
       all.filter(
         ([type, c]) =>
+          inGroup(project, groupFilter, "components", type) &&
           (!category || (c.category ?? "Компонент") === category) &&
           (
             type +
@@ -139,8 +147,9 @@ function CatalogBoard({ library, project, onAdd }: CatalogProps) {
             .toLowerCase()
             .includes(query.trim().toLowerCase()),
       ),
-    [all, category, query],
+    [all, category, query, project.groups, groupFilter],
   );
+  useEffect(() => setVisibleCount(BATCH_SIZE), [groupFilter]);
   const shown = Math.min(visibleCount, entries.length);
   const hasMore = shown < entries.length;
   useEffect(() => {

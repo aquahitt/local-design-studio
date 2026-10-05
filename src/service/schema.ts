@@ -48,17 +48,47 @@ const tokens = {
     ["type", "value"],
   ),
 };
-export const projectSchema = {
-  ...object({
-    schemaVersion: { const: 2 },
-    projectId: str,
-    name: str,
-    revision: integer,
-    pages: { type: "array", items: { $ref: "#/$defs/page" } },
-    library: object({ id: str, version: str }),
-    theme: str,
-    tokens,
+const members = {
+  type: "array",
+  items: str,
+  uniqueItems: true,
+  maxItems: 10000,
+};
+const groups = {
+  type: "array",
+  maxItems: 100,
+  items: object({
+    id: { ...str, maxLength: 100 },
+    name: { ...str, maxLength: 100 },
+    pages: members,
+    components: members,
+    tokens: members,
   }),
+};
+export const projectSchema = {
+  ...object(
+    {
+      schemaVersion: { const: 2 },
+      projectId: str,
+      name: str,
+      revision: integer,
+      pages: { type: "array", items: { $ref: "#/$defs/page" } },
+      library: object({ id: str, version: str }),
+      theme: str,
+      tokens,
+      groups,
+    },
+    [
+      "schemaVersion",
+      "projectId",
+      "name",
+      "revision",
+      "pages",
+      "library",
+      "theme",
+      "tokens",
+    ],
+  ),
   $schema: "https://json-schema.org/draft/2020-12/schema",
   $defs: { node, page },
 };
@@ -111,6 +141,7 @@ export const batchSchema = {
             op("renamePage", { pageId: str, name: str }),
             op("setTheme", { theme: str }),
             op("setTokens", { tokens }),
+            op("setGroups", { groups }),
           ],
         },
       },

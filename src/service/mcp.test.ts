@@ -28,6 +28,15 @@ it("real stdio SDK handshake reads, proposes, denies unapproved apply, applies U
       library: { id: "builtin", version: "1" },
       theme: "light",
       tokens: {},
+      groups: [
+        {
+          id: "buyer",
+          name: "PWA Buyer",
+          pages: ["home"],
+          components: ["Text"],
+          tokens: [],
+        },
+      ],
     },
   });
   const client = new Client({ name: "test", version: "1" });
@@ -46,6 +55,7 @@ it("real stdio SDK handshake reads, proposes, denies unapproved apply, applies U
       client.callTool({ name, arguments: args });
     const decode = (r: any) => JSON.parse(r.content[0].text);
     expect(decode(await call("project_read")).revision).toBe(0);
+    expect(decode(await call("project_read")).groups[0].name).toBe("PWA Buyer");
     const p = decode(
       await call("proposal_create", {
         batch: {

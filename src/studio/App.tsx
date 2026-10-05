@@ -1,3 +1,4 @@
+import { Groups, inGroup } from "./Groups";
 import { DEVICE_PRESETS } from "./devicePresets";
 import { ViewportControls } from "./ViewportControls";
 import { DeviceFrame } from "./DeviceFrame";
@@ -81,6 +82,16 @@ function proposalChanges(project: Project, operation: Operation): string[] {
         JSON.stringify(value),
     );
   }
+  if (operation.type === "setGroups")
+    return [
+      "Группы: " +
+        operation.groups
+          .map(
+            (g) =>
+              `${g.name} (${g.pages.length} экранов, ${g.components.length} компонентов, ${g.tokens.length} токенов)`,
+          )
+          .join(", "),
+    ];
   if (operation.type === "setTheme")
     return ["Тема: " + project.theme + " → " + operation.theme];
   if (operation.type === "setViewport")
@@ -145,6 +156,7 @@ export function StudioApp() {
   const [viewportDirty, setViewportDirty] = useState(false);
   const viewportPageSnapshot = useRef<ProjectPage | null>(null);
   const dirty = inspectorDirty || viewportDirty;
+  const [groupFilter, setGroupFilter] = useState("");
   const [shade, setShade] = useState(false);
   const [deviceControlsOpen, setDeviceControlsOpen] = useState(false);
   useEffect(() => setShade(false), [pageId]);
@@ -286,6 +298,21 @@ export function StudioApp() {
       l.id === project?.library.id && l.version === project?.library.version,
   );
   const displayLibrary = library ?? libraries[0];
+  const groupedPages =
+    project?.pages.filter((p) =>
+      inGroup(project, groupFilter, "pages", p.screenId),
+    ) ?? [];
+  useEffect(() => {
+    if (
+      project &&
+      !dirty &&
+      groupedPages.length &&
+      !groupedPages.some((p) => p.screenId === pageId)
+    ) {
+      setPageId(groupedPages[0].screenId);
+      setSelected(null);
+    }
+  }, [project, groupFilter, dirty, pageId]);
   const liveNode = page && locate(page.nodes, selected);
   if (liveNode) selectedSnapshot.current = liveNode;
   const node =
@@ -348,8 +375,43 @@ export function StudioApp() {
       setError((e as Error).message);
     }
   }
+  async function addGroupedPage() {
+    if (!project || dirty) return;
+    const screenId = crypto.randomUUID();
+    const operations: Operation[] = [
+      {
+        type: "addPage",
+        page: {
+          screenId,
+          name: "Новый экран",
+          viewport: { width: 390 },
+          nodes: [],
+        },
+      },
+    ];
+    if (project.groups?.some((g) => g.id === groupFilter))
+      operations.push({
+        type: "setGroups",
+        groups: project.groups.map((g) =>
+          g.id === groupFilter ? { ...g, pages: [...g.pages, screenId] } : g,
+        ),
+      });
+    try {
+      await mutate(operations, "Добавить экран в группу");
+      setPageId(screenId);
+      setSelected(null);
+    } catch {
+      /* visible error */
+    }
+  }
   async function add(type: string, props: Props) {
     if (!page || !client) return;
+    if (!groupedPages.some((p) => p.screenId === page.screenId)) {
+      setError(
+        "В выбранной группе нет экрана для добавления. Создай экран в разделе «Экраны».",
+      );
+      return;
+    }
     const id = type.toLowerCase() + "-" + crypto.randomUUID().slice(0, 8);
     try {
       const savedProps = (await client.materialize(props)) as JSONRecord;
@@ -528,10 +590,49 @@ export function StudioApp() {
             </div>
           )}
           <div className="ds-content">
+            {(["catalog", "tokens", "editor"] as string[]).includes(view) && (
+              <Groups
+                project={project}
+                library={displayLibrary}
+                filter={groupFilter}
+                disabled={dirty || tokenDraft !== null}
+                onFilter={setGroupFilter}
+                onApply={(groups, revision) =>
+                  mutate(
+                    [{ type: "setGroups", groups }],
+                    "Изменить группы",
+                    revision,
+                  ).then(() => {})
+                }
+              />
+            )}
+            {view === "editor" &&
+              dirty &&
+              page &&
+              !groupedPages.some((p) => p.screenId === page.screenId) && (
+                <p className="notice" role="alert">
+                  Состав группы изменился. Экран оставлен открытым, чтобы
+                  сохранить несохранённый ввод. Примени или сбрось его перед
+                  сменой экрана.
+                </p>
+              )}
+            {view === "editor" && !groupedPages.length && !dirty && (
+              <p className="notice">
+                В этой группе пока нет экранов. Добавь их через «Управлять
+                группами» или создай новый.
+                <StudioButton
+                  disabled={dirty}
+                  onClick={() => void addGroupedPage()}
+                >
+                  Экран +
+                </StudioButton>
+              </p>
+            )}
             {view === "catalog" && (
               <Catalog
                 library={displayLibrary}
                 project={project}
+                groupFilter={groupFilter}
                 onAdd={(type, props) => void add(type, props)}
               />
             )}
@@ -608,235 +709,221 @@ export function StudioApp() {
                   </div>
                 )}
                 <div className="token-grid">
-                  {Object.entries(
-                    resolveTokens(project.tokens, project.theme),
-                  ).map(([name, value]) => (
-                    <article key={name}>
-                      <div
-                        className="token-swatch"
-                        style={{
-                          background:
-                            project.tokens[name].type === "color"
-                              ? String(value)
-                              : undefined,
+                  {Object.entries(resolveTokens(project.tokens, project.theme))
+                    .filter(([name]) =>
+                      inGroup(project, groupFilter, "tokens", name),
+                    )
+                    .map(([name, value]) => (
+                      <article key={name}>
+                        <div
+                          className="token-swatch"
+                          style={{
+                            background:
+                              project.tokens[name].type === "color"
+                                ? String(value)
+                                : undefined,
+                          }}
+                        >
+                          {project.tokens[name].type !== "color" && "Aa"}
+                        </div>
+                        <div>
+                          <strong>{name}</strong>
+                          <code>{String(value)}</code>
+                          <small>
+                            {project.tokens[name].type}
+                            {typeof project.tokens[name].value === "object"
+                              ? " · ссылка"
+                              : " · значение"}
+                          </small>
+                        </div>
+                      </article>
+                    ))}
+                </div>
+              </section>
+            )}
+            {view === "editor" &&
+              page &&
+              (groupedPages.length > 0 || dirty) && (
+                <section className="editor-section">
+                  <div className="section-title">
+                    <div>
+                      <span className="eyebrow">Живые компоненты</span>
+                      <StudioHeading>{page.name}</StudioHeading>
+                    </div>
+                    <div className="editor-controls">
+                      <select
+                        aria-label="Экран"
+                        value={page.screenId}
+                        onChange={(e) => {
+                          if (dirty) {
+                            setError(
+                              "Примени или сбрось ввод перед сменой экрана.",
+                            );
+                            return;
+                          }
+                          setPageId(e.target.value);
+                          setSelected(null);
                         }}
                       >
-                        {project.tokens[name].type !== "color" && "Aa"}
-                      </div>
-                      <div>
-                        <strong>{name}</strong>
-                        <code>{String(value)}</code>
-                        <small>
-                          {project.tokens[name].type}
-                          {typeof project.tokens[name].value === "object"
-                            ? " · ссылка"
-                            : " · значение"}
-                        </small>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              </section>
-            )}
-            {view === "editor" && page && (
-              <section className="editor-section">
-                <div className="section-title">
-                  <div>
-                    <span className="eyebrow">Живые компоненты</span>
-                    <StudioHeading>{page.name}</StudioHeading>
-                  </div>
-                  <div className="editor-controls">
-                    <select
-                      aria-label="Экран"
-                      value={page.screenId}
-                      onChange={(e) => {
-                        if (dirty) {
-                          setError(
-                            "Примени или сбрось ввод перед сменой экрана.",
-                          );
-                          return;
-                        }
-                        setPageId(e.target.value);
-                        setSelected(null);
-                      }}
-                    >
-                      {project.pages.map((p) => (
-                        <option key={p.screenId} value={p.screenId}>
-                          {p.name}
-                        </option>
-                      ))}
-                    </select>
-                    <StudioButton
-                      disabled={dirty}
-                      onClick={() =>
-                        void mutate(
-                          [
-                            {
-                              type: "addPage",
-                              page: {
-                                screenId: crypto.randomUUID(),
-                                name: "Новый экран",
-                                viewport: { width: 390 },
-                                nodes: [],
-                              },
-                            },
-                          ],
-                          "Добавить экран",
-                        )
-                          .then(() =>
-                            setPageId(current.current!.pages.at(-1)!.screenId),
-                          )
-                          .catch(() => {})
-                      }
-                    >
-                      Экран +
-                    </StudioButton>
-                    <select
-                      aria-label="Масштаб"
-                      value={zoom}
-                      onChange={(e) => setZoom(Number(e.target.value))}
-                    >
-                      {[0.5, 0.75, 1].map((z) => (
-                        <option key={z} value={z}>
-                          {z * 100}%
-                        </option>
-                      ))}
-                    </select>
-                    <StudioButton
-                      aria-label="Настройки устройства"
-                      aria-expanded={deviceControlsOpen}
-                      aria-controls="device-controls"
-                      onClick={() => setDeviceControlsOpen((open) => !open)}
-                    >
-                      {(DEVICE_PRESETS.find(
-                        (preset) => preset.id === page.viewport.device?.preset,
-                      )?.name.split(" · ")[0] ?? "Свои размеры") +
-                        ` · ${page.viewport.width} × ${page.viewport.height ?? 850}`}
-                      {viewportDirty ? " · не сохранено" : ""}
-                      {deviceControlsOpen ? " ▴" : " ▾"}
-                    </StudioButton>
-                  </div>
-                </div>
-                {!project.pages.some((p) => p.screenId === page.screenId) && (
-                  <p className="notice" role="alert">
-                    Выбранный экран удалён. Ввод размеров сохранён: скопируй его
-                    или нажми «Сбросить размеры».
-                  </p>
-                )}
-                <div id="device-controls" hidden={!deviceControlsOpen}>
-                  <ViewportControls
-                    key={page.screenId}
-                    viewport={page.viewport}
-                    revision={project.revision}
-                    disabled={inspectorDirty}
-                    onDirty={setViewportDirty}
-                    shade={shade}
-                    onShadeChange={setShade}
-                    onApply={async (value, revision) => {
-                      await mutate(
-                        [
-                          {
-                            type: "setViewport",
-                            pageId: page.screenId,
-                            width: value.width,
-                            height: value.height,
-                            device: value.device ?? null,
-                          },
-                        ],
-                        "Изменить устройство и размеры",
-                        revision,
-                      );
-                    }}
-                  />
-                </div>
-                <div className="document-editor">
-                  <aside className="layer-list">
-                    <h3>Слои</h3>
-                    {flatten(page.nodes).map(({ node, depth }) => (
+                        {groupedPages.map((p) => (
+                          <option key={p.screenId} value={p.screenId}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </select>
                       <StudioButton
-                        key={node.id}
-                        aria-label={"Выделить " + node.id}
-                        aria-pressed={selected === node.id}
-                        style={{ paddingLeft: 12 + depth * 14 }}
-                        onClick={() => select(node.id)}
+                        disabled={dirty}
+                        onClick={() => void addGroupedPage()}
                       >
-                        <strong>{node.type}</strong>
-                        <small>{node.id}</small>
+                        Экран +
                       </StudioButton>
-                    ))}
-                    {!page.nodes.length && (
-                      <p>Добавь компоненты из библиотеки.</p>
-                    )}
-                    <p data-testid="selection">Выделено: {selected ?? "—"}</p>
-                  </aside>
-                  <div className="page-stage" ref={stage}>
-                    <div style={{ width: page.viewport.width, zoom }}>
-                      <DeviceFrame
-                        viewport={page.viewport}
-                        theme={project.theme}
-                        shade={shade}
-                        onCloseShade={() => setShade(false)}
+                      <select
+                        aria-label="Масштаб"
+                        value={zoom}
+                        onChange={(e) => setZoom(Number(e.target.value))}
                       >
-                        {(size) => (
-                          <Preview
-                            library={displayLibrary}
-                            project={project}
-                            theme={project.theme}
-                            title={"Экран " + page.name}
-                            height={size.height}
-                            nodes={page.nodes}
-                            selected={selected}
-                            onSelect={select}
-                          />
-                        )}
-                      </DeviceFrame>
+                        {[0.5, 0.75, 1].map((z) => (
+                          <option key={z} value={z}>
+                            {z * 100}%
+                          </option>
+                        ))}
+                      </select>
+                      <StudioButton
+                        aria-label="Настройки устройства"
+                        aria-expanded={deviceControlsOpen}
+                        aria-controls="device-controls"
+                        onClick={() => setDeviceControlsOpen((open) => !open)}
+                      >
+                        {(DEVICE_PRESETS.find(
+                          (preset) =>
+                            preset.id === page.viewport.device?.preset,
+                        )?.name.split(" · ")[0] ?? "Свои размеры") +
+                          ` · ${page.viewport.width} × ${page.viewport.height ?? 850}`}
+                        {viewportDirty ? " · не сохранено" : ""}
+                        {deviceControlsOpen ? " ▴" : " ▾"}
+                      </StudioButton>
                     </div>
                   </div>
-                  <aside>
-                    {node ? (
-                      <Inspector
-                        key={node.id}
-                        node={node}
-                        revision={project.revision}
-                        onDirty={setDirty}
-                        onApply={(props, revision) =>
-                          mutate(
-                            [
-                              {
-                                type: "updateProps",
-                                nodeId: node.id,
-                                props: props as JSONRecord,
-                              },
-                            ],
-                            "Изменить свойства " + node.id,
-                            revision,
-                          )
-                        }
-                      />
-                    ) : (
-                      <div className="inspector">
-                        <h3>Инспектор</h3>
-                        <p>Выдели компонент на экране или в дереве слоёв.</p>
-                      </div>
-                    )}
-                    {node && (
-                      <div className="inspector">
+                  {!project.pages.some((p) => p.screenId === page.screenId) && (
+                    <p className="notice" role="alert">
+                      Выбранный экран удалён. Ввод размеров сохранён: скопируй
+                      его или нажми «Сбросить размеры».
+                    </p>
+                  )}
+                  <div id="device-controls" hidden={!deviceControlsOpen}>
+                    <ViewportControls
+                      key={page.screenId}
+                      viewport={page.viewport}
+                      revision={project.revision}
+                      disabled={inspectorDirty}
+                      onDirty={setViewportDirty}
+                      shade={shade}
+                      onShadeChange={setShade}
+                      onApply={async (value, revision) => {
+                        await mutate(
+                          [
+                            {
+                              type: "setViewport",
+                              pageId: page.screenId,
+                              width: value.width,
+                              height: value.height,
+                              device: value.device ?? null,
+                            },
+                          ],
+                          "Изменить устройство и размеры",
+                          revision,
+                        );
+                      }}
+                    />
+                  </div>
+                  <div className="document-editor">
+                    <aside className="layer-list">
+                      <h3>Слои</h3>
+                      {flatten(page.nodes).map(({ node, depth }) => (
                         <StudioButton
-                          onClick={() =>
-                            void mutate(
-                              [{ type: "removeNode", nodeId: node.id }],
-                              "Удалить слой",
-                            ).catch(() => {})
-                          }
+                          key={node.id}
+                          aria-label={"Выделить " + node.id}
+                          aria-pressed={selected === node.id}
+                          style={{ paddingLeft: 12 + depth * 14 }}
+                          onClick={() => select(node.id)}
                         >
-                          Удалить слой
+                          <strong>{node.type}</strong>
+                          <small>{node.id}</small>
                         </StudioButton>
+                      ))}
+                      {!page.nodes.length && (
+                        <p>Добавь компоненты из библиотеки.</p>
+                      )}
+                      <p data-testid="selection">Выделено: {selected ?? "—"}</p>
+                    </aside>
+                    <div className="page-stage" ref={stage}>
+                      <div style={{ width: page.viewport.width, zoom }}>
+                        <DeviceFrame
+                          viewport={page.viewport}
+                          theme={project.theme}
+                          shade={shade}
+                          onCloseShade={() => setShade(false)}
+                        >
+                          {(size) => (
+                            <Preview
+                              library={displayLibrary}
+                              project={project}
+                              theme={project.theme}
+                              title={"Экран " + page.name}
+                              height={size.height}
+                              nodes={page.nodes}
+                              selected={selected}
+                              onSelect={select}
+                            />
+                          )}
+                        </DeviceFrame>
                       </div>
-                    )}
-                  </aside>
-                </div>
-              </section>
-            )}
+                    </div>
+                    <aside>
+                      {node ? (
+                        <Inspector
+                          key={node.id}
+                          node={node}
+                          revision={project.revision}
+                          onDirty={setDirty}
+                          onApply={(props, revision) =>
+                            mutate(
+                              [
+                                {
+                                  type: "updateProps",
+                                  nodeId: node.id,
+                                  props: props as JSONRecord,
+                                },
+                              ],
+                              "Изменить свойства " + node.id,
+                              revision,
+                            )
+                          }
+                        />
+                      ) : (
+                        <div className="inspector">
+                          <h3>Инспектор</h3>
+                          <p>Выдели компонент на экране или в дереве слоёв.</p>
+                        </div>
+                      )}
+                      {node && (
+                        <div className="inspector">
+                          <StudioButton
+                            onClick={() =>
+                              void mutate(
+                                [{ type: "removeNode", nodeId: node.id }],
+                                "Удалить слой",
+                              ).catch(() => {})
+                            }
+                          >
+                            Удалить слой
+                          </StudioButton>
+                        </div>
+                      )}
+                    </aside>
+                  </div>
+                </section>
+              )}
             {view === "proposals" && (
               <section>
                 <span className="eyebrow">MCP / общий документ</span>

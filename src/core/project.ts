@@ -20,6 +20,13 @@ export type ProjectPage = {
   viewport: Viewport;
   nodes: ProjectNode[];
 };
+export type ProjectGroup = {
+  id: string;
+  name: string;
+  pages: string[];
+  components: string[];
+  tokens: string[];
+};
 export type Project = {
   schemaVersion: 2;
   projectId: string;
@@ -29,6 +36,7 @@ export type Project = {
   library: { id: string; version: string };
   theme: string;
   tokens: Tokens;
+  groups?: ProjectGroup[];
 };
 export const PROJECT_LIMITS = {
   bytes: 5_000_000,
@@ -95,6 +103,7 @@ export function parseProject(input: unknown): Project {
     "library",
     "theme",
     "tokens",
+    "groups",
   ]);
   if (p.schemaVersion !== 2) throw new CoreError("UNSUPPORTED_VERSION");
   if (!Number.isSafeInteger(p.revision) || (p.revision as number) < 0)
@@ -241,6 +250,46 @@ export function parseProject(input: unknown): Project {
       nodes: nodes(page.nodes),
     };
   });
+  if (p.groups !== undefined) {
+    if (!Array.isArray(p.groups) || p.groups.length > 100)
+      throw new CoreError("INVALID_GROUPS");
+    const groupIds = new Set<string>();
+    const names = new Set<string>();
+    for (const raw of p.groups) {
+      const group = object(raw);
+      exact(group, ["id", "name", "pages", "components", "tokens"]);
+      const id = string(group.id),
+        name = string(group.name);
+      if (
+        id === "ungrouped" ||
+        id.length > 100 ||
+        name.length > 100 ||
+        name !== name.trim() ||
+        groupIds.has(id) ||
+        names.has(name.toLocaleLowerCase())
+      )
+        throw new CoreError("INVALID_GROUP");
+      groupIds.add(id);
+      names.add(name.toLocaleLowerCase());
+      for (const key of ["pages", "components", "tokens"] as const) {
+        const entries = group[key];
+        if (
+          !Array.isArray(entries) ||
+          entries.length > 10000 ||
+          new Set(entries).size !== entries.length
+        )
+          throw new CoreError("INVALID_GROUP_MEMBERS");
+        for (const entry of entries) {
+          string(entry);
+          if (
+            (key === "pages" && !pageIds.has(entry)) ||
+            (key === "tokens" && !Object.hasOwn(tokens, entry))
+          )
+            throw new CoreError("GROUP_MEMBER_NOT_FOUND");
+        }
+      }
+    }
+  }
   return { ...p, pages } as Project;
 }
 export function migrateProject(screen: unknown): Project {
