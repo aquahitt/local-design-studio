@@ -55,7 +55,7 @@ export function createDesktopHandler(
         const asset = /^\/assets\/[a-f0-9]{64}\.svg$/.test(path);
         if (
           !asset &&
-          !/^\/api\/(project|components|tokens|context|proposals(?:\/[^/]+(?:\/(approve|apply))?)?|operations|undo|redo|assets|schema|capabilities)$/.test(
+          !/^\/api\/(project|components|tokens|context|proposals(?:\/[^/]+(?:\/(approve|apply|reject))?)?|operations|undo|redo|assets|schema|capabilities)$/.test(
             path,
           )
         )

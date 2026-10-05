@@ -255,3 +255,60 @@ it("accepts safe SVG only from UI and serves authenticated immutable assets acro
     await rm(root, { recursive: true, force: true });
   }
 });
+
+it("only UI can reject; rejection survives restart and cannot be approved or applied", async () => {
+  const root = await mkdtemp(join(tmpdir(), "studio-reject-"));
+  let service = await createStudioServer({ root, initialProject, port: 0 });
+  const call = (path: string, body: unknown, ui = false) =>
+    fetch(service.url + path, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${service.token}`,
+        "Content-Type": "application/json",
+        ...(ui
+          ? {
+              Origin: "http://localhost:5173",
+              "x-studio-ui-token": service.uiToken,
+            }
+          : {}),
+      },
+      body: JSON.stringify(body),
+    });
+  try {
+    const p = await (
+      await call("/api/proposals", {
+        batch: {
+          requestId: "reject-me",
+          baseRevision: 0,
+          operations: [
+            {
+              type: "updateProps",
+              nodeId: "text",
+              props: { text: "Never applied" },
+            },
+          ],
+        },
+      })
+    ).json();
+    const path = "/api/proposals/" + p.id;
+    expect((await call(path + "/reject", {})).status).toBe(403);
+    expect((await call(path + "/reject", {}, true)).status).toBe(200);
+    expect((await call(path + "/reject", {}, true)).status).toBe(200);
+    expect((await call(path + "/approve", {}, true)).status).toBe(409);
+    expect((await call(path + "/apply", {})).status).toBe(403);
+    await service.close();
+    service = await createStudioServer({ root, initialProject, port: 0 });
+    const list = await fetch(service.url + "/api/proposals", {
+      headers: { Authorization: `Bearer ${service.token}` },
+    }).then((r) => r.json());
+    expect(list[0].status).toBe("rejected");
+    const project = await fetch(service.url + "/api/project", {
+      headers: { Authorization: `Bearer ${service.token}` },
+    }).then((r) => r.json());
+    expect(project.revision).toBe(0);
+    expect(project.pages[0].nodes[0].props.text).toBe("Hi");
+  } finally {
+    await service.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});

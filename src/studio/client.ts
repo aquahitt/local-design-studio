@@ -82,6 +82,13 @@ export class StudioClient {
   proposals() {
     return this.request<Proposal[]>("proposals");
   }
+  reject(id: string) {
+    return this.request<Proposal>(
+      "proposals/" + encodeURIComponent(id) + "/reject",
+      {},
+      true,
+    );
+  }
   async approve(id: string) {
     await this.request(
       "proposals/" + encodeURIComponent(id) + "/approve",

@@ -73,3 +73,60 @@ it("bootstraps only active credentials and proxies with restricted origin", asyn
     404,
   );
 });
+it("desktop UI rejects proposals through protocol while preview and agents cannot reject", async () => {
+  const { createStudioServer } = await import("../service/server");
+  const root = await mkdtemp(join(tmpdir(), "studio-protocol-reject-"));
+  const owner = await createStudioServer({
+    root,
+    port: 0,
+    allowedOrigins: ["studio://app"],
+  });
+  try {
+    const project = await fetch(owner.url + "/api/project", {
+      headers: { Authorization: `Bearer ${owner.token}` },
+    }).then((r) => r.json());
+    const proposal = await fetch(owner.url + "/api/proposals", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${owner.token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        batch: {
+          requestId: "desktop-reject",
+          baseRevision: project.revision,
+          operations: [
+            {
+              type: "renamePage",
+              pageId: project.pages[0].screenId,
+              name: "Proposed name",
+            },
+          ],
+        },
+      }),
+    }).then((r) => r.json());
+    const handle = createDesktopHandler("/unused", () => ({
+      url: owner.url,
+      token: owner.token,
+      uiToken: owner.uiToken,
+    }));
+    const path = "/api/proposals/" + proposal.id + "/reject";
+    const req = (host: string, ui = false) =>
+      new Request("studio://" + host + path, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${owner.token}`,
+          ...(ui ? { "x-studio-ui-token": owner.uiToken } : {}),
+        },
+        body: "{}",
+      });
+    expect((await handle(req("preview", true))).status).toBe(403);
+    expect((await handle(req("app"))).status).toBe(403);
+    const response = await handle(req("app", true));
+    expect(response.status).toBe(200);
+    expect((await response.json()).status).toBe("rejected");
+  } finally {
+    await owner.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});

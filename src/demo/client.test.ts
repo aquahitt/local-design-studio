@@ -124,3 +124,13 @@ it("refreshes shared browser storage and rejects a stale tab mutation", async ()
   await BrowserDemoClient.reset(s);
   expect((await a.read()).revision).toBe(0);
 });
+it("demo rejection persists and prevents acceptance", async () => {
+  const s = storage();
+  let c = new BrowserDemoClient(s);
+  const p = await c.request<any>("demo/proposal", {});
+  await c.reject(p.id);
+  c = new BrowserDemoClient(s);
+  expect((await c.proposals())[0].status).toBe("rejected");
+  await expect(c.approve(p.id)).rejects.toThrow("PROPOSAL_REJECTED");
+  expect((await c.read()).revision).toBe(0);
+});

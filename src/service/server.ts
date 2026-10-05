@@ -27,7 +27,7 @@ type Proposal = {
   id: string;
   batch: Batch;
   description: string;
-  status: "pending" | "approved" | "applied";
+  status: "pending" | "approved" | "applied" | "rejected";
   createdAt: string;
   resultRevision?: number;
 };
@@ -293,24 +293,38 @@ export async function createStudioServer(options: StudioOptions) {
             return p;
           }
           const match = path.match(
-            /^\/api\/proposals\/([^/]+)\/(approve|apply)$/,
+            /^\/api\/proposals\/([^/]+)\/(approve|apply|reject)$/,
           );
           if (match) {
             const p = proposals.find((p) => p.id === match[1]);
             if (!p) throw new HttpError(404, "NOT_FOUND");
-            if (match[2] === "approve") {
+            if (match[2] === "approve" || match[2] === "reject") {
               if (
                 !origin ||
                 !origins.includes(origin) ||
                 !equal(String(req.headers["x-studio-ui-token"] ?? ""), uiToken)
               )
                 throw new HttpError(403, "UI_APPROVAL_REQUIRED");
+              if (match[2] === "reject" && p.status === "applied")
+                throw new HttpError(409, "PROPOSAL_ALREADY_APPLIED");
+              if (p.status === "rejected") {
+                if (match[2] === "reject") return p;
+                throw new HttpError(409, "PROPOSAL_REJECTED");
+              }
+              if (
+                match[2] === "approve" &&
+                p.status !== "applied" &&
+                p.batch.baseRevision !== (await store.read()).revision
+              )
+                throw new HttpError(409, "REVISION_CONFLICT");
               const approved = {
                 ...p,
                 status:
-                  p.status === "applied"
-                    ? ("applied" as const)
-                    : ("approved" as const),
+                  match[2] === "reject"
+                    ? ("rejected" as const)
+                    : p.status === "applied"
+                      ? ("applied" as const)
+                      : ("approved" as const),
               };
               const next = proposals.map((value) =>
                 value.id === p.id ? approved : value,
@@ -318,7 +332,7 @@ export async function createStudioServer(options: StudioOptions) {
               const nextAudit = [
                 ...audit,
                 {
-                  action: "approve",
+                  action: match[2],
                   proposalId: p.id,
                   at: new Date().toISOString(),
                 },
@@ -329,6 +343,8 @@ export async function createStudioServer(options: StudioOptions) {
               proposals = next;
               return approved;
             }
+            if (p.status === "rejected")
+              throw new HttpError(403, "PROPOSAL_REJECTED");
             if (p.status === "pending")
               throw new HttpError(403, "PROPOSAL_NOT_APPROVED");
             const project = await store.apply(p.batch);

@@ -1,3 +1,6 @@
+import { ProposalPreview } from "./ProposalPreview";
+import { buildProposalPreview } from "./proposalSimulation";
+import { libraryMetadata } from "../library/sdk";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { libraries } from "virtual:studio-libraries";
 import type { ComponentLibrary, Props } from "../library/sdk";
@@ -112,6 +115,7 @@ export function StudioApp() {
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("Подключение к локальным файлам…");
+  const [reviewing, setReviewing] = useState<string | null>(null);
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [tokenDraft, setTokenDraft] = useState<string | null>(null);
   const [tokenBase, setTokenBase] = useState(0);
@@ -810,28 +814,63 @@ export function StudioApp() {
                           <li key={i}>{change}</li>
                         ))}
                     </ul>
+                    <ProposalPreview
+                      project={project}
+                      proposal={p}
+                      library={displayLibrary}
+                    />
                     <details>
                       <summary>Посмотреть точные изменения</summary>
                       <pre>{JSON.stringify(p.batch.operations, null, 2)}</pre>
                     </details>
-                    {p.status !== "applied" && (
+                    {p.status !== "applied" && p.status !== "rejected" && (
                       <button
                         className="accent"
                         disabled={
-                          p.batch.baseRevision !== project.revision || dirty
+                          p.batch.baseRevision !== project.revision ||
+                          dirty ||
+                          !!reviewing ||
+                          !!buildProposalPreview(project, p.batch, [
+                            libraryMetadata(displayLibrary),
+                          ]).error
                         }
                         onClick={() => {
                           if (!client) return;
+                          setReviewing(p.id);
                           void client
                             .approve(p.id)
                             .then(accept)
-                            .catch((e) => setError(e.message));
+                            .then(() => client.proposals())
+                            .then(setProposals)
+                            .catch((e) => setError(e.message))
+                            .finally(() => setReviewing(null));
                         }}
                       >
                         Подтвердить и применить
                       </button>
                     )}
+                    {p.status !== "applied" && p.status !== "rejected" && (
+                      <button
+                        disabled={!!reviewing}
+                        onClick={() => {
+                          if (!client) return;
+                          setReviewing(p.id);
+                          void client
+                            .reject(p.id)
+                            .then(() => client.proposals())
+                            .then(setProposals)
+                            .catch((e) => setError(e.message))
+                            .finally(() => setReviewing(null));
+                        }}
+                      >
+                        Отклонить
+                      </button>
+                    )}
+                    {p.status === "rejected" && (
+                      <p>Предложение отклонено · проект не изменён</p>
+                    )}
                     {p.status !== "applied" &&
+                      p.status !== "rejected" &&
                       p.batch.baseRevision !== project.revision && (
                         <p className="notice">
                           Устаревшая ревизия. Агенту нужно перечитать документ и

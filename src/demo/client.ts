@@ -158,11 +158,20 @@ export class BrowserDemoClient extends StudioClient {
       next.proposals.push(proposal);
       this.commit(next);
       result = proposal;
-    } else if (/^proposals\/[^/]+\/(approve|apply)$/.test(path)) {
+    } else if (/^proposals\/[^/]+\/(approve|apply|reject)$/.test(path)) {
       const [, id, action] = path.split("/");
       const proposal = this.state.proposals.find((p) => p.id === id);
       if (!proposal) throw new Error("PROPOSAL_NOT_FOUND");
-      if (action === "approve") {
+      if (action === "reject") {
+        if (proposal.status === "applied")
+          throw new Error("PROPOSAL_ALREADY_APPLIED");
+        const next = structuredClone(this.state);
+        next.proposals.find((p) => p.id === id)!.status = "rejected";
+        this.commit(next);
+        result = next.proposals.find((p) => p.id === id);
+      } else if (action === "approve") {
+        if (proposal.status === "rejected")
+          throw new Error("PROPOSAL_REJECTED");
         if (proposal.batch.baseRevision !== this.state.project.revision)
           throw new Error("REVISION_CONFLICT");
         const next = structuredClone(this.state);
