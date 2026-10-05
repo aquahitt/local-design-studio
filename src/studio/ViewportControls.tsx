@@ -6,6 +6,8 @@ import {
   type SafeArea,
 } from "../core/viewport";
 import { DEVICE_PRESETS, presetViewport } from "./devicePresets";
+import type { ProjectGroup } from "../core/project";
+import { StudioSelect } from "./StudioSelect";
 import { StudioButton } from "./DesignSystem";
 function draft(viewport: Viewport, revision: number) {
   return {
@@ -29,7 +31,19 @@ export function ViewportControls({
   onDirty,
   shade,
   onShadeChange,
+  groups,
+  pageId,
+  pageCount,
+  onBulkApply,
 }: {
+  groups: ProjectGroup[];
+  pageId: string;
+  pageCount: number;
+  onBulkApply: (
+    value: Viewport,
+    baseRevision: number,
+    groupId?: string,
+  ) => Promise<{ count: number; includesCurrent: boolean }>;
   viewport: Viewport;
   revision: number;
   disabled: boolean;
@@ -38,6 +52,11 @@ export function ViewportControls({
   shade: boolean;
   onShadeChange: (value: boolean) => void;
 }) {
+  const [targetGroup, setTargetGroup] = useState(
+    () => groups.find((group) => group.pages.includes(pageId))?.id ?? "",
+  );
+  const [bulkStatus, setBulkStatus] = useState("");
+  const selectedGroup = groups.find((group) => group.id === targetGroup);
   const [values, setValues] = useState(() => draft(viewport, revision));
   const [editing, setEditing] = useState(false),
     [busy, setBusy] = useState(false),
@@ -53,6 +72,7 @@ export function ViewportControls({
   async function apply(value: Viewport, baseRevision = revision) {
     setBusy(true);
     setError("");
+    setBulkStatus("");
     try {
       await onApply(parseViewport(value), baseRevision);
       setEditing(false);
@@ -61,6 +81,50 @@ export function ViewportControls({
         (e as Error).message === "INVALID_VIEWPORT"
           ? "Размеры: ширина 320–3840, высота 240–3840, зоны 0–240 px; рабочая область не меньше 120 × 120."
           : (e as Error).message,
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+  function currentValue(): Viewport {
+    return editing
+      ? {
+          width: Number(values.width),
+          height: Number(values.height),
+          device: {
+            preset: "custom",
+            orientation:
+              Number(values.width) > Number(values.height)
+                ? "landscape"
+                : "portrait",
+            cutout: values.cutout,
+            safeArea: values.safeArea,
+          },
+        }
+      : { ...viewport, height: viewport.height ?? 850 };
+  }
+  async function bulk(groupId?: string) {
+    setBusy(true);
+    setError("");
+    setBulkStatus("");
+    try {
+      const result = await onBulkApply(
+        parseViewport(currentValue()),
+        editing ? values.baseRevision : revision,
+        groupId,
+      );
+      if (result.includesCurrent) setEditing(false);
+      setBulkStatus(
+        `Применено к ${result.count} экранам.` +
+          (editing && !result.includesCurrent
+            ? " Ввод текущего экрана сохранён в черновике."
+            : ""),
+      );
+    } catch (error) {
+      setError(
+        (error as Error).message === "INVALID_VIEWPORT"
+          ? "Проверь размеры и системные зоны: рабочая область должна быть не меньше 120 × 120 px."
+          : (error as Error).message,
       );
     } finally {
       setBusy(false);
@@ -276,6 +340,46 @@ export function ViewportControls({
           </div>
         </details>
       </form>
+      <div className="viewport-bulk-actions">
+        <StudioButton
+          disabled={disabled || busy || !pageCount}
+          onClick={() => void bulk()}
+        >
+          Применить ко всем
+        </StudioButton>
+        <StudioSelect
+          label="Группа для применения устройства"
+          value={selectedGroup?.id ?? ""}
+          fallback="Выбери группу"
+          disabled={disabled || busy || !groups.length}
+          onChange={setTargetGroup}
+          sections={[
+            {
+              label: "",
+              options: groups.map((group) => ({
+                value: group.id,
+                label: `${group.name} · ${group.pages.length} экранов`,
+              })),
+            },
+          ]}
+        />
+        <StudioButton
+          disabled={disabled || busy || !selectedGroup?.pages.length}
+          onClick={() => void bulk(selectedGroup!.id)}
+        >
+          Применить к группе
+        </StudioButton>
+        <small>
+          Все: {pageCount} экранов · выбранная группа:{" "}
+          {selectedGroup?.pages.length ?? 0}. Используются текущие размеры,
+          вырез и системные зоны.
+        </small>
+      </div>
+      {bulkStatus && (
+        <p className="notice" role="status">
+          {bulkStatus}
+        </p>
+      )}
       <small>
         CSS px · рабочая область {size.width} × {size.height} · системные зоны —
         визуальная модель

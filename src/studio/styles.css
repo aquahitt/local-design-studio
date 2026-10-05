@@ -1232,3 +1232,19 @@
   padding: 12px;
   font-size: 13px;
 }
+.viewport-bulk-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding-top: 16px;
+  margin: 16px 0;
+  border-top: 1px solid var(--studio-border);
+}
+.viewport-bulk-actions small {
+  width: 100%;
+  line-height: 1.5;
+}
+.viewport-bulk-actions .studio-select {
+  min-width: 220px;
+}

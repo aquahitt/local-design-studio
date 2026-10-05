@@ -832,6 +832,44 @@ export function StudioApp() {
                     <ViewportControls
                       key={page.screenId}
                       viewport={page.viewport}
+                      groups={project.groups ?? []}
+                      pageId={page.screenId}
+                      pageCount={project.pages.length}
+                      onBulkApply={async (value, revision, groupId) => {
+                        const group = groupId
+                          ? project.groups?.find((g) => g.id === groupId)
+                          : undefined;
+                        if (groupId && !group)
+                          throw new Error(
+                            "Группа удалена. Выбери актуальную группу.",
+                          );
+                        const targets = group
+                          ? project.pages.filter((p) =>
+                              group.pages.includes(p.screenId),
+                            )
+                          : project.pages;
+                        if (!targets.length)
+                          throw new Error("В группе нет экранов.");
+                        await mutate(
+                          targets.map((target) => ({
+                            type: "setViewport",
+                            pageId: target.screenId,
+                            width: value.width,
+                            height: value.height,
+                            device: value.device ?? null,
+                          })),
+                          group
+                            ? `Применить устройство к группе «${group.name}»`
+                            : "Применить устройство ко всем экранам",
+                          revision,
+                        );
+                        return {
+                          count: targets.length,
+                          includesCurrent: targets.some(
+                            (target) => target.screenId === page.screenId,
+                          ),
+                        };
+                      }}
                       revision={project.revision}
                       disabled={inspectorDirty}
                       onDirty={setViewportDirty}
