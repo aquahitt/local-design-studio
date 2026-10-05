@@ -45,6 +45,11 @@ test("desktop creates, saves, reopens disk project and isolates preview", async 
     await expect(
       page.frameLocator("iframe").first().getByRole("button").first(),
     ).toBeVisible();
+    const bottom = await page.locator(".ds-nav-bottom").boundingBox();
+    const viewportHeight = await page.evaluate(() => innerHeight);
+    expect(bottom!.y + bottom!.height).toBeLessThanOrEqual(viewportHeight);
+    await page.getByLabel("Тема студии", { exact: true }).selectOption("dark");
+    await expect(page.getByLabel("Тема проекта")).toHaveValue("light");
     await page.getByRole("button", { name: "Экраны", exact: true }).click();
     await page
       .getByRole("button", { name: "Выделить demo-title", exact: true })
@@ -60,7 +65,10 @@ test("desktop creates, saves, reopens disk project and isolates preview", async 
       )
       .toBe("Saved from desktop");
     await expect(
-      page.frameLocator("iframe").first().getByText("Saved from desktop", { exact: true }),
+      page
+        .frameLocator("iframe")
+        .first()
+        .getByText("Saved from desktop", { exact: true }),
     ).toBeVisible();
     const iframe = page.frames().find((f) => f.url().includes("/preview"))!;
     expect(await iframe.evaluate(() => typeof (window as any).require)).toBe(

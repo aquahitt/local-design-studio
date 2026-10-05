@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { StudioApp } from "../studio/App";
 import type { DesktopProject } from "./types";
 import "./styles.css";
@@ -15,6 +15,7 @@ const messages: Record<string, string> = {
   UNSAFE_SYMLINK: "Выбери папку проекта напрямую, без символьной ссылки.",
 };
 export function DesktopApp() {
+  const projectbar = useRef<HTMLElement>(null);
   const bridge = window.studioDesktop;
   const [active, setActive] = useState<DesktopProject | null>(null);
   const [recent, setRecent] = useState<DesktopProject[]>([]);
@@ -28,6 +29,20 @@ export function DesktopApp() {
         .then(setRecent)
         .catch((e) => setError(String(e.message)));
   }, [bridge]);
+  useEffect(() => {
+    if (!active || !projectbar.current) return;
+    const observer = new ResizeObserver(() =>
+      document.documentElement.style.setProperty(
+        "--studio-desktop-offset",
+        projectbar.current!.getBoundingClientRect().height + "px",
+      ),
+    );
+    observer.observe(projectbar.current);
+    return () => {
+      observer.disconnect();
+      document.documentElement.style.removeProperty("--studio-desktop-offset");
+    };
+  }, [active]);
   async function run(action: () => Promise<DesktopProject | null>) {
     if (busy) return;
     setBusy(true);
@@ -55,7 +70,7 @@ export function DesktopApp() {
   if (active)
     return (
       <>
-        <header className="desktop-projectbar">
+        <header ref={projectbar} className="desktop-projectbar">
           <button
             disabled={busy}
             onClick={async () => {
@@ -154,8 +169,8 @@ export function DesktopApp() {
         </div>
       )}
       <footer>
-        Работает локально · example/builtin библиотеки включены · внешние
-        библиотеки подключаются в версии для разработчиков
+        Работает локально · дизайн-система студии включена · внешние библиотеки
+        подключаются в версии для разработчиков
       </footer>
     </main>
   );

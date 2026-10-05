@@ -1,3 +1,12 @@
+import {
+  StudioThemeChoice,
+  studioThemeStyle,
+  StudioButton,
+  StudioHeading,
+  LocalCoreNotice,
+  STUDIO_THEME_KEY,
+  readStudioTheme,
+} from "./DesignSystem";
 import { ProposalPreview } from "./ProposalPreview";
 import { buildProposalPreview } from "./proposalSimulation";
 import { libraryMetadata } from "../library/sdk";
@@ -104,6 +113,14 @@ function proposalChanges(project: Project, operation: Operation): string[] {
   return ["Заменить набор токенов"];
 }
 export function StudioApp() {
+  const [studioTheme, setStudioTheme] = useState(readStudioTheme);
+  useEffect(() => {
+    try {
+      localStorage.setItem(STUDIO_THEME_KEY, studioTheme);
+    } catch {
+      /* The current session remains usable without storage. */
+    }
+  }, [studioTheme]);
   const [project, setProject] = useState<Project | null>(null);
   const current = useRef<Project | null>(null);
   const [client, setClient] = useState<StudioClient | null>(null);
@@ -325,7 +342,11 @@ export function StudioApp() {
   }
   if (!project)
     return (
-      <main className="ds-studio loading">
+      <main
+        className="ds-studio loading"
+        data-studio-theme={studioTheme}
+        style={studioThemeStyle(studioTheme)}
+      >
         <strong>{__STUDIO_DEMO__ ? "studio / demo" : "studio / local"}</strong>
         <p>{status}</p>
         {error && (
@@ -340,7 +361,11 @@ export function StudioApp() {
       </main>
     );
   return (
-    <main className="ds-studio">
+    <main
+      className="ds-studio"
+      data-studio-theme={studioTheme}
+      style={studioThemeStyle(studioTheme)}
+    >
       <header className="ds-header">
         <div className="ds-brand">
           <span>s</span>
@@ -365,7 +390,7 @@ export function StudioApp() {
           <span />
           {status}
         </div>
-        <button
+        <StudioButton
           onClick={() =>
             download(
               project.projectId + ".json",
@@ -374,60 +399,48 @@ export function StudioApp() {
           }
         >
           Экспорт проекта ↗
-        </button>
+        </StudioButton>
       </header>
       <div className="ds-layout">
         <aside className="ds-nav">
-          <p className="eyebrow">Рабочее пространство</p>
-          {(
-            [
-              ["catalog", "Компоненты"],
-              ["tokens", "Основы"],
-              ["editor", "Экраны"],
-              ["proposals", "Предложения агента"],
-              ["structure", "Документ"],
-            ] as const
-          ).map(([id, name]) => (
-            <button
-              key={id}
-              aria-pressed={view === id}
-              onClick={() => {
-                if ((dirty || tokenDraft !== null) && id !== view) {
-                  setError(
-                    "Есть несохранённый ввод. Примени или сбрось его перед сменой раздела.",
-                  );
-                  return;
-                }
-                setView(id);
-              }}
-            >
-              {name}
-              {id === "proposals" &&
-                proposals.filter((p) => p.status === "pending").length > 0 && (
-                  <b>
-                    {proposals.filter((p) => p.status === "pending").length}
-                  </b>
-                )}
-            </button>
-          ))}
+          <nav className="ds-nav-menu" aria-label="Разделы студии">
+            <p className="eyebrow">Рабочее пространство</p>
+            {(
+              [
+                ["catalog", "Компоненты"],
+                ["tokens", "Основы"],
+                ["editor", "Экраны"],
+                ["proposals", "Предложения агента"],
+                ["structure", "Документ"],
+              ] as const
+            ).map(([id, name]) => (
+              <StudioButton
+                key={id}
+                aria-pressed={view === id}
+                onClick={() => {
+                  if ((dirty || tokenDraft !== null) && id !== view) {
+                    setError(
+                      "Есть несохранённый ввод. Примени или сбрось его перед сменой раздела.",
+                    );
+                    return;
+                  }
+                  setView(id);
+                }}
+              >
+                {name}
+                {id === "proposals" &&
+                  proposals.filter((p) => p.status === "pending").length >
+                    0 && (
+                    <b>
+                      {proposals.filter((p) => p.status === "pending").length}
+                    </b>
+                  )}
+              </StudioButton>
+            ))}
+          </nav>
           <div className="ds-nav-bottom">
-            <strong>Локальное ядро</strong>
-            <p>
-              {__STUDIO_DEMO__
-                ? "Попробуй редактор на синтетическом проекте. Правки остаются в браузере."
-                : "Один документ для человека и агента. AI подключается через MCP."}
-            </p>
-            <a
-              href={
-                __STUDIO_DEMO__
-                  ? "https://github.com/aquahitt/local-design-studio#запуск"
-                  : "/pilot"
-              }
-            >
-              {__STUDIO_DEMO__
-                ? "Установить локально ↗"
-                : "Открыть технический пилот ↗"}
-            </a>
+            <StudioThemeChoice value={studioTheme} onChange={setStudioTheme} />
+            <LocalCoreNotice demo={__STUDIO_DEMO__} />
           </div>
         </aside>
         <div className="ds-workspace">
@@ -456,22 +469,22 @@ export function StudioApp() {
                 ))}
               </select>
             </label>
-            <button onClick={() => void history("undo")}>
+            <StudioButton onClick={() => void history("undo")}>
               Отменить правку
-            </button>
-            <button onClick={() => void history("redo")}>
+            </StudioButton>
+            <StudioButton onClick={() => void history("redo")}>
               Повторить правку
-            </button>
+            </StudioButton>
           </div>
           {error && (
             <div className="ds-error" role="alert">
               {error}
-              <button
+              <StudioButton
                 aria-label="Закрыть сообщение"
                 onClick={() => setError("")}
               >
                 ×
-              </button>
+              </StudioButton>
             </div>
           )}
           {!library && (
@@ -492,13 +505,13 @@ export function StudioApp() {
             {view === "tokens" && (
               <section>
                 <span className="eyebrow">Единый источник оформления</span>
-                <h1>Токены и темы</h1>
+                <StudioHeading>Токены и темы</StudioHeading>
                 <p>
                   Ссылки на токены остаются ссылками при смене темы. Локальные
                   переопределения хранятся в проекте.
                 </p>
                 <div className="token-actions">
-                  <button
+                  <StudioButton
                     onClick={() =>
                       download(
                         "tokens.json",
@@ -507,8 +520,8 @@ export function StudioApp() {
                     }
                   >
                     Экспорт токенов JSON
-                  </button>
-                  <button
+                  </StudioButton>
+                  <StudioButton
                     onClick={() =>
                       download(
                         "tokens.css",
@@ -518,15 +531,15 @@ export function StudioApp() {
                     }
                   >
                     Экспорт CSS variables
-                  </button>
-                  <button
+                  </StudioButton>
+                  <StudioButton
                     onClick={() => {
                       setTokenDraft(JSON.stringify(project.tokens, null, 2));
                       setTokenBase(project.revision);
                     }}
                   >
                     Редактировать токены
-                  </button>
+                  </StudioButton>
                 </div>
                 {tokenDraft !== null && (
                   <div className="token-editor">
@@ -538,7 +551,7 @@ export function StudioApp() {
                         aria-label="Токены JSON"
                       />
                     </label>
-                    <button
+                    <StudioButton
                       onClick={() => {
                         try {
                           const tokens = JSON.parse(tokenDraft) as Tokens;
@@ -555,8 +568,10 @@ export function StudioApp() {
                       }}
                     >
                       Сохранить токены
-                    </button>
-                    <button onClick={() => setTokenDraft(null)}>Отмена</button>
+                    </StudioButton>
+                    <StudioButton onClick={() => setTokenDraft(null)}>
+                      Отмена
+                    </StudioButton>
                   </div>
                 )}
                 <div className="token-grid">
@@ -595,7 +610,7 @@ export function StudioApp() {
                 <div className="section-title">
                   <div>
                     <span className="eyebrow">Живые компоненты</span>
-                    <h1>{page.name}</h1>
+                    <StudioHeading>{page.name}</StudioHeading>
                   </div>
                   <div className="editor-controls">
                     <select
@@ -618,7 +633,7 @@ export function StudioApp() {
                         </option>
                       ))}
                     </select>
-                    <button
+                    <StudioButton
                       disabled={dirty}
                       onClick={() =>
                         void mutate(
@@ -642,7 +657,7 @@ export function StudioApp() {
                       }
                     >
                       Экран +
-                    </button>
+                    </StudioButton>
                     <select
                       aria-label="Ширина экрана"
                       value={page.viewport.width}
@@ -682,7 +697,7 @@ export function StudioApp() {
                   <aside className="layer-list">
                     <h3>Слои</h3>
                     {flatten(page.nodes).map(({ node, depth }) => (
-                      <button
+                      <StudioButton
                         key={node.id}
                         aria-label={"Выделить " + node.id}
                         aria-pressed={selected === node.id}
@@ -691,7 +706,7 @@ export function StudioApp() {
                       >
                         <strong>{node.type}</strong>
                         <small>{node.id}</small>
-                      </button>
+                      </StudioButton>
                     ))}
                     {!page.nodes.length && (
                       <p>Добавь компоненты из библиотеки.</p>
@@ -741,7 +756,7 @@ export function StudioApp() {
                     )}
                     {node && (
                       <div className="inspector">
-                        <button
+                        <StudioButton
                           onClick={() =>
                             void mutate(
                               [{ type: "removeNode", nodeId: node.id }],
@@ -750,7 +765,7 @@ export function StudioApp() {
                           }
                         >
                           Удалить слой
-                        </button>
+                        </StudioButton>
                       </div>
                     )}
                   </aside>
@@ -760,7 +775,7 @@ export function StudioApp() {
             {view === "proposals" && (
               <section>
                 <span className="eyebrow">MCP / общий документ</span>
-                <h1>Предложения агента</h1>
+                <StudioHeading>Предложения агента</StudioHeading>
                 {__STUDIO_DEMO__ && (
                   <div className="notice">
                     <p>
@@ -768,7 +783,7 @@ export function StudioApp() {
                       настоящие агенты работают с установленной локальной
                       студией.
                     </p>
-                    <button
+                    <StudioButton
                       onClick={() =>
                         void client
                           ?.request("demo/proposal", {})
@@ -778,7 +793,7 @@ export function StudioApp() {
                       }
                     >
                       Создать пример предложения
-                    </button>
+                    </StudioButton>
                   </div>
                 )}
                 <p>
@@ -824,7 +839,7 @@ export function StudioApp() {
                       <pre>{JSON.stringify(p.batch.operations, null, 2)}</pre>
                     </details>
                     {p.status !== "applied" && p.status !== "rejected" && (
-                      <button
+                      <StudioButton
                         className="accent"
                         disabled={
                           p.batch.baseRevision !== project.revision ||
@@ -847,10 +862,10 @@ export function StudioApp() {
                         }}
                       >
                         Подтвердить и применить
-                      </button>
+                      </StudioButton>
                     )}
                     {p.status !== "applied" && p.status !== "rejected" && (
-                      <button
+                      <StudioButton
                         disabled={!!reviewing}
                         onClick={() => {
                           if (!client) return;
@@ -864,7 +879,7 @@ export function StudioApp() {
                         }}
                       >
                         Отклонить
-                      </button>
+                      </StudioButton>
                     )}
                     {p.status === "rejected" && (
                       <p>Предложение отклонено · проект не изменён</p>
@@ -883,7 +898,7 @@ export function StudioApp() {
             )}
             {view === "structure" && (
               <section>
-                <h1>Документ проекта</h1>
+                <StudioHeading>Документ проекта</StudioHeading>
                 <p>
                   {__STUDIO_DEMO__
                     ? "Каноническая схема v2 · изменения сохраняются в браузере. JSON можно экспортировать."

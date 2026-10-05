@@ -1,7 +1,7 @@
 import { StudioClient, type Proposal } from "../studio/client";
 import { applyBatch, type Batch } from "../core/operations";
 import { parseProject, stableStringify, type Project } from "../core/project";
-import { exampleLibrary } from "../library/example";
+import { studioLibrary } from "../library/studio";
 import { libraryMetadata } from "../library/sdk";
 import { validateComponentProps } from "../service/schema";
 import { demoProject } from "./project";
@@ -10,7 +10,7 @@ export interface BrowserStorage {
   setItem(key: string, value: string): void;
   removeItem(key: string): void;
 }
-export const DEMO_STORAGE_KEY = "local-design-studio:public-demo:v1";
+export const DEMO_STORAGE_KEY = "local-design-studio:public-demo:v2";
 interface State {
   version: 1;
   project: Project;
@@ -70,7 +70,7 @@ export class BrowserDemoClient extends StudioClient {
       return structuredClone(receipt.result);
     }
     const result = applyBatch(this.state.project, batch);
-    validateComponentProps(result, [libraryMetadata(exampleLibrary)]);
+    validateComponentProps(result, [libraryMetadata(studioLibrary)]);
     const next = structuredClone(this.state);
     next.undo.push(next.project);
     next.redo = [];
@@ -141,14 +141,14 @@ export class BrowserDemoClient extends StudioClient {
             {
               type: "updateProps",
               nodeId: text.id,
-              props: { text: "От идеи к интерфейсу — с помощью агента" },
+              props: { text: "Предложения дизайн-агента" },
             },
             ...(button
               ? [
                   {
                     type: "updateProps" as const,
                     nodeId: button.id,
-                    props: { label: "Создать первый экран" },
+                    props: { label: "Применить предложение" },
                   },
                 ]
               : []),

@@ -153,3 +153,20 @@
 .desktop-actions button:hover:not(:disabled) {
   background: #edf1f8;
 }
+
+.desktop-projectbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+}
+body:has([data-studio-theme="dark"]) .desktop-projectbar {
+  color-scheme: dark;
+  background: #202632;
+  color: #e7ecf5;
+  border-color: #3c4658;
+}
+body:has([data-studio-theme="dark"]) .desktop-projectbar button {
+  background: #202632;
+  color: #e7ecf5;
+  border-color: #3c4658;
+}

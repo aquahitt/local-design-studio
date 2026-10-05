@@ -1,6 +1,21 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { DEMO_STORAGE_KEY, BrowserDemoClient } from "./client";
 export function DemoBanner() {
+  const banner = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!banner.current) return;
+    const observer = new ResizeObserver(() =>
+      document.documentElement.style.setProperty(
+        "--studio-demo-offset",
+        banner.current!.getBoundingClientRect().height + "px",
+      ),
+    );
+    observer.observe(banner.current);
+    return () => {
+      observer.disconnect();
+      document.documentElement.style.removeProperty("--studio-demo-offset");
+    };
+  }, []);
   useEffect(() => {
     const onStorage = (event: StorageEvent) => {
       if (
@@ -14,11 +29,11 @@ export function DemoBanner() {
     return () => window.removeEventListener("storage", onStorage);
   }, []);
   return (
-    <aside className="demo-banner" aria-label="Режим демо">
+    <aside ref={banner} className="demo-banner" aria-label="Режим демо">
       <div>
         <strong>Интерактивное демо</strong>
         <span>
-          Синтетические примеры · изменения только в этом браузере · AI/MCP
+          Дизайн-система студии · изменения только в этом браузере · AI/MCP
           показаны как пример
         </span>
       </div>

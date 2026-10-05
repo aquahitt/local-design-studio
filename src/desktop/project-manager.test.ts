@@ -1,3 +1,4 @@
+import { studioLibrary } from "../library/studio";
 import { afterEach, beforeEach, expect, it } from "vitest";
 import {
   mkdtemp,
@@ -157,6 +158,7 @@ it("attaches to compatible owners and closing the desktop preserves their servic
     autoApply: false,
     allowedOrigins: ["studio://app"],
     libraryMetadata: [
+      libraryMetadata(studioLibrary),
       libraryMetadata(builtinLibrary),
       libraryMetadata(exampleLibrary),
     ],

@@ -1,3 +1,4 @@
+import { StudioSearch, StudioHeading } from "./DesignSystem";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   ComponentDefinition,
@@ -176,13 +177,12 @@ function CatalogBoard({ library, project, onAdd }: CatalogProps) {
           <span className="eyebrow">
             {library.name} · {library.version}
           </span>
-          <h1>Библиотека компонентов</h1>
+          <StudioHeading>Библиотека компонентов</StudioHeading>
           <p data-testid="catalog-count">
             {all.length} компонентов · выбери состояние и добавь на экран
           </p>
         </div>
-        <input
-          type="search"
+        <StudioSearch
           aria-label="Поиск компонентов"
           placeholder="Найти компонент…"
           value={query}

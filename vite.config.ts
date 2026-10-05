@@ -13,6 +13,7 @@ export default defineConfig(({ mode }) => {
   const demo = mode === "demo";
   const desktop = mode === "desktop";
   const library = {
+    studioOnly: demo,
     externalRoot: demo || desktop ? undefined : env.STUDIO_LIBRARY_ROOT,
   };
   return {

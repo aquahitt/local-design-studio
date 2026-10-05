@@ -1,3 +1,4 @@
+import { studioLibrary } from "../src/library/studio";
 import { randomUUID } from "node:crypto";
 import {
   chmod,
@@ -196,6 +197,7 @@ export class DesktopProjects {
       allowedOrigins: ["studio://app"],
       autoApply: false,
       libraryMetadata: [
+        libraryMetadata(studioLibrary),
         libraryMetadata(builtinLibrary),
         libraryMetadata(exampleLibrary),
       ],

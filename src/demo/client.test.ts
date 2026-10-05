@@ -58,9 +58,9 @@ it("simulated proposals require approval and apply as one undo step", async () =
   expect((await c.proposals()).find((p) => p.id === proposal.id)?.status).toBe(
     "applied",
   );
-  expect(
-    (await c.history("undo", 1)).pages[0].nodes[0].props.text,
-  ).not.toContain("агента");
+  expect((await c.history("undo", 1)).pages[0].nodes[0].props.text).toBe(
+    "Предложения агента",
+  );
 });
 it("failed browser storage retains the last acknowledged revision", async () => {
   const s = storage();

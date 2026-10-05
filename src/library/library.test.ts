@@ -43,6 +43,7 @@ describe("component library registry", () => {
   });
   it("clean clone metadata includes compatibility and example libraries unless operator opts in", () => {
     expect(getConfiguredLibraryMetadata({}).map((x) => x.id)).toEqual([
+      "studio-ui",
       "builtin",
       "studio-example",
     ]);

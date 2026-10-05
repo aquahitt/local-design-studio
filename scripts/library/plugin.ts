@@ -1,3 +1,4 @@
+import { studioLibrary } from "../../src/library/studio";
 import { readFileSync, realpathSync, existsSync } from "node:fs";
 import { isAbsolute, resolve, relative, join, dirname } from "node:path";
 import type { Plugin } from "vite";
@@ -13,6 +14,7 @@ import {
 import { createLocalMetadata } from "../../src/library/localCatalog";
 export interface LibraryConfig {
   externalRoot?: string;
+  studioOnly?: boolean;
 }
 interface LocalInspection {
   root: string;
@@ -224,15 +226,17 @@ function inspectLocal(config: LibraryConfig): LocalInspection | undefined {
 export function getConfiguredLibraryMetadata(
   config: LibraryConfig = {},
 ): LibraryMetadata[] {
-  const local = inspectLocal(config);
+  const local = config.studioOnly ? undefined : inspectLocal(config);
   return [
-    libraryMetadata(builtinLibrary),
-    libraryMetadata(exampleLibrary),
+    libraryMetadata(studioLibrary),
+    ...(!config.studioOnly
+      ? [libraryMetadata(builtinLibrary), libraryMetadata(exampleLibrary)]
+      : []),
     ...(local ? [local.metadata] : []),
   ];
 }
 export function studioLibraryPlugin(config: LibraryConfig = {}): Plugin {
-  const local = inspectLocal(config);
+  const local = config.studioOnly ? undefined : inspectLocal(config);
   const id = "virtual:studio-libraries",
     cssId = "virtual:studio-library.css";
   return {
@@ -252,9 +256,14 @@ export function studioLibraryPlugin(config: LibraryConfig = {}): Plugin {
     load(request) {
       if (request === "\0" + cssId) return local?.css ?? "";
       if (request !== "\0" + id) return;
-      let code = `import {builtinLibrary} from ${JSON.stringify(resolve(process.cwd(), "src/library/builtin.tsx"))};\nimport {exampleLibrary} from ${JSON.stringify(resolve(process.cwd(), "src/library/example.tsx"))};\n`;
+      const studioImport = `import {studioLibrary} from ${JSON.stringify(resolve(process.cwd(), "src/library/studio.tsx"))};\n`;
+      if (config.studioOnly)
+        return studioImport + "export const libraries=[studioLibrary];";
+      let code =
+        studioImport +
+        `import {builtinLibrary} from ${JSON.stringify(resolve(process.cwd(), "src/library/builtin.tsx"))};\nimport {exampleLibrary} from ${JSON.stringify(resolve(process.cwd(), "src/library/example.tsx"))};\n`;
       if (local?.entry) {
-        code += `import {${local.entry.exportName} as runtime} from ${JSON.stringify(local.entry.path)};\nimport {bindLibraryManifest} from ${JSON.stringify(resolve(process.cwd(), "src/library/sdk.ts"))};\nconst local=bindLibraryManifest(runtime,${JSON.stringify(local.metadata)});\nexport const libraries=[builtinLibrary,exampleLibrary,local];`;
+        code += `import {${local.entry.exportName} as runtime} from ${JSON.stringify(local.entry.path)};\nimport {bindLibraryManifest} from ${JSON.stringify(resolve(process.cwd(), "src/library/sdk.ts"))};\nconst local=bindLibraryManifest(runtime,${JSON.stringify(local.metadata)});\nexport const libraries=[studioLibrary,builtinLibrary,exampleLibrary,local];`;
       } else if (local) {
         code += `import {createLocalLibrary} from ${JSON.stringify(resolve(process.cwd(), "src/library/localBrowser.tsx"))};\nimport ${JSON.stringify(cssId)};\n`;
         let n = 0;
@@ -264,8 +273,10 @@ export function studioLibraryPlugin(config: LibraryConfig = {}): Plugin {
           code += `import {${module.exportName === "default" ? "default" : module.exportName} as c${n}} from ${JSON.stringify(module.path)};\n`;
           bindings.push(`${JSON.stringify(name)}:c${n++}`);
         }
-        code += `const local=createLocalLibrary({${bindings.join(",")}},${JSON.stringify(local.metadata)});\nexport const libraries=[builtinLibrary,exampleLibrary,local];`;
-      } else code += "export const libraries=[builtinLibrary,exampleLibrary];";
+        code += `const local=createLocalLibrary({${bindings.join(",")}},${JSON.stringify(local.metadata)});\nexport const libraries=[studioLibrary,builtinLibrary,exampleLibrary,local];`;
+      } else
+        code +=
+          "export const libraries=[studioLibrary,builtinLibrary,exampleLibrary];";
       return code;
     },
   };
