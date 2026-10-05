@@ -829,3 +829,15 @@
 .ds-core-notice {
   font-size: 12px;
 }
+
+.proposal-sections {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 24px 0 16px;
+}
+.ds-studio .proposal-sections button[aria-pressed="true"] {
+  background: var(--studio-accent-bg);
+  color: var(--studio-accent);
+  border-color: var(--studio-accent);
+}

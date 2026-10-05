@@ -50,6 +50,10 @@ test("static repo-subpath demo renders previews, edits, persists and resets with
     page.getByText("Демо-агент (симуляция)", { exact: false }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Подтвердить и применить" }).click();
+  await expect(page.locator(".proposal-card")).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "История предложений", exact: true })
+    .click();
   await expect(page.getByText("applied", { exact: true })).toBeVisible();
   await page
     .getByRole("button", { name: "Отменить правку", exact: true })

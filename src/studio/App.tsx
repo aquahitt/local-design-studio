@@ -134,6 +134,19 @@ export function StudioApp() {
   const [status, setStatus] = useState("Подключение к локальным файлам…");
   const [reviewing, setReviewing] = useState<string | null>(null);
   const [proposals, setProposals] = useState<Proposal[]>([]);
+  const [proposalList, setProposalList] = useState<"pending" | "history">(
+    "pending",
+  );
+  const pendingProposals = proposals.filter(
+    (p) => p.status !== "applied" && p.status !== "rejected",
+  );
+  const historyProposals = proposals.filter(
+    (p) => p.status === "applied" || p.status === "rejected",
+  );
+  const visibleProposals =
+    proposalList === "pending"
+      ? pendingProposals
+      : [...historyProposals].reverse();
   const [tokenDraft, setTokenDraft] = useState<string | null>(null);
   const [tokenBase, setTokenBase] = useState(0);
   const [zoom, setZoom] = useState(1);
@@ -428,13 +441,9 @@ export function StudioApp() {
                 }}
               >
                 {name}
-                {id === "proposals" &&
-                  proposals.filter((p) => p.status === "pending").length >
-                    0 && (
-                    <b>
-                      {proposals.filter((p) => p.status === "pending").length}
-                    </b>
-                  )}
+                {id === "proposals" && pendingProposals.length > 0 && (
+                  <b>{pendingProposals.length}</b>
+                )}
               </StudioButton>
             ))}
           </nav>
@@ -800,14 +809,54 @@ export function StudioApp() {
                   По умолчанию агент предлагает правки, а ты подтверждаешь
                   применение. Один пакет — один шаг отмены.
                 </p>
-                {!proposals.length && (
+                <div
+                  className="proposal-sections"
+                  role="group"
+                  aria-label="Разделы предложений"
+                >
+                  <StudioButton
+                    aria-label="Ожидают решения"
+                    aria-pressed={proposalList === "pending"}
+                    onClick={() => setProposalList("pending")}
+                  >
+                    Ожидают решения · {pendingProposals.length}
+                  </StudioButton>
+                  <StudioButton
+                    aria-label="История предложений"
+                    aria-pressed={proposalList === "history"}
+                    onClick={() => setProposalList("history")}
+                  >
+                    История · {historyProposals.length}
+                  </StudioButton>
+                </div>
+                {proposalList === "history" && (
+                  <p>
+                    Применённые и отклонённые предложения сохраняются без
+                    ограничения срока.
+                  </p>
+                )}
+                {!visibleProposals.length && proposalList === "history" && (
+                  <div className="empty-state">
+                    История пока пуста. Здесь появятся применённые и отклонённые
+                    предложения.
+                  </div>
+                )}
+                {!pendingProposals.length &&
+                  proposalList === "pending" &&
+                  proposals.length > 0 && (
+                    <div className="empty-state">
+                      Нет предложений, ожидающих решения. Завершённые доступны в
+                      истории.
+                    </div>
+                  )}
+                {!proposals.length && proposalList === "pending" && (
                   <div className="empty-state">
                     {__STUDIO_DEMO__
                       ? "Пока нет предложений. Нажми «Создать пример предложения», чтобы попробовать подтверждение правки."
                       : "Пока нет предложений. Подключи агента по инструкции MCP в README."}
                   </div>
                 )}
-                {proposals.map((p) => (
+                {visibleProposals.map((p) => (
                   <article className="proposal-card" key={p.id}>
                     <header>
                       <h2>
@@ -822,13 +871,15 @@ export function StudioApp() {
                       {p.batch.baseRevision} · {p.batch.operations.length}{" "}
                       операций
                     </p>
-                    <ul>
-                      {p.batch.operations
-                        .flatMap((op) => proposalChanges(project, op))
-                        .map((change, i) => (
-                          <li key={i}>{change}</li>
-                        ))}
-                    </ul>
+                    {proposalList === "pending" && (
+                      <ul>
+                        {p.batch.operations
+                          .flatMap((op) => proposalChanges(project, op))
+                          .map((change, i) => (
+                            <li key={i}>{change}</li>
+                          ))}
+                      </ul>
+                    )}
                     <ProposalPreview
                       project={project}
                       proposal={p}

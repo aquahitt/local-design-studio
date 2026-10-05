@@ -49,14 +49,12 @@ test("preview is read-only, rejection persists, and accepted changes match previ
   await page
     .getByRole("button", { name: "Предложения агента", exact: true })
     .click();
-  const card = page
-    .locator(".proposal-card")
-    .filter({
-      has: page.getByRole("heading", {
-        name: "Preview rejected edit",
-        exact: true,
-      }),
-    });
+  const card = page.locator(".proposal-card").filter({
+    has: page.getByRole("heading", {
+      name: "Preview rejected edit",
+      exact: true,
+    }),
+  });
   await expect(
     card.getByRole("heading", { name: "Сейчас", exact: true }),
   ).toBeVisible();
@@ -77,6 +75,10 @@ test("preview is read-only, rejection persists, and accepted changes match previ
     );
   expect(await revision()).toBe(rejected.revision);
   await card.getByRole("button", { name: "Отклонить", exact: true }).click();
+  await expect(card).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "История предложений", exact: true })
+    .click();
   await expect(
     card.getByText("Предложение отклонено · проект не изменён"),
   ).toBeVisible();
@@ -85,18 +87,40 @@ test("preview is read-only, rejection persists, and accepted changes match previ
   await page
     .getByRole("button", { name: "Предложения агента", exact: true })
     .click();
+  await expect(card).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "История предложений", exact: true })
+    .click();
   await expect(
     card.getByText("Предложение отклонено · проект не изменён"),
   ).toBeVisible();
-  await make("Preview accepted edit");
-  const accepted = page
-    .locator(".proposal-card")
-    .filter({
-      has: page.getByRole("heading", {
-        name: "Preview accepted edit",
-        exact: true,
-      }),
+  const ready = await make("Preview accepted edit");
+  await page.evaluate(async (id) => {
+    const session = await fetch("/api/session").then((r) => r.json());
+    const response = await fetch("/api/proposals/" + id + "/approve", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer " + session.token,
+        "x-studio-ui-token": session.uiToken,
+        "Content-Type": "application/json",
+      },
+      body: "{}",
     });
+    if (!response.ok) throw new Error(await response.text());
+  }, ready.proposal.id);
+  await page
+    .getByRole("button", { name: "Ожидают решения", exact: true })
+    .click();
+  const accepted = page.locator(".proposal-card").filter({
+    has: page.getByRole("heading", {
+      name: "Preview accepted edit",
+      exact: true,
+    }),
+  });
+  await expect(accepted.getByText("approved", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Ожидают решения", exact: true }),
+  ).toContainText("· 1");
   await expect(
     accepted
       .frameLocator("iframe")
@@ -110,6 +134,23 @@ test("preview is read-only, rejection persists, and accepted changes match previ
   await accepted
     .getByRole("button", { name: "Подтвердить и применить" })
     .click();
+  await expect(accepted).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "История предложений", exact: true })
+    .click();
   await expect(accepted.getByText("applied", { exact: true })).toBeVisible();
+  await expect(page.locator(".proposal-card")).toHaveCount(2);
+  await expect(
+    page.getByRole("button", { name: "Подтвердить и применить" }),
+  ).toHaveCount(0);
+  await page.reload();
+  await page
+    .getByRole("button", { name: "Предложения агента", exact: true })
+    .click();
+  await expect(page.locator(".proposal-card")).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "История предложений", exact: true })
+    .click();
+  await expect(page.locator(".proposal-card")).toHaveCount(2);
   expect(await revision()).toBe(rejected.revision + 1);
 });

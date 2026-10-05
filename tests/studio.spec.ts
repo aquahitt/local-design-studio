@@ -144,7 +144,16 @@ test("agent proposal requires visible approval and is undone as one batch", asyn
     .click();
   await expect(page.getByRole("heading", { name: label })).toBeVisible();
   await page.getByRole("button", { name: "Подтвердить и применить" }).click();
-  await expect(page.getByText("applied", { exact: true })).toBeVisible();
+  await expect(page.locator(".proposal-card")).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "История предложений", exact: true })
+    .click();
+  await expect(
+    page
+      .locator(".proposal-card")
+      .filter({ has: page.getByRole("heading", { name: label, exact: true }) })
+      .getByText("applied", { exact: true }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Экраны", exact: true }).click();
   await page
     .getByRole("button", { name: "Выделить intro", exact: true })
