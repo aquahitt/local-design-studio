@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { libraries } from "virtual:studio-libraries";
 import {
   ComponentView,
@@ -12,6 +12,7 @@ type Input = Omit<PreviewInput, "library" | "onSelect"> & {
   library: { id: string; version: string };
 };
 export function PreviewApp() {
+  const content = useRef<HTMLDivElement>(null);
   const [input, setInput] = useState<Input | null>(null);
   useEffect(() => {
     const ready = () =>
@@ -60,35 +61,52 @@ export function PreviewApp() {
         String(value),
       );
   }, [input, library]);
+  useEffect(() => {
+    if (!input?.autoHeight || !input.component || !content.current) return;
+    const element = content.current;
+    const observer = new ResizeObserver(() =>
+      parent.postMessage(
+        {
+          type: "studio-preview-size",
+          height: element.getBoundingClientRect().height + 40,
+        },
+        __STUDIO_DESKTOP__ ? "studio://app" : location.origin,
+      ),
+    );
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [input, library]);
   if (!input) return null;
   if (!library) return <p>Библиотека недоступна</p>;
   const project = { ...input.project, theme: input.theme } as Project;
   const definition =
     input.component && library.components[input.component.type];
   return (
-    <RenderBoundary
-      resetKey={String(project.revision) + JSON.stringify(input.component)}
-    >
-      {input.component && definition ? (
-        <ComponentView
-          definition={definition}
-          props={input.component.props}
-          project={project}
-        />
-      ) : (
-        <Nodes
-          nodes={input.nodes ?? []}
-          library={library}
-          project={project}
-          selected={input.selected ?? null}
-          onSelect={(id) =>
-            parent.postMessage(
-              { type: "studio-preview-select", id },
-              __STUDIO_DESKTOP__ ? "studio://app" : location.origin,
-            )
-          }
-        />
-      )}
-    </RenderBoundary>
+    <div ref={content} style={{ display: "flow-root" }}>
+      <RenderBoundary
+        resetKey={String(project.revision) + JSON.stringify(input.component)}
+      >
+        {input.component && definition ? (
+          <ComponentView
+            definition={definition}
+            props={input.component.props}
+            project={project}
+          />
+        ) : (
+          <Nodes
+            nodes={input.nodes ?? []}
+            library={library}
+            project={project}
+            selected={input.selected ?? null}
+            onSelect={(id) =>
+              parent.postMessage(
+                { type: "studio-preview-select", id },
+                __STUDIO_DESKTOP__ ? "studio://app" : location.origin,
+              )
+            }
+          />
+        )}
+      </RenderBoundary>
+    </div>
   );
 }

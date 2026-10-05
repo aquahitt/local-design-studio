@@ -42,6 +42,7 @@ export interface PreviewInput {
   theme: string;
   title: string;
   height?: number;
+  autoHeight?: boolean;
   component?: { type: string; props: Props };
   nodes?: ProjectNode[];
   selected?: string | null;
@@ -53,6 +54,7 @@ export function Preview({
   theme,
   title,
   height = 230,
+  autoHeight = false,
   component,
   nodes,
   selected,
@@ -60,6 +62,7 @@ export function Preview({
 }: PreviewInput) {
   const ref = useRef<HTMLIFrameElement>(null);
   const [ready, setReady] = useState(false);
+  const [measuredHeight, setMeasuredHeight] = useState(height);
   useEffect(() => {
     function receive(event: MessageEvent) {
       if (
@@ -70,6 +73,15 @@ export function Preview({
         return;
       if (event.data?.type === "studio-preview-ready") setReady(true);
       if (
+        autoHeight &&
+        event.data?.type === "studio-preview-size" &&
+        typeof event.data.height === "number" &&
+        Number.isFinite(event.data.height)
+      )
+        setMeasuredHeight(
+          Math.max(120, Math.min(600, Math.ceil(event.data.height))),
+        );
+      if (
         event.data?.type === "studio-preview-select" &&
         typeof event.data.id === "string"
       )
@@ -77,7 +89,7 @@ export function Preview({
     }
     window.addEventListener("message", receive);
     return () => window.removeEventListener("message", receive);
-  }, [onSelect]);
+  }, [onSelect, autoHeight]);
   useEffect(() => {
     if (ready)
       ref.current?.contentWindow?.postMessage(
@@ -87,12 +99,13 @@ export function Preview({
           library: { id: library.id, version: library.version },
           theme,
           component,
+          autoHeight,
           nodes,
           selected,
         },
         __STUDIO_DESKTOP__ ? "studio://preview" : location.origin,
       );
-  }, [ready, project, library, theme, component, nodes, selected]);
+  }, [ready, project, library, theme, component, autoHeight, nodes, selected]);
   return (
     <iframe
       ref={ref}
@@ -112,7 +125,7 @@ export function Preview({
         )
       }
       style={{
-        height,
+        height: autoHeight ? measuredHeight : height,
         width: "100%",
         border: 0,
         display: "block",
