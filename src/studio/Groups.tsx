@@ -1,3 +1,4 @@
+import { StudioSelect } from "./StudioSelect";
 import { useEffect, useRef, useState } from "react";
 import type { Project, ProjectGroup } from "../core/project";
 import type { ComponentLibrary } from "../library/sdk";
@@ -36,23 +37,26 @@ export function Groups({
       : "";
   return (
     <div className="group-toolbar">
-      <label>
-        Группа{" "}
-        <select
-          aria-label="Группа проекта"
-          disabled={disabled}
-          value={validFilter}
-          onChange={(event) => onFilter(event.target.value)}
-        >
-          <option value="">Все группы</option>
-          <option value="ungrouped">Без группы</option>
-          {(project.groups ?? []).map((group) => (
-            <option key={group.id} value={group.id}>
-              {group.name}
-            </option>
-          ))}
-        </select>
-      </label>
+      <span>Группа</span>
+      <StudioSelect
+        label="Группа проекта"
+        disabled={disabled}
+        value={validFilter}
+        onChange={onFilter}
+        sections={[
+          {
+            label: "",
+            options: [
+              { value: "", label: "Все группы" },
+              { value: "ungrouped", label: "Без группы" },
+              ...(project.groups ?? []).map((group) => ({
+                value: group.id,
+                label: group.name,
+              })),
+            ],
+          },
+        ]}
+      />
       <button disabled={disabled} onClick={() => setOpen(true)}>
         Управлять группами
       </button>

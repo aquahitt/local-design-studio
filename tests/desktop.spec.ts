@@ -134,9 +134,17 @@ test("desktop creates, saves, reopens disk project and isolates preview", async 
     await page
       .getByRole("button", { name: "Настройки устройства", exact: true })
       .click();
+    await page
+      .getByRole("combobox", { name: "Группа проекта", exact: true })
+      .click();
     await expect(
-      page.getByLabel("Группа проекта").locator("option"),
+      page
+        .getByRole("listbox", { name: "Группа проекта", exact: true })
+        .getByRole("option"),
     ).toContainText(["Все группы", "Без группы", "Desktop group"]);
+    await page
+      .getByLabel("Поиск: Группа проекта", { exact: true })
+      .press("Escape");
     await expect(page.getByLabel("Тип устройства")).toHaveValue("phone-pill");
     await expect(page.getByLabel("Высота экрана")).toHaveValue("844");
     await expect(page.locator(".page-stage iframe")).toHaveCSS(

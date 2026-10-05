@@ -1,3 +1,4 @@
+import { selectStudioOption, expectStudioOptions } from "./select-helpers";
 import { test, expect } from "@playwright/test";
 test("groups persist, filter components/screens/tokens, and creating a screen keeps it in its group", async ({
   page,
@@ -40,20 +41,16 @@ test("groups persist, filter components/screens/tokens, and creating a screen ke
   const group = (await read()).groups.find((g: any) => g.name === "PWA Buyer");
   expect(group.pages).toEqual([before.pages[0].screenId]);
   expect(group.components).toEqual(["Button"]);
-  await page.getByLabel("Группа проекта").selectOption(group.id);
+  await selectStudioOption(page, "Группа проекта", "PWA Buyer");
   await expect(page.locator(".catalog-card")).toHaveCount(1);
   await expect(page.locator(".catalog-card")).toHaveAttribute(
     "data-component-type",
     "Button",
   );
   await page.getByRole("button", { name: "Экраны", exact: true }).click();
-  await expect(
-    page.getByLabel("Экран", { exact: true }).locator("option"),
-  ).toHaveCount(1);
+  await expectStudioOptions(page, "Экран", 1);
   await page.getByRole("button", { name: "Экран +", exact: true }).click();
-  await expect(
-    page.getByLabel("Экран", { exact: true }).locator("option"),
-  ).toHaveCount(2);
+  await expectStudioOptions(page, "Экран", 2);
   await expect
     .poll(
       async () =>
@@ -63,17 +60,13 @@ test("groups persist, filter components/screens/tokens, and creating a screen ke
   await page
     .getByRole("button", { name: "Отменить правку", exact: true })
     .click();
-  await expect(
-    page.getByLabel("Экран", { exact: true }).locator("option"),
-  ).toHaveCount(1);
+  await expectStudioOptions(page, "Экран", 1);
   await page
     .getByRole("button", { name: "Повторить правку", exact: true })
     .click();
-  await expect(
-    page.getByLabel("Экран", { exact: true }).locator("option"),
-  ).toHaveCount(2);
+  await expectStudioOptions(page, "Экран", 2);
   await page.reload();
-  await page.getByLabel("Группа проекта").selectOption(group.id);
+  await selectStudioOption(page, "Группа проекта", "PWA Buyer");
   await expect(page.locator(".catalog-card")).toHaveCount(1);
   await page.getByRole("button", { name: "Основы", exact: true }).click();
   await expect(page.locator(".token-grid article")).toHaveCount(0);
@@ -89,13 +82,11 @@ test("groups persist, filter components/screens/tokens, and creating a screen ke
     page.getByRole("dialog", { name: "Управление группами" }),
   ).toHaveCount(0);
   const site = (await read()).groups.find((g: any) => g.name === "Site");
-  await page.getByLabel("Группа проекта").selectOption(site.id);
+  await selectStudioOption(page, "Группа проекта", "Site");
   await page.getByRole("button", { name: "Экраны", exact: true }).click();
   await expect(page.getByText(/В этой группе пока нет экранов/)).toBeVisible();
   await page.getByRole("button", { name: "Экран +", exact: true }).click();
-  await expect(
-    page.getByLabel("Экран", { exact: true }).locator("option"),
-  ).toHaveCount(1);
+  await expectStudioOptions(page, "Экран", 1);
   // Restore group metadata so shared browser fixtures remain independent.
   await page.evaluate(
     async ({ session, before }) => {
@@ -172,10 +163,13 @@ test("external membership changes preserve an unsaved inspector draft", async ({
   };
   try {
     await applyGroups([...(before.groups ?? []), group]);
+    await page
+      .getByRole("combobox", { name: "Группа проекта", exact: true })
+      .click();
     await expect(
-      page.getByLabel("Группа проекта").locator('option[value="draft-test"]'),
-    ).toHaveCount(1);
-    await page.getByLabel("Группа проекта").selectOption("draft-test");
+      page.getByRole("option", { name: "Draft test", exact: true }),
+    ).toBeVisible();
+    await page.getByRole("option", { name: "Draft test", exact: true }).click();
     await page.getByRole("button", { name: "Экраны", exact: true }).click();
     await page
       .getByRole("button", {

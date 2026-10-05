@@ -1,3 +1,4 @@
+import { StudioSelect } from "./StudioSelect";
 import { Groups, inGroup } from "./Groups";
 import { DEVICE_PRESETS } from "./devicePresets";
 import { ViewportControls } from "./ViewportControls";
@@ -751,26 +752,43 @@ export function StudioApp() {
                       <StudioHeading>{page.name}</StudioHeading>
                     </div>
                     <div className="editor-controls">
-                      <select
-                        aria-label="Экран"
+                      <StudioSelect
+                        label="Экран"
                         value={page.screenId}
-                        onChange={(e) => {
-                          if (dirty) {
-                            setError(
-                              "Примени или сбрось ввод перед сменой экрана.",
-                            );
-                            return;
-                          }
-                          setPageId(e.target.value);
+                        fallback={page.name}
+                        disabled={dirty}
+                        onChange={(id) => {
+                          setPageId(id);
                           setSelected(null);
                         }}
-                      >
-                        {groupedPages.map((p) => (
-                          <option key={p.screenId} value={p.screenId}>
-                            {p.name}
-                          </option>
-                        ))}
-                      </select>
+                        sections={[
+                          ...(project.groups ?? [])
+                            .map((group) => ({
+                              label: group.name,
+                              options: groupedPages
+                                .filter((p) => group.pages.includes(p.screenId))
+                                .map((p) => ({
+                                  value: p.screenId,
+                                  label: p.name,
+                                })),
+                            }))
+                            .filter((section) => section.options.length),
+                          {
+                            label: "Без группы",
+                            options: groupedPages
+                              .filter(
+                                (p) =>
+                                  !(project.groups ?? []).some((group) =>
+                                    group.pages.includes(p.screenId),
+                                  ),
+                              )
+                              .map((p) => ({
+                                value: p.screenId,
+                                label: p.name,
+                              })),
+                          },
+                        ]}
+                      />
                       <StudioButton
                         disabled={dirty}
                         onClick={() => void addGroupedPage()}
