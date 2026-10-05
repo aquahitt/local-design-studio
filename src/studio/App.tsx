@@ -1,3 +1,6 @@
+import { ViewportControls } from "./ViewportControls";
+import { DeviceFrame } from "./DeviceFrame";
+import { contentViewport } from "../core/viewport";
 import {
   StudioThemeChoice,
   studioThemeStyle,
@@ -13,7 +16,12 @@ import { libraryMetadata } from "../library/sdk";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { libraries } from "virtual:studio-libraries";
 import type { ComponentLibrary, Props } from "../library/sdk";
-import type { Project, ProjectNode, JSONRecord } from "../core/project";
+import type {
+  Project,
+  ProjectNode,
+  ProjectPage,
+  JSONRecord,
+} from "../core/project";
 import type { Operation } from "../core/operations";
 import {
   resolveTokens,
@@ -76,13 +84,16 @@ function proposalChanges(project: Project, operation: Operation): string[] {
     return ["Тема: " + project.theme + " → " + operation.theme];
   if (operation.type === "setViewport")
     return [
-      "Ширина " +
+      "Размеры " +
         operation.pageId +
         ": " +
-        project.pages.find((p) => p.screenId === operation.pageId)?.viewport
-          .width +
-        " → " +
-        operation.width,
+        operation.width +
+        " × " +
+        (operation.height ??
+          project.pages.find((p) => p.screenId === operation.pageId)?.viewport
+            .height ??
+          "авто") +
+        (operation.device ? " · системные зоны устройства" : ""),
     ];
   if (operation.type === "insertNode")
     return [
@@ -129,7 +140,12 @@ export function StudioApp() {
   >("catalog");
   const [pageId, setPageId] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
-  const [dirty, setDirty] = useState(false);
+  const [inspectorDirty, setDirty] = useState(false);
+  const [viewportDirty, setViewportDirty] = useState(false);
+  const viewportPageSnapshot = useRef<ProjectPage | null>(null);
+  const dirty = inspectorDirty || viewportDirty;
+  const [shade, setShade] = useState(false);
+  useEffect(() => setShade(false), [pageId]);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("Подключение к локальным файлам…");
   const [reviewing, setReviewing] = useState<string | null>(null);
@@ -220,6 +236,8 @@ export function StudioApp() {
   }, [accept]);
   useEffect(() => {
     if (!client || !project) return;
+    const contextPage =
+      project.pages.find((p) => p.screenId === pageId) ?? project.pages[0];
     const send = () => {
       const bounds: Record<string, unknown> = {};
       const frame = stage.current?.querySelector("iframe");
@@ -238,11 +256,11 @@ export function StudioApp() {
       void client
         .request("context", {
           clientId: clientId.current,
-          pageId,
+          pageId: contextPage.screenId,
           selectedIds: selected ? [selected] : [],
           viewport: {
-            width: project.pages.find((p) => p.screenId === pageId)?.viewport
-              .width,
+            ...contextPage.viewport,
+            content: contentViewport(contextPage.viewport),
             zoom,
           },
           bounds,
@@ -255,8 +273,12 @@ export function StudioApp() {
     const timer = setInterval(send, 3500);
     return () => clearInterval(timer);
   }, [client, project, pageId, selected, dirty, zoom]);
+  const livePage = project?.pages.find((p) => p.screenId === pageId);
+  if (livePage) viewportPageSnapshot.current = livePage;
   const page =
-    project?.pages.find((p) => p.screenId === pageId) ?? project?.pages[0];
+    livePage ??
+    (viewportDirty ? viewportPageSnapshot.current : null) ??
+    project?.pages[0];
   const library: ComponentLibrary | undefined = libraries.find(
     (l) =>
       l.id === project?.library.id && l.version === project?.library.version,
@@ -668,28 +690,6 @@ export function StudioApp() {
                       Экран +
                     </StudioButton>
                     <select
-                      aria-label="Ширина экрана"
-                      value={page.viewport.width}
-                      onChange={(e) =>
-                        void mutate(
-                          [
-                            {
-                              type: "setViewport",
-                              pageId: page.screenId,
-                              width: Number(e.target.value),
-                            },
-                          ],
-                          "Изменить ширину",
-                        ).catch(() => {})
-                      }
-                    >
-                      {[390, 768, 1280].map((w) => (
-                        <option key={w} value={w}>
-                          {w}px
-                        </option>
-                      ))}
-                    </select>
-                    <select
                       aria-label="Масштаб"
                       value={zoom}
                       onChange={(e) => setZoom(Number(e.target.value))}
@@ -702,6 +702,36 @@ export function StudioApp() {
                     </select>
                   </div>
                 </div>
+                {!project.pages.some((p) => p.screenId === page.screenId) && (
+                  <p className="notice" role="alert">
+                    Выбранный экран удалён. Ввод размеров сохранён: скопируй его
+                    или нажми «Сбросить размеры».
+                  </p>
+                )}
+                <ViewportControls
+                  key={page.screenId}
+                  viewport={page.viewport}
+                  revision={project.revision}
+                  disabled={inspectorDirty}
+                  onDirty={setViewportDirty}
+                  shade={shade}
+                  onShadeChange={setShade}
+                  onApply={async (value, revision) => {
+                    await mutate(
+                      [
+                        {
+                          type: "setViewport",
+                          pageId: page.screenId,
+                          width: value.width,
+                          height: value.height,
+                          device: value.device ?? null,
+                        },
+                      ],
+                      "Изменить устройство и размеры",
+                      revision,
+                    );
+                  }}
+                />
                 <div className="document-editor">
                   <aside className="layer-list">
                     <h3>Слои</h3>
@@ -724,16 +754,25 @@ export function StudioApp() {
                   </aside>
                   <div className="page-stage" ref={stage}>
                     <div style={{ width: page.viewport.width, zoom }}>
-                      <Preview
-                        library={displayLibrary}
-                        project={project}
+                      <DeviceFrame
+                        viewport={page.viewport}
                         theme={project.theme}
-                        title={"Экран " + page.name}
-                        height={850}
-                        nodes={page.nodes}
-                        selected={selected}
-                        onSelect={select}
-                      />
+                        shade={shade}
+                        onCloseShade={() => setShade(false)}
+                      >
+                        {(size) => (
+                          <Preview
+                            library={displayLibrary}
+                            project={project}
+                            theme={project.theme}
+                            title={"Экран " + page.name}
+                            height={size.height}
+                            nodes={page.nodes}
+                            selected={selected}
+                            onSelect={select}
+                          />
+                        )}
+                      </DeviceFrame>
                     </div>
                   </div>
                   <aside>

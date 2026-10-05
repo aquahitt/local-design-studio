@@ -1,3 +1,4 @@
+import type { DeviceViewport } from "./viewport";
 import {
   CoreError,
   parseProject,
@@ -27,7 +28,13 @@ export type Operation =
       index: number;
     }
   | { type: "removeNode"; nodeId: string }
-  | { type: "setViewport"; pageId: string; width: number }
+  | {
+      type: "setViewport";
+      pageId: string;
+      width: number;
+      height?: number;
+      device?: DeviceViewport | null;
+    }
   | { type: "addPage"; page: ProjectPage }
   | { type: "removePage"; pageId: string }
   | { type: "renamePage"; pageId: string; name: string }
@@ -76,7 +83,7 @@ export function applyBatch(project: Project, batch: Batch): Project {
     insertNode: ["pageId", "parentId", "slot", "index", "node"],
     moveNode: ["nodeId", "pageId", "parentId", "slot", "index"],
     removeNode: ["nodeId"],
-    setViewport: ["pageId", "width"],
+    setViewport: ["pageId", "width", "height", "device"],
     addPage: ["page"],
     removePage: ["pageId"],
     renamePage: ["pageId", "name"],
@@ -184,9 +191,19 @@ export function applyBatch(project: Project, batch: Batch): Project {
         n.list.splice(n.index, 1);
         break;
       }
-      case "setViewport":
-        page(op.pageId).viewport.width = op.width;
+      case "setViewport": {
+        const viewport = page(op.pageId).viewport;
+        const resized =
+          viewport.width !== op.width ||
+          (op.height !== undefined && viewport.height !== op.height);
+        viewport.width = op.width;
+        if (op.height !== undefined) viewport.height = op.height;
+        if (op.device === null) delete viewport.device;
+        else if (op.device !== undefined)
+          viewport.device = structuredClone(op.device);
+        else if (resized && viewport.device) viewport.device.preset = "custom";
         break;
+      }
       case "addPage":
         next.pages.push(structuredClone(op.page));
         break;

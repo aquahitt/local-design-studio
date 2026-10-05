@@ -1,3 +1,4 @@
+import { DeviceFrame } from "./DeviceFrame";
 import { useMemo, useState } from "react";
 import type { Project } from "../core/project";
 import { resolveTokens } from "../core/tokens";
@@ -76,7 +77,7 @@ export function ProposalPreview({
               <h3>{label}</h3>
               <p>
                 {page
-                  ? `${page.name} · ${page.viewport.width}px · ${doc.theme}`
+                  ? `${page.name} · ${page.viewport.width} × ${page.viewport.height ?? "авто"}px · ${doc.theme}`
                   : label === "Сейчас"
                     ? "Новый экран"
                     : "Экран будет удалён"}
@@ -84,14 +85,22 @@ export function ProposalPreview({
               {page ? (
                 <div className="proposal-preview-scroll">
                   <div style={{ width: page.viewport.width }}>
-                    <Preview
-                      library={library}
-                      project={doc}
+                    <DeviceFrame
+                      viewport={page.viewport}
                       theme={doc.theme}
-                      title={label + " · " + page.name}
-                      height={520}
-                      nodes={page.nodes}
-                    />
+                      fallbackHeight={520}
+                    >
+                      {(size) => (
+                        <Preview
+                          library={library}
+                          project={doc}
+                          theme={doc.theme}
+                          title={label + " · " + page.name}
+                          height={size.height}
+                          nodes={page.nodes}
+                        />
+                      )}
+                    </DeviceFrame>
                   </div>
                 </div>
               ) : (

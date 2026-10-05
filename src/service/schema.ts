@@ -18,10 +18,23 @@ const node = object({
     additionalProperties: { type: "array", items: { $ref: "#/$defs/node" } },
   },
 });
+const width = { type: "integer", minimum: 320, maximum: 3840 };
+const height = { type: "integer", minimum: 240, maximum: 3840 };
+const inset = { type: "integer", minimum: 0, maximum: 240 };
+const device = object({
+  preset: { type: "string", minLength: 1, maxLength: 100 },
+  orientation: { enum: ["portrait", "landscape"] },
+  cutout: { enum: ["none", "pill", "notch"] },
+  safeArea: object({ top: inset, right: inset, bottom: inset, left: inset }),
+});
+const viewport = {
+  ...object({ width, height, device }, ["width"]),
+  dependentRequired: { device: ["height"] },
+};
 const page = object({
   screenId: str,
   name: str,
-  viewport: object({ width: { type: "number", minimum: 1 } }),
+  viewport,
   nodes: { type: "array", items: { $ref: "#/$defs/node" } },
 });
 const tokens = {
@@ -83,7 +96,16 @@ export const batchSchema = {
               "nodeId",
             ]),
             op("removeNode", { nodeId: str }),
-            op("setViewport", { pageId: str, width: number }),
+            op(
+              "setViewport",
+              {
+                pageId: str,
+                width,
+                height,
+                device: { anyOf: [device, { type: "null" }] },
+              },
+              ["pageId", "width"],
+            ),
             op("addPage", { page: { $ref: "#/$defs/page" } }),
             op("removePage", { pageId: str }),
             op("renamePage", { pageId: str, name: str }),

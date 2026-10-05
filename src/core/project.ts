@@ -1,3 +1,4 @@
+import { parseViewport, type Viewport } from "./viewport";
 import {
   CoreError,
   resolveTokens,
@@ -16,7 +17,7 @@ export type ProjectNode = {
 export type ProjectPage = {
   screenId: string;
   name: string;
-  viewport: { width: number };
+  viewport: Viewport;
   nodes: ProjectNode[];
 };
 export type Project = {
@@ -232,18 +233,11 @@ export function parseProject(input: unknown): Project {
     const id = string(page.screenId);
     if (pageIds.has(id)) throw new CoreError("DUPLICATE_PAGE");
     pageIds.add(id);
-    const viewport = object(page.viewport);
-    exact(viewport, ["width"]);
-    if (
-      !Number.isInteger(viewport.width) ||
-      (viewport.width as number) < 320 ||
-      (viewport.width as number) > 3840
-    )
-      throw new CoreError("INVALID_VIEWPORT");
+    const viewport = parseViewport(page.viewport);
     return {
       screenId: id,
       name: string(page.name),
-      viewport: { width: viewport.width as number },
+      viewport,
       nodes: nodes(page.nodes),
     };
   });
