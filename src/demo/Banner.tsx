@@ -1,6 +1,9 @@
+import { useI18n } from "../studio/i18n";
 import { useEffect, useRef } from "react";
 import { DEMO_STORAGE_KEY, BrowserDemoClient } from "./client";
 export function DemoBanner() {
+  const { t } = useI18n();
+
   const banner = useRef<HTMLElement>(null);
   useEffect(() => {
     if (!banner.current) return;
@@ -29,12 +32,13 @@ export function DemoBanner() {
     return () => window.removeEventListener("storage", onStorage);
   }, []);
   return (
-    <aside ref={banner} className="demo-banner" aria-label="Режим демо">
+    <aside ref={banner} className="demo-banner" aria-label={t("Режим демо")}>
       <div>
-        <strong>Интерактивное демо</strong>
+        <strong>{t("Интерактивное демо")}</strong>
         <span>
-          Дизайн-система студии · изменения только в этом браузере · AI/MCP
-          показаны как пример
+          {t(
+            "Дизайн-система студии · изменения только в этом браузере · AI/MCP показаны как пример",
+          )}
         </span>
       </div>
       <a
@@ -46,13 +50,15 @@ export function DemoBanner() {
       </a>
       <button
         onClick={async () => {
-          if (confirm("Сбросить изменения демо и вернуть начальные примеры?")) {
+          if (
+            confirm(t("Сбросить изменения демо и вернуть начальные примеры?"))
+          ) {
             await BrowserDemoClient.reset(localStorage);
             location.reload();
           }
         }}
       >
-        Сбросить демо
+        {t("Сбросить демо")}
       </button>
     </aside>
   );

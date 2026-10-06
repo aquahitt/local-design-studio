@@ -1,4 +1,5 @@
 import { createElement, useEffect, useState, type ComponentType } from "react";
+import { localDefaults } from "./localCatalog";
 import type { ComponentLibrary, LibraryMetadata, Props } from "./sdk";
 // All runtime imports are injected by the operator-configured Vite plugin.
 // Documents never supply module paths, executable values, or callbacks.
@@ -77,27 +78,58 @@ export function createLocalLibrary(
           List = modules.TabsList,
           Trigger = modules.TabsTrigger,
           Content = modules.TabsContent;
-        if (Tabs && List && Trigger && Content)
+        if (Tabs && List && Trigger && Content) {
+          const items = Array.isArray(initial.tabs)
+            ? initial.tabs
+            : localDefaults.Tabs.tabs;
+          const tabs = (Array.isArray(items) ? items : []).filter(
+            (
+              item,
+            ): item is { value: string; label: string; content?: string } =>
+              item !== null &&
+              typeof item === "object" &&
+              !Array.isArray(item) &&
+              typeof item.value === "string" &&
+              typeof item.label === "string" &&
+              (item.content === undefined || typeof item.content === "string"),
+          );
+          const selected = tabs.some((tab) => tab.value === value)
+            ? value
+            : (tabs[0]?.value ?? "");
           return createElement(
             Tabs,
             {
-              value: value ?? "overview",
+              value: selected,
               onValueChange: setValue,
               variant: initial.variant ?? "underline",
+              size: initial.size ?? "md",
+              activationMode: initial.activationMode ?? "automatic",
+              className: initial.className,
             },
             createElement(
               List,
               {},
-              createElement(Trigger, { value: "overview" }, "Обзор"),
-              createElement(Trigger, { value: "details" }, "Детали"),
+              ...tabs.map((tab) =>
+                createElement(
+                  Trigger,
+                  {
+                    key: tab.value,
+                    value: tab.value,
+                    className: initial.triggerClassName,
+                  },
+                  tab.label,
+                ),
+              ),
             ),
-            createElement(Content, { value: "overview" }, "Обзор проекта"),
-            createElement(
-              Content,
-              { value: "details" },
-              "Синтетические детали",
+            ...tabs.map((tab) =>
+              createElement(
+                Content,
+                { key: tab.value, value: tab.value },
+                tab.content ?? "",
+              ),
             ),
           );
+        }
       }
       if (name === "SheetScrollHead" && modules.Sheet)
         return (

@@ -1,29 +1,9 @@
-import { readdir, readFile, writeFile } from "node:fs/promises";
-import { createHash } from "node:crypto";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-async function walk(root) {
-  const files = [];
-  for (const entry of await readdir(root, { withFileTypes: true })) {
-    const path = join(root, entry.name);
-    if (entry.isDirectory()) files.push(...(await walk(path)));
-    else if (
-      !entry.name.startsWith("SHA256") &&
-      !entry.name.endsWith(".nupkg") &&
-      entry.name !== "RELEASES"
-    )
-      files.push(path);
-  }
-  return files;
-}
-const files = await walk("out/make");
-const lines = [];
-for (const file of files.sort())
-  lines.push(
-    `${createHash("sha256")
-      .update(await readFile(file))
-      .digest("hex")}  ${file.slice("out/make/".length)}`,
-  );
+import { createManifest, verifyRelease } from "../release/integrity.mjs";
+const root = process.argv[2] ?? "out/make";
 await writeFile(
-  `out/make/SHA256SUMS-${process.platform}-${process.arch}.txt`,
-  lines.join("\n") + "\n",
+  join(root, `SHA256SUMS-${process.platform}-${process.arch}.txt`),
+  await createManifest(root),
 );
+await verifyRelease(root);

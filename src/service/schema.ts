@@ -9,15 +9,68 @@ const object = (
   properties: Record<string, unknown>,
   required = Object.keys(properties),
 ) => ({ type: "object", properties, required, additionalProperties: false });
-const node = object({
-  id: str,
-  type: str,
-  props: { type: "object", additionalProperties: json },
-  slots: {
-    type: "object",
-    additionalProperties: { type: "array", items: { $ref: "#/$defs/node" } },
+const coordinate = { type: "number", minimum: -1_000_000, maximum: 1_000_000 };
+const dimension = { type: "number", exclusiveMinimum: 0, maximum: 1_000_000 };
+const sceneFields = {
+  kind: { enum: ["frame", "text", "vector", "component", "image"] },
+  x: coordinate,
+  y: coordinate,
+  width: dimension,
+  height: dimension,
+  rotation: coordinate,
+  opacity: { type: "number", minimum: 0, maximum: 1 },
+  fill: { type: "string" },
+  stroke: { type: "string" },
+  strokeWidth: { type: "number", minimum: 0, maximum: 1_000_000 },
+  radius: { type: "number", minimum: 0, maximum: 1_000_000 },
+  clip: { type: "boolean" },
+  path: { type: "string", maxLength: 100_000 },
+  fontSize: { type: "number", minimum: 0, maximum: 1_000_000 },
+};
+const scene = object(sceneFields, ["kind", "x", "y", "width", "height"]);
+const overrides = {
+  type: "object",
+  additionalProperties: { type: "object", additionalProperties: json },
+};
+const instance = object({ definitionId: str, variant: str, overrides }, [
+  "definitionId",
+]);
+const node = object(
+  {
+    id: str,
+    type: str,
+    props: { type: "object", additionalProperties: json },
+    slots: {
+      type: "object",
+      additionalProperties: { type: "array", items: { $ref: "#/$defs/node" } },
+    },
+    name: str,
+    hidden: { type: "boolean" },
+    locked: { type: "boolean" },
+    scene,
+    instance,
   },
-});
+  ["id", "type", "props", "slots"],
+);
+const componentDefinition = object(
+  {
+    id: str,
+    name: str,
+    version: { type: "integer", minimum: 1 },
+    nodes: { type: "array", items: { $ref: "#/$defs/node" } },
+    variants: { type: "object", additionalProperties: overrides },
+    properties: {
+      type: "object",
+      additionalProperties: object({ nodeId: str, prop: str, default: json }),
+    },
+  },
+  ["id", "name", "version", "nodes"],
+);
+const designComponents = {
+  type: "array",
+  maxItems: 1000,
+  items: componentDefinition,
+};
 const width = { type: "integer", minimum: 320, maximum: 3840 };
 const height = { type: "integer", minimum: 240, maximum: 3840 };
 const inset = { type: "integer", minimum: 0, maximum: 240 };
@@ -31,12 +84,36 @@ const viewport = {
   ...object({ width, height, device }, ["width"]),
   dependentRequired: { device: ["height"] },
 };
-const page = object({
-  screenId: str,
-  name: str,
-  viewport,
-  nodes: { type: "array", items: { $ref: "#/$defs/node" } },
-});
+const provenance = object({ sourcePageId: str, sourceRevision: integer });
+const annotation = {
+  ...object(
+    {
+      id: str,
+      pageId: str,
+      nodeId: str,
+      x: { type: "number", minimum: -1000000, maximum: 1000000 },
+      y: { type: "number", minimum: -1000000, maximum: 1000000 },
+      text: { ...str, maxLength: 10000 },
+      status: { enum: ["open", "resolved"] },
+      decision: { ...str, maxLength: 10000 },
+      proposalId: str,
+      createdAt: { ...str, format: "date-time" },
+    },
+    ["id", "text", "status", "createdAt"],
+  ),
+  dependentRequired: { x: ["y", "pageId"], y: ["x", "pageId"] },
+};
+const annotations = { type: "array", maxItems: 10000, items: annotation };
+const page = object(
+  {
+    screenId: str,
+    name: str,
+    viewport,
+    nodes: { type: "array", items: { $ref: "#/$defs/node" } },
+    provenance,
+  },
+  ["screenId", "name", "viewport", "nodes"],
+);
 const tokens = {
   type: "object",
   additionalProperties: object(
@@ -77,6 +154,8 @@ export const projectSchema = {
       theme: str,
       tokens,
       groups,
+      designComponents,
+      annotations,
     },
     [
       "schemaVersion",
@@ -90,7 +169,7 @@ export const projectSchema = {
     ],
   ),
   $schema: "https://json-schema.org/draft/2020-12/schema",
-  $defs: { node, page },
+  $defs: { node, page, scene, componentDefinition },
 };
 const op = (
   type: string,
@@ -111,6 +190,20 @@ export const batchSchema = {
         maxItems: 1000,
         items: {
           oneOf: [
+            op(
+              "setNodeMetadata",
+              {
+                nodeId: str,
+                name: str,
+                hidden: { type: "boolean" },
+                locked: { type: "boolean" },
+                scene: object(sceneFields, []),
+              },
+              ["nodeId"],
+            ),
+            op("setDesignComponents", { definitions: designComponents }),
+            op("setInstance", { nodeId: str, instance }),
+            op("detachInstance", { nodeId: str }),
             op("updateProps", {
               nodeId: str,
               props: { type: "object", additionalProperties: json },
@@ -142,13 +235,15 @@ export const batchSchema = {
             op("setTheme", { theme: str }),
             op("setTokens", { tokens }),
             op("setGroups", { groups }),
+            op("setAnnotations", { annotations }),
+            op("duplicatePage", { pageId: str, newPageId: str, name: str }),
           ],
         },
       },
     },
     ["requestId", "baseRevision", "operations"],
   ),
-  $defs: { node, page },
+  $defs: { node, page, scene, componentDefinition },
 };
 export function validateComponentProps(
   project: Project,

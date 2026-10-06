@@ -3,7 +3,7 @@ module.exports = {
     name: "LocalDesignStudio",
     executableName: "LocalDesignStudio",
     appBundleId: "org.localdesignstudio.app",
-    asar: true,
+    asar: { unpack: "**/{vendor/esbuild/bin/*,mcp/*.mjs}" },
     prune: false,
     ignore: (path) =>
       path !== "" &&

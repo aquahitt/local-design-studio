@@ -1,3 +1,15 @@
+import {
+  parseAnnotations,
+  parsePageProvenance,
+  type ProjectAnnotation,
+  type PageProvenance,
+} from "./annotations";
+import {
+  validateDesignComponents,
+  type DesignComponentDefinition,
+  type DesignInstance,
+} from "./design-components";
+import { validateScene, type SceneMetadata } from "./scene";
 import { parseViewport, type Viewport } from "./viewport";
 import {
   CoreError,
@@ -13,12 +25,18 @@ export type ProjectNode = {
   type: string;
   props: JSONRecord;
   slots: Record<string, ProjectNode[]>;
+  name?: string;
+  hidden?: boolean;
+  locked?: boolean;
+  scene?: SceneMetadata;
+  instance?: DesignInstance;
 };
 export type ProjectPage = {
   screenId: string;
   name: string;
   viewport: Viewport;
   nodes: ProjectNode[];
+  provenance?: PageProvenance;
 };
 export type ProjectGroup = {
   id: string;
@@ -37,6 +55,8 @@ export type Project = {
   theme: string;
   tokens: Tokens;
   groups?: ProjectGroup[];
+  designComponents?: DesignComponentDefinition[];
+  annotations?: ProjectAnnotation[];
 };
 export const PROJECT_LIMITS = {
   bytes: 5_000_000,
@@ -94,6 +114,20 @@ export function parseProject(input: unknown): Project {
   if (new TextEncoder().encode(serialized).byteLength > PROJECT_LIMITS.bytes)
     throw new CoreError("PROJECT_TOO_LARGE");
   const p = object(JSON.parse(serialized));
+  function rejectPollution(value: unknown, path = "") {
+    if (!value || typeof value !== "object") return;
+    for (const [key, child] of Object.entries(value)) {
+      const childPath = Array.isArray(value)
+        ? `${path}[${key}]`
+        : path
+          ? `${path}.${key}`
+          : key;
+      if (/^(?:__proto__|prototype|constructor)$/i.test(key))
+        throw new CoreError("EXECUTABLE_FIELD", childPath, childPath);
+      rejectPollution(child, childPath);
+    }
+  }
+  rejectPollution(p);
   exact(p, [
     "schemaVersion",
     "projectId",
@@ -104,6 +138,8 @@ export function parseProject(input: unknown): Project {
     "theme",
     "tokens",
     "groups",
+    "designComponents",
+    "annotations",
   ]);
   if (p.schemaVersion !== 2) throw new CoreError("UNSUPPORTED_VERSION");
   if (!Number.isSafeInteger(p.revision) || (p.revision as number) < 0)
@@ -128,13 +164,14 @@ export function parseProject(input: unknown): Project {
   ];
   const ids = new Set<string>();
   let count = 0;
-  function json(v: JSONValue, key = "") {
+  function json(v: JSONValue, path: string, key = "", propDepth = 0) {
     if (
-      /^on[a-z]|^(?:__proto__|prototype|constructor|script|code|html|dangerouslysetinnerhtml)$/.test(
+      /^on[a-z]|^(?:script|html|dangerouslysetinnerhtml)$/.test(
         key.toLowerCase(),
-      )
+      ) ||
+      (propDepth === 1 && key.toLowerCase() === "code")
     )
-      throw new CoreError("EXECUTABLE_FIELD", key);
+      throw new CoreError("EXECUTABLE_FIELD", path, path);
     if (v && typeof v === "object") {
       if (!Array.isArray(v) && "$token" in v) {
         if (
@@ -142,16 +179,23 @@ export function parseProject(input: unknown): Project {
           typeof v.$token !== "string" ||
           !Object.hasOwn(tokens, v.$token)
         )
-          throw new CoreError("MISSING_TOKEN");
+          throw new CoreError("MISSING_TOKEN", path, path);
         // Validate the resolved scalar using the original property's constraints,
         // while retaining the token reference in the canonical document.
-        for (const values of tokenModes) json(values[v.$token as string], key);
+        for (const values of tokenModes)
+          json(values[v.$token as string], path, key, propDepth);
         return;
       }
-      for (const [k, value] of Object.entries(v)) json(value, k);
+      for (const [k, value] of Object.entries(v))
+        json(
+          value,
+          Array.isArray(v) ? `${path}[${k}]` : `${path}.${k}`,
+          k,
+          propDepth + 1,
+        );
     }
     if (typeof v === "string" && /^\s*(javascript|vbscript|data):/i.test(v))
-      throw new CoreError("UNSAFE_URL");
+      throw new CoreError("UNSAFE_URL", path, path);
     if (
       typeof v === "string" &&
       /^(src|asset|assetRef)$/.test(key) &&
@@ -159,26 +203,62 @@ export function parseProject(input: unknown): Project {
         v.split("/").includes("..") ||
         v.includes("\\"))
     )
-      throw new CoreError("UNSAFE_ASSET_REFERENCE");
+      throw new CoreError("UNSAFE_ASSET_REFERENCE", path, path);
   }
-  function nodes(input: unknown, depth = 0): ProjectNode[] {
+  function nodes(input: unknown, path: string, depth = 0): ProjectNode[] {
     if (depth > PROJECT_LIMITS.depth) throw new CoreError("MAX_DEPTH");
     if (!Array.isArray(input)) throw new CoreError("INVALID_NODES");
-    return input.map((raw) => {
+    return input.map((raw, index) => {
+      const nodePath = `${path}[${index}]`;
       const n = object(raw);
-      exact(n, ["id", "type", "props", "slots"]);
+      exact(n, [
+        "id",
+        "type",
+        "props",
+        "slots",
+        "name",
+        "hidden",
+        "locked",
+        "scene",
+        "instance",
+      ]);
+      if (n.name !== undefined) string(n.name);
+      for (const field of ["hidden", "locked"])
+        if (n[field] !== undefined && typeof n[field] !== "boolean")
+          throw new CoreError(
+            "INVALID_NODE_METADATA",
+            `${nodePath}.${field}`,
+            `${nodePath}.${field}`,
+          );
+      if (n.scene !== undefined) validateScene(n.scene, `${nodePath}.scene`);
+      if (n.instance !== undefined) {
+        const instance = object(n.instance);
+        exact(instance, ["definitionId", "variant", "overrides"]);
+        string(instance.definitionId);
+        if (instance.variant !== undefined) string(instance.variant);
+        if (instance.overrides !== undefined)
+          for (const [target, patch] of Object.entries(
+            object(instance.overrides),
+          )) {
+            string(target);
+            json(
+              object(patch) as JSONRecord,
+              `${nodePath}.instance.overrides.${target}`,
+            );
+          }
+      }
       const id = string(n.id);
       if (ids.has(id)) throw new CoreError("DUPLICATE_ID", id);
       ids.add(id);
       if (++count > PROJECT_LIMITS.nodes) throw new CoreError("MAX_NODES");
       const type = string(n.type);
       const props = object(n.props) as JSONRecord;
-      json(props);
+      json(props, `${nodePath}.props`);
       const slots = object(n.slots);
       const result: Record<string, ProjectNode[]> = {};
       for (const [name, children] of Object.entries(slots)) {
         if (!/^[\w-]+$/.test(name)) throw new CoreError("INVALID_SLOT");
-        result[name] = nodes(children, depth + 1);
+        result[name] = nodes(children, `${nodePath}.slots.${name}`, depth + 1);
       }
       const known: Record<string, { fields: string[]; slots: string[] }> = {
         Stack: { fields: ["gap"], slots: ["content"] },
@@ -226,7 +306,7 @@ export function parseProject(input: unknown): Project {
         for (const slot of def.slots)
           if (!Object.hasOwn(slots, slot)) throw new CoreError("INVALID_SLOT");
       }
-      return { id, type, props, slots: result };
+      return { ...n, id, type, props, slots: result } as ProjectNode;
     });
   }
   if (
@@ -236,9 +316,9 @@ export function parseProject(input: unknown): Project {
   )
     throw new CoreError("INVALID_PAGES");
   const pageIds = new Set<string>();
-  const pages = p.pages.map((raw) => {
+  const pages = p.pages.map((raw, index) => {
     const page = object(raw);
-    exact(page, ["screenId", "name", "viewport", "nodes"]);
+    exact(page, ["screenId", "name", "viewport", "nodes", "provenance"]);
     const id = string(page.screenId);
     if (pageIds.has(id)) throw new CoreError("DUPLICATE_PAGE");
     pageIds.add(id);
@@ -247,9 +327,71 @@ export function parseProject(input: unknown): Project {
       screenId: id,
       name: string(page.name),
       viewport,
-      nodes: nodes(page.nodes),
+      nodes: nodes(page.nodes, `pages[${index}].nodes`),
+      ...(page.provenance !== undefined
+        ? { provenance: parsePageProvenance(page.provenance) }
+        : {}),
     };
   });
+  if (p.designComponents !== undefined) {
+    if (!Array.isArray(p.designComponents) || p.designComponents.length > 1000)
+      throw new CoreError("INVALID_COMPONENTS");
+    const definitionIds = new Set<string>();
+    p.designComponents = p.designComponents.map((raw, index) => {
+      const definition = object(raw);
+      exact(definition, [
+        "id",
+        "name",
+        "version",
+        "nodes",
+        "variants",
+        "properties",
+      ]);
+      const id = string(definition.id);
+      string(definition.name);
+      if (definitionIds.has(id)) throw new CoreError("DUPLICATE_COMPONENT", id);
+      definitionIds.add(id);
+      if (
+        !Number.isSafeInteger(definition.version) ||
+        (definition.version as number) < 1
+      )
+        throw new CoreError("INVALID_COMPONENT_VERSION", id);
+      const path = `designComponents[${index}]`;
+      if (definition.variants !== undefined)
+        for (const [variant, patches] of Object.entries(
+          object(definition.variants),
+        )) {
+          string(variant);
+          for (const [target, patch] of Object.entries(object(patches))) {
+            string(target);
+            json(
+              object(patch) as JSONRecord,
+              `${path}.variants.${variant}.${target}`,
+            );
+          }
+        }
+      if (definition.properties !== undefined)
+        for (const [name, raw] of Object.entries(
+          object(definition.properties),
+        )) {
+          string(name);
+          const binding = object(raw);
+          exact(binding, ["nodeId", "prop", "default"]);
+          string(binding.nodeId);
+          string(binding.prop);
+          if (!Object.hasOwn(binding, "default"))
+            throw new CoreError("INVALID_COMPONENT_PROPERTY", name);
+          json(
+            binding.default as JSONValue,
+            `${path}.properties.${name}.default`,
+            binding.prop as string,
+            1,
+          );
+        }
+      return { ...definition, nodes: nodes(definition.nodes, `${path}.nodes`) };
+    });
+  }
+  validateDesignComponents({ ...p, pages } as Project);
   if (p.groups !== undefined) {
     if (!Array.isArray(p.groups) || p.groups.length > 100)
       throw new CoreError("INVALID_GROUPS");
@@ -290,6 +432,8 @@ export function parseProject(input: unknown): Project {
       }
     }
   }
+  if (p.annotations !== undefined)
+    p.annotations = parseAnnotations(p.annotations);
   return { ...p, pages } as Project;
 }
 export function migrateProject(screen: unknown): Project {

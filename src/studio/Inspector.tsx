@@ -1,3 +1,4 @@
+import { useI18n } from "./i18n";
 import { useEffect, useState } from "react";
 import type { ProjectNode } from "../core/project";
 import { beginDraft, editDraft, receiveDraft, rebaseDraft } from "./draft";
@@ -15,6 +16,8 @@ export function Inspector({
   ) => Promise<void>;
   onDirty: (dirty: boolean) => void;
 }) {
+  const { t } = useI18n();
+
   const [draft, setDraft] = useState(() => beginDraft(node.props, revision));
   const [error, setError] = useState("");
   useEffect(
@@ -29,7 +32,7 @@ export function Inspector({
     try {
       const props = JSON.parse(draft.value);
       if (!props || Array.isArray(props) || typeof props !== "object")
-        throw new Error("Нужен JSON-объект свойств");
+        throw new Error(t("Нужен JSON-объект свойств"));
       await onApply(props, draft.baseRevision);
       setDraft(beginDraft(props, draft.baseRevision + 1));
       setError("");
@@ -42,9 +45,9 @@ export function Inspector({
       <h3>{node.type}</h3>
       <p className="mono">{node.id}</p>
       <label>
-        Свойства JSON
+        {t("Свойства JSON")}
         <textarea
-          aria-label="Свойства JSON"
+          aria-label={t("Свойства JSON")}
           value={draft.value}
           onChange={(e) => setDraft((d) => editDraft(d, e.target.value))}
           spellCheck={false}
@@ -52,13 +55,13 @@ export function Inspector({
       </label>
       {draft.conflict && (
         <div role="status" className="notice">
-          <strong>Документ изменился</strong>
+          <strong>{t("Документ изменился")}</strong>
           <p>
-            Твой ввод сохранён. Базовая ревизия {draft.baseRevision}, актуальная{" "}
-            {revision}.
+            {t("Твой ввод сохранён. Базовая ревизия")} {draft.baseRevision}
+            {t(", актуальная")} {revision}.
           </p>
           <button onClick={() => setDraft((d) => rebaseDraft(d, revision))}>
-            Сохранить мой ввод поверх новой ревизии
+            {t("Сохранить мой ввод поверх новой ревизии")}
           </button>
         </div>
       )}
@@ -68,10 +71,10 @@ export function Inspector({
         disabled={!draft.dirty || draft.conflict}
         onClick={() => void apply()}
       >
-        Применить свойства
+        {t("Применить свойства")}
       </button>
       <button onClick={() => setDraft(beginDraft(node.props, revision))}>
-        Сбросить ввод
+        {t("Сбросить ввод")}
       </button>
     </section>
   );

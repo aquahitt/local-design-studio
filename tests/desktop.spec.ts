@@ -124,6 +124,18 @@ test("desktop creates, saves, reopens disk project and isolates preview", async 
     expect(
       await iframe.evaluate(() => fetch("/api/session").then((r) => r.status)),
     ).toBe(403);
+    const rendered = await page.evaluate(async () => {
+      const session = await fetch("/api/session").then((response) => response.json());
+      const headers = { Authorization: `Bearer ${session.token}`, "Content-Type": "application/json", "x-studio-ui-token": session.uiToken };
+      const project = await fetch("/api/project", { headers }).then((response) => response.json());
+      const response = await fetch("/api/render", { method: "POST", headers, body: JSON.stringify({ pageId: project.pages[0].screenId, revision: project.revision, viewport: { width: 390, height: 844 } }) });
+      return { status: response.status, ...(await response.json()) };
+    });
+    expect(rendered.status).toBe(200);
+    expect(rendered.mimeType).toBe("image/png");
+    expect(rendered.data.length).toBeGreaterThan(100);
+    expect(rendered.text).toContain("Saved from desktop");
+    expect(rendered.bounds.some((bound: { id: string }) => bound.id === "demo-title")).toBe(true);
     await app.close();
     app = await launch();
     page = await app.firstWindow();

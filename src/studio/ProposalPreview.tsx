@@ -1,3 +1,4 @@
+import { useI18n } from "./i18n";
 import { DeviceFrame } from "./DeviceFrame";
 import { useMemo, useState } from "react";
 import type { Project } from "../core/project";
@@ -16,6 +17,8 @@ export function ProposalPreview({
   proposal: Proposal;
   library: ComponentLibrary;
 }) {
+  const { t } = useI18n();
+
   const [chosen, setChosen] = useState("");
   const result = useMemo(
     () =>
@@ -48,13 +51,13 @@ export function ProposalPreview({
       data-testid={"proposal-preview-" + proposal.id}
     >
       <p className="proposal-preview-caption">
-        Предварительный просмотр · проект пока не изменён
+        {t("Предварительный просмотр · проект пока не изменён")}
       </p>
       {result.pageIds.length > 1 && (
         <label>
-          Экран{" "}
+          {t("Экран")}{" "}
           <select
-            aria-label="Экран предложения"
+            aria-label={t("Экран предложения")}
             value={id}
             onChange={(e) => setChosen(e.target.value)}
           >
@@ -70,17 +73,17 @@ export function ProposalPreview({
       {!!result.pageIds.length && (
         <div className="proposal-comparison">
           {[
-            { label: "Сейчас", doc: project, page: beforePage },
-            { label: "После принятия", doc: after, page: afterPage },
+            { label: t("Сейчас"), doc: project, page: beforePage },
+            { label: t("После принятия"), doc: after, page: afterPage },
           ].map(({ label, doc, page }) => (
             <section key={label}>
               <h3>{label}</h3>
               <p>
                 {page
-                  ? `${page.name} · ${page.viewport.width} × ${page.viewport.height ?? "авто"}px · ${doc.theme}`
-                  : label === "Сейчас"
-                    ? "Новый экран"
-                    : "Экран будет удалён"}
+                  ? `${page.name} · ${page.viewport.width} × ${page.viewport.height ?? t("авто")}px · ${doc.theme}`
+                  : label === t("Сейчас")
+                    ? t("Новый экран")
+                    : t("Экран будет удалён")}
               </p>
               {page ? (
                 <div className="proposal-preview-scroll">
@@ -105,9 +108,9 @@ export function ProposalPreview({
                 </div>
               ) : (
                 <div className="empty-state">
-                  {label === "Сейчас"
-                    ? "Экрана ещё нет"
-                    : "Экран отсутствует после принятия"}
+                  {label === t("Сейчас")
+                    ? t("Экрана ещё нет")
+                    : t("Экран отсутствует после принятия")}
                 </div>
               )}
             </section>
@@ -116,13 +119,13 @@ export function ProposalPreview({
       )}
       {!!tokenNames.length && (
         <div className="proposal-token-changes">
-          <h3>Изменения токенов</h3>
+          <h3>{t("Изменения токенов")}</h3>
           <table>
             <thead>
               <tr>
-                <th>Токен</th>
-                <th>Сейчас</th>
-                <th>После принятия</th>
+                <th>{t("Токен")}</th>
+                <th>{t("Сейчас")}</th>
+                <th>{t("После принятия")}</th>
               </tr>
             </thead>
             <tbody>
@@ -148,7 +151,7 @@ export function ProposalPreview({
                               marginRight: 8,
                             }}
                           >
-                            Aa Бб
+                            {t("Aa Бб")}
                           </span>
                         )}
                       {["number", "dimension"].includes(
@@ -177,7 +180,7 @@ export function ProposalPreview({
                         )}
                       <code>
                         {tokens[name] === undefined
-                          ? "Удалён / отсутствует"
+                          ? t("Удалён / отсутствует")
                           : String(tokens[name])}
                       </code>
                     </td>
@@ -189,7 +192,7 @@ export function ProposalPreview({
         </div>
       )}
       {!result.pageIds.length && !tokenNames.length && (
-        <p>Визуальных изменений нет. Проверь точные операции ниже.</p>
+        <p>{t("Визуальных изменений нет. Проверь точные операции ниже.")}</p>
       )}
     </div>
   );

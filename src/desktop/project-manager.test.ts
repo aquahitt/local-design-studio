@@ -225,3 +225,30 @@ it("detects a replaced active directory even when its canonical pathname is unch
     await rename(displaced, root);
   }
 });
+
+it("registers operator-provided metadata in the desktop owner without writing paths to project data", async () => {
+  const { DesktopLibraries } = await import("../../desktop/libraries");
+  const { resolve } = await import("node:path");
+  const root = join(base, "external-project");
+  await projects.open(root, { create: true, name: "External project" });
+  await projects.close();
+  const libraries = new DesktopLibraries(join(base, "settings"));
+  await libraries.configure(root, resolve("examples/library/external"), true);
+  projects = new DesktopProjects(join(base, "settings"), async (project) => {
+    const library = await libraries.load(project);
+    return library ? [library.metadata] : [];
+  });
+  const session = await projects.open(root);
+  const response = await fetch(session.url + "/api/components", {
+    headers: { Authorization: `Bearer ${session.token}` },
+  });
+  const metadata = await response.json();
+  expect(
+    metadata.find(
+      (library: { id: string }) => library.id === "external-example",
+    )?.components.Notice,
+  ).toBeDefined();
+  expect(JSON.stringify(await project(root))).not.toContain(
+    "examples/library/external",
+  );
+});

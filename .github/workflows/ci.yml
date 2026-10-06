@@ -10,18 +10,21 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # Node 24 runtime
         with:
           persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # Node 24 runtime
         with:
           node-version: "24.2.0"
           cache: npm
       - run: npm ci
+      - run: npx playwright install --with-deps chromium
       - run: npm test
+      - run: node --test scripts/release/integrity.test.mjs
+      - run: npm run build:mcp
+      - run: node scripts/release/clean-smoke.mjs
       - run: npm run typecheck
       - run: npm run build
-      - run: npx playwright install --with-deps chromium
       - run: npm run test:browser
         env:
           CI: "true"
@@ -30,5 +33,8 @@ jobs:
           CI: "true"
           STUDIO_LIBRARY_ROOT: ${{ github.workspace }}/examples/library/external
       - run: npm run test:demo
+        env:
+          CI: "true"
+      - run: npx playwright test --config playwright.accessibility.config.ts
         env:
           CI: "true"

@@ -4,6 +4,8 @@ import type { Plugin, ViteDevServer } from "vite";
 import { connectStudioOwner } from "../../src/service/attach";
 import { parseProject, type Project } from "../../src/core/project";
 import { toCoreTokens, type LibraryMetadata } from "../../src/library/sdk";
+import { renderSnapshot } from "../../src/service/render";
+import { readImageAsset } from "../../src/service/image-assets";
 export function initialProject(library: LibraryMetadata): Project {
   const candidates = ["Text", "Button", "Card"].filter(
     (t) => library.components[t],
@@ -50,13 +52,17 @@ export function studioServicePlugin({
         libraryMetadata: metadata,
         initialProject: initialProject(metadata.at(-1)!),
         autoApply: process.env.STUDIO_AUTO_APPLY === "1",
+        renderSnapshot: (project, options) => renderSnapshot(project, options, {
+          externalRoot: process.env.STUDIO_LIBRARY_ROOT,
+          readAsset: (name) => readImageAsset(resolve(projectRoot), name),
+        }),
       });
       owner.catch((error) =>
         vite.config.logger.error("Studio owner: " + error.message),
       );
       vite.middlewares.use(async (req, res, next) => {
         const pathname = (req.url ?? "").split("?")[0];
-        const asset = /^\/assets\/[a-f0-9]{64}\.svg$/.test(pathname);
+        const asset = /^\/assets\/[a-f0-9]{64}\.(svg|png)$/.test(pathname);
         if (!pathname.startsWith("/api/") && !asset) return next();
         if (
           !origins.some(
@@ -104,7 +110,7 @@ export function studioServicePlugin({
           let size = 0;
           for await (const chunk of req) {
             size += chunk.length;
-            if (size > 1024 * 1024) {
+            if (size > (pathname === "/api/assets" ? 12 * 1024 * 1024 : 1024 * 1024)) {
               res.statusCode = 413;
               res.end("PAYLOAD_TOO_LARGE");
               return;

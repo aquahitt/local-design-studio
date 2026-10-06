@@ -1,3 +1,4 @@
+import { useI18n } from "../studio/i18n";
 import { useEffect, useState, useRef } from "react";
 import { StudioApp } from "../studio/App";
 import type { DesktopProject } from "./types";
@@ -15,13 +16,19 @@ const messages: Record<string, string> = {
   UNSAFE_SYMLINK: "Выбери папку проекта напрямую, без символьной ссылки.",
 };
 export function DesktopApp() {
+  const { t, locale } = useI18n();
+
   const projectbar = useRef<HTMLElement>(null);
   const bridge = window.studioDesktop;
   const [active, setActive] = useState<DesktopProject | null>(null);
   const [recent, setRecent] = useState<DesktopProject[]>([]);
-  const [name, setName] = useState("Новый проект");
+  const [name, setName] = useState(t("Новый проект"));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  useEffect(() => {
+    if (bridge)
+      void bridge.setLocale(locale).catch((error) => setError(error.message));
+  }, [bridge, locale]);
   useEffect(() => {
     if (bridge)
       void bridge
@@ -56,7 +63,11 @@ export function DesktopApp() {
         /^Error invoking remote method '[^']+': Error: /,
         "",
       );
-      setError(messages[message] ?? "Не удалось открыть проект: " + message);
+      setError(
+        messages[message]
+          ? t(messages[message])
+          : t("Не удалось открыть проект: ") + message,
+      );
     } finally {
       setBusy(false);
     }
@@ -64,7 +75,9 @@ export function DesktopApp() {
   if (!bridge)
     return (
       <main className="desktop-launcher">
-        <p role="alert">Desktop-мост недоступен. Перезапусти приложение.</p>
+        <p role="alert">
+          {t("Desktop-мост недоступен. Перезапусти приложение.")}
+        </p>
       </main>
     );
   if (active)
@@ -87,32 +100,58 @@ export function DesktopApp() {
               }
             }}
           >
-            Все проекты
+            {t("Все проекты")}
           </button>
           <strong>{active.name}</strong>
           <span title={active.root}>{active.root}</span>
+          <button
+            disabled={busy}
+            onClick={() => void run(() => bridge.configureLibrary())}
+          >
+            {active.library
+              ? t("Сменить библиотеку")
+              : t("Подключить библиотеку")}
+          </button>
+          {active.library && (
+            <button
+              disabled={busy}
+              onClick={() => void run(() => bridge.clearLibrary())}
+            >
+              {t("Отключить библиотеку")}
+            </button>
+          )}
           {error && <p role="alert">{error}</p>}
+          {active.libraryError && (
+            <p role="alert">
+              {t("Библиотека недоступна:")} {active.libraryError}
+              {t(". Подключи её заново или отключи.")}
+            </p>
+          )}
         </header>
-        <StudioApp key={active.root} />
+        <StudioApp
+          key={active.root + (active.library?.bundleUrl ?? "")}
+          desktopLibrary={active.library}
+        />
       </>
     );
   return (
     <main className="desktop-launcher">
       <div className="desktop-intro">
         <span className="eyebrow">LOCAL DESIGN STUDIO</span>
-        <h1>Твои проекты — на твоём компьютере</h1>
+        <h1>{t("Твои проекты — на твоём компьютере")}</h1>
         <p>
-          Собирай экраны, работай с компонентами и проверяй предложения агента.
-          Изменения сохраняются в папке проекта.
+          {t(
+            "Собирай экраны, работай с компонентами и проверяй предложения агента. Изменения сохраняются в папке проекта.",
+          )}
         </p>
       </div>
       <div className="desktop-startgrid">
         <section className="desktop-new">
-          <h2>Начать проект</h2>
+          <h2>{t("Начать проект")}</h2>
           <label>
-            Название проекта
+            {t("Название проекта")}
             <input
-              aria-label="Название проекта"
+              aria-label={t("Название проекта")}
               value={name}
               maxLength={160}
               disabled={busy}
@@ -124,28 +163,30 @@ export function DesktopApp() {
             disabled={busy || !name.trim()}
             onClick={() => void run(() => bridge.create(name))}
           >
-            Создать проект
+            {t("Создать проект")}
           </button>
           <small>
-            Выбери пустую папку. Приложение сохранит туда документ и ресурсы.
+            {t(
+              "Выбери пустую папку. Приложение сохранит туда документ и ресурсы.",
+            )}
           </small>
           <div className="desktop-actions">
             <button
               disabled={busy}
               onClick={() => void run(() => bridge.open())}
             >
-              Открыть проект
+              {t("Открыть проект")}
             </button>
             <button
               disabled={busy}
               onClick={() => void run(() => bridge.example())}
             >
-              Попробовать пример
+              {t("Попробовать пример")}
             </button>
           </div>
         </section>
         <section className="desktop-recent">
-          <h2>Недавние проекты</h2>
+          <h2>{t("Недавние проекты")}</h2>
           {recent.length ? (
             recent.map((p) => (
               <button
@@ -158,19 +199,20 @@ export function DesktopApp() {
               </button>
             ))
           ) : (
-            <p>Здесь появятся проекты, которые ты открывал.</p>
+            <p>{t("Здесь появятся проекты, которые ты открывал.")}</p>
           )}
         </section>
       </div>
-      {busy && <p role="status">Открываем проект…</p>}
+      {busy && <p role="status">{t("Открываем проект…")}</p>}
       {error && (
         <div className="desktop-error" role="alert">
           {error}
         </div>
       )}
       <footer>
-        Работает локально · дизайн-система студии включена · внешние библиотеки
-        подключаются в версии для разработчиков
+        {t(
+          "Работает локально · дизайн-система студии включена · библиотеки подключаются для выбранного проекта",
+        )}
       </footer>
     </main>
   );

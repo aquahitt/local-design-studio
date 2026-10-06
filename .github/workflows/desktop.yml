@@ -30,15 +30,26 @@ jobs:
             arch: x64
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
         with:
           persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version: "24.2.0"
           cache: npm
       - run: npm ci
+      - name: Install test Chromium and Linux desktop runtime dependencies
+        if: runner.os == 'Linux'
+        run: npx playwright install --with-deps chromium
+      - name: Install test Chromium
+        if: runner.os != 'Linux'
+        run: npx playwright install chromium
       - run: npm test
       - name: Package desktop application
         run: npm run make:desktop
@@ -54,34 +65,86 @@ jobs:
       - name: Test packaged application (macOS/Windows)
         if: runner.os != 'Linux'
         run: node scripts/desktop/test-packaged.mjs
-      - name: Install Linux runtime dependencies
-        if: runner.os == 'Linux'
-        run: npx playwright install-deps chromium
       - name: Test packaged application (Linux)
         if: runner.os == 'Linux'
         run: xvfb-run -a node scripts/desktop/test-packaged.mjs
+      - name: Stage standalone helper, licenses and build metadata
+        run: node scripts/release/stage.mjs
+      - name: Clean standalone helper lifecycle
+        run: node scripts/release/clean-smoke.mjs
       - run: node scripts/desktop/checksums.mjs
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - name: Attest release artifact provenance
+        id: attest
+        if: startsWith(github.ref, 'refs/tags/desktop-v')
+        uses: actions/attest@c32b4b8b198b65d0bd9d63490e847ff7b53989d4 # v4, Node 24
+        with:
+          subject-checksums: out/make/SHA256SUMS-${{ matrix.platform }}-${{ matrix.arch }}.txt
+      - name: Include provenance bundle in checksums
+        if: startsWith(github.ref, 'refs/tags/desktop-v')
+        shell: bash
+        env:
+          ATTESTATION_BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          cp "$ATTESTATION_BUNDLE" "out/make/provenance-${{ matrix.platform }}-${{ matrix.arch }}.json"
+          node scripts/desktop/checksums.mjs
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: desktop-${{ matrix.platform }}-${{ matrix.arch }}
           path: out/make/**
           if-no-files-found: error
           retention-days: 14
+  release-verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # Node 24 runtime
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # Node 24 runtime
+        with:
+          node-version: "24.2.0"
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm test
+      - run: node --test scripts/release/integrity.test.mjs
+      - run: npm run build:mcp
+      - run: node scripts/release/clean-smoke.mjs
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm run test:browser
+        env:
+          CI: "true"
+      - run: npx playwright test tests/studio-external.spec.ts
+        env:
+          CI: "true"
+          STUDIO_LIBRARY_ROOT: ${{ github.workspace }}/examples/library/external
+      - run: npm run test:demo
+        env:
+          CI: "true"
+      - run: npx playwright test --config playwright.accessibility.config.ts
+        env:
+          CI: "true"
   release:
     if: startsWith(github.ref, 'refs/tags/desktop-v')
-    needs: desktop
+    needs: [desktop, release-verify]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: "24.2.0"
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
         with:
           pattern: desktop-*
           path: release-assets
           merge-multiple: true
+      - name: Verify every downloaded release artifact
+        run: node scripts/release/integrity.mjs release-assets
       - name: Publish tested unsigned alpha release
         env:
           GH_TOKEN: ${{ github.token }}

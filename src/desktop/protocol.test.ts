@@ -130,3 +130,49 @@ it("desktop UI rejects proposals through protocol while preview and agents canno
     await rm(root, { recursive: true, force: true });
   }
 });
+
+it("serves only the active library bundle on the isolated preview origin", async () => {
+  const { mkdtemp, writeFile, rm, symlink, realpath } =
+    await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const root = await realpath(
+    await mkdtemp(join(tmpdir(), "studio-bundle-protocol-")),
+  );
+  try {
+    await writeFile(join(root, "library.js"), "export default {};");
+    const bundle = { id: "active", root, files: ["library.js", "linked.js"] };
+    const handler = createDesktopHandler(
+      root,
+      () => undefined,
+      fetch,
+      () => bundle,
+    );
+    expect(
+      (await handler(new Request("studio://preview/library/active/library.js")))
+        .status,
+    ).toBe(200);
+    expect(
+      (await handler(new Request("studio://app/library/active/library.js")))
+        .status,
+    ).toBe(403);
+    expect(
+      (await handler(new Request("studio://preview/library/old/library.js")))
+        .status,
+    ).toBe(404);
+    expect(
+      (
+        await handler(
+          new Request("studio://preview/library/active/secrets.json"),
+        )
+      ).status,
+    ).toBe(404);
+    await symlink(join(root, "library.js"), join(root, "linked.js"));
+    expect(
+      (await handler(new Request("studio://preview/library/active/linked.js")))
+        .status,
+    ).toBe(403);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

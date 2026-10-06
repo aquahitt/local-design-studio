@@ -16,14 +16,16 @@ export interface LibraryConfig {
   externalRoot?: string;
   studioOnly?: boolean;
 }
-interface LocalInspection {
+export interface LocalInspection {
   root: string;
   metadata: LibraryMetadata;
   modules: Record<string, { path: string; exportName: string }>;
   css: string;
   entry?: { path: string; exportName: string };
 }
-function inspectLocal(config: LibraryConfig): LocalInspection | undefined {
+export function inspectLocal(
+  config: LibraryConfig,
+): LocalInspection | undefined {
   if (!config.externalRoot) return;
   if (!isAbsolute(config.externalRoot))
     throw new Error(
@@ -235,7 +237,10 @@ export function getConfiguredLibraryMetadata(
     ...(local ? [local.metadata] : []),
   ];
 }
-export function studioLibraryPlugin(config: LibraryConfig = {}): Plugin {
+export function studioLibraryPlugin(
+  config: LibraryConfig = {},
+  sourceRoot = process.cwd(),
+): Plugin {
   const local = config.studioOnly ? undefined : inspectLocal(config);
   const id = "virtual:studio-libraries",
     cssId = "virtual:studio-library.css";
@@ -246,7 +251,7 @@ export function studioLibraryPlugin(config: LibraryConfig = {}): Plugin {
         resolve: { dedupe: ["react", "react-dom"] },
         ssr: { noExternal: [/^@radix-ui\//] },
         server: {
-          fs: { allow: [process.cwd(), ...(local ? [local.root] : [])] },
+          fs: { allow: [sourceRoot, ...(local ? [local.root] : [])] },
         },
       };
     },
@@ -256,16 +261,16 @@ export function studioLibraryPlugin(config: LibraryConfig = {}): Plugin {
     load(request) {
       if (request === "\0" + cssId) return local?.css ?? "";
       if (request !== "\0" + id) return;
-      const studioImport = `import {studioLibrary} from ${JSON.stringify(resolve(process.cwd(), "src/library/studio.tsx"))};\n`;
+      const studioImport = `import {studioLibrary} from ${JSON.stringify(resolve(sourceRoot, "src/library/studio.tsx"))};\n`;
       if (config.studioOnly)
         return studioImport + "export const libraries=[studioLibrary];";
       let code =
         studioImport +
-        `import {builtinLibrary} from ${JSON.stringify(resolve(process.cwd(), "src/library/builtin.tsx"))};\nimport {exampleLibrary} from ${JSON.stringify(resolve(process.cwd(), "src/library/example.tsx"))};\n`;
+        `import {builtinLibrary} from ${JSON.stringify(resolve(sourceRoot, "src/library/builtin.tsx"))};\nimport {exampleLibrary} from ${JSON.stringify(resolve(sourceRoot, "src/library/example.tsx"))};\n`;
       if (local?.entry) {
-        code += `import {${local.entry.exportName} as runtime} from ${JSON.stringify(local.entry.path)};\nimport {bindLibraryManifest} from ${JSON.stringify(resolve(process.cwd(), "src/library/sdk.ts"))};\nconst local=bindLibraryManifest(runtime,${JSON.stringify(local.metadata)});\nexport const libraries=[studioLibrary,builtinLibrary,exampleLibrary,local];`;
+        code += `import {${local.entry.exportName} as runtime} from ${JSON.stringify(local.entry.path)};\nimport {bindLibraryManifest} from ${JSON.stringify(resolve(sourceRoot, "src/library/sdk.ts"))};\nconst local=bindLibraryManifest(runtime,${JSON.stringify(local.metadata)});\nexport const libraries=[studioLibrary,builtinLibrary,exampleLibrary,local];`;
       } else if (local) {
-        code += `import {createLocalLibrary} from ${JSON.stringify(resolve(process.cwd(), "src/library/localBrowser.tsx"))};\nimport ${JSON.stringify(cssId)};\n`;
+        code += `import {createLocalLibrary} from ${JSON.stringify(resolve(sourceRoot, "src/library/localBrowser.tsx"))};\nimport ${JSON.stringify(cssId)};\n`;
         let n = 0;
         const bindings: string[] = [];
         for (const [name, module] of Object.entries(local.modules)) {
@@ -280,4 +285,26 @@ export function studioLibraryPlugin(config: LibraryConfig = {}): Plugin {
       return code;
     },
   };
+}
+
+/** Entry source for an already inspected, operator-trusted desktop library. */
+export function desktopLibraryEntry(
+  local: LocalInspection,
+  adapter: string,
+  sdk: string,
+): string {
+  if (local.entry)
+    return `import {${local.entry.exportName} as runtime} from ${JSON.stringify(local.entry.path)};\nimport {bindLibraryManifest} from ${JSON.stringify(sdk)};\nexport default bindLibraryManifest(runtime,${JSON.stringify(local.metadata)});`;
+  let code = `import {createLocalLibrary} from ${JSON.stringify(adapter)};\n`;
+  const bindings: string[] = [];
+  for (const [name, module] of Object.entries(local.modules)) {
+    if (local.metadata.components[name]?.support !== "rendered") continue;
+    const binding = `c${bindings.length}`;
+    code += `import {${module.exportName} as ${binding}} from ${JSON.stringify(module.path)};\n`;
+    bindings.push(`${JSON.stringify(name)}:${binding}`);
+  }
+  return (
+    code +
+    `export default createLocalLibrary({${bindings.join(",")}},${JSON.stringify(local.metadata)});`
+  );
 }

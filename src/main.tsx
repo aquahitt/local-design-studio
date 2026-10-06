@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { App } from "./pilot/App";
 import { StudioApp } from "./studio/App";
 import { PreviewApp } from "./studio/iframeentry";
+import { I18nProvider } from "./studio/i18n";
 import "./studio/styles.css";
 import "@puckeditor/core/puck.css";
 import "./pilot/styles.css";
@@ -14,13 +15,13 @@ createRoot(root).render(
     new URLSearchParams(location.search).has("preview") ? (
     <PreviewApp />
   ) : __STUDIO_DESKTOP__ ? (
-    <DesktopApp />
+    <I18nProvider><DesktopApp /></I18nProvider>
   ) : location.pathname.startsWith("/pilot") ? (
     <App />
   ) : (
-    <>
+    <I18nProvider>
       {__STUDIO_DEMO__ && <DemoBanner />}
       <StudioApp />
-    </>
+    </I18nProvider>
   ),
 );

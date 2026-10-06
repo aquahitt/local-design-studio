@@ -1248,3 +1248,15 @@
 .viewport-bulk-actions .studio-select {
   min-width: 220px;
 }
+.asset-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(240px,1fr)); gap: 20px; margin-top: 24px; }
+.asset-card { display: grid; gap: 12px; padding: 16px; border: 1px solid var(--ds-border); border-radius: 16px; }
+.asset-card img { width: 100%; height: 180px; object-fit: contain; background: var(--ds-surface); }
+.asset-card strong { overflow-wrap: anywhere; }
+.asset-card div { display: flex; flex-wrap: wrap; gap: 8px; }
+.asset-import { display: grid; gap: 8px; }
+.layer-toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+.layer-actions { margin-bottom: 20px; }
+.layer-row { display: flex; align-items: center; gap: 4px; }
+.layer-row input { flex: 0 0 auto; width: 16px; }
+.layer-row button { flex: 1; min-width: 0; }
+.geometry-fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }

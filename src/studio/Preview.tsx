@@ -1,8 +1,10 @@
+import { useI18n, type StudioLocale } from "./i18n";
 import {
   Component,
   useEffect,
   useRef,
   useState,
+  useContext,
   type ReactNode,
   type CSSProperties,
   type ComponentType,
@@ -14,6 +16,8 @@ import type {
 } from "../library/sdk";
 import { resolveTokens } from "../core/tokens";
 import type { Project, ProjectNode } from "../core/project";
+import { DesktopLibraryContext } from "./desktopLibraryContext";
+import { resolveSceneNodes, sceneSelectionId } from "../core/design-components";
 export class RenderBoundary extends Component<
   { children: ReactNode; resetKey?: string },
   { error: string }
@@ -28,15 +32,22 @@ export class RenderBoundary extends Component<
   }
   render() {
     return this.state.error ? (
-      <div role="alert" className="render-error">
-        Компонент требует контекст: {this.state.error}
-      </div>
+      <RenderError message={this.state.error} />
     ) : (
       this.props.children
     );
   }
 }
+function RenderError({ message }: { message: string }) {
+  const { t } = useI18n();
+  return (
+    <div role="alert" className="render-error">
+      {t("Компонент требует контекст:")} {message}
+    </div>
+  );
+}
 export interface PreviewInput {
+  locale?: StudioLocale;
   project: Project;
   library: ComponentLibrary;
   theme: string;
@@ -46,7 +57,8 @@ export interface PreviewInput {
   component?: { type: string; props: Props };
   nodes?: ProjectNode[];
   selected?: string | null;
-  onSelect?: (id: string) => void;
+  selectedIds?: string[];
+  onSelect?: (id: string, additive?: boolean) => void;
 }
 export function Preview({
   project,
@@ -58,8 +70,11 @@ export function Preview({
   component,
   nodes,
   selected,
+  selectedIds,
   onSelect,
 }: PreviewInput) {
+  const { locale } = useI18n();
+  const desktopLibrary = useContext(DesktopLibraryContext);
   const ref = useRef<HTMLIFrameElement>(null);
   const container = useRef<HTMLDivElement>(null);
   const [availableWidth, setAvailableWidth] = useState(0);
@@ -106,7 +121,7 @@ export function Preview({
         event.data?.type === "studio-preview-select" &&
         typeof event.data.id === "string"
       )
-        onSelect?.(event.data.id);
+        onSelect?.(event.data.id, event.data.additive === true);
     }
     window.addEventListener("message", receive);
     return () => window.removeEventListener("message", receive);
@@ -116,6 +131,7 @@ export function Preview({
       ref.current?.contentWindow?.postMessage(
         {
           type: "studio-preview-render",
+          locale,
           project,
           library: { id: library.id, version: library.version },
           theme,
@@ -123,10 +139,24 @@ export function Preview({
           autoHeight,
           nodes,
           selected,
+          selectedIds,
+          desktopLibrary,
         },
         __STUDIO_DESKTOP__ ? "studio://preview" : location.origin,
       );
-  }, [ready, project, library, theme, component, autoHeight, nodes, selected]);
+  }, [
+    ready,
+    project,
+    library,
+    theme,
+    component,
+    autoHeight,
+    nodes,
+    selected,
+    selectedIds,
+    desktopLibrary,
+    locale,
+  ]);
   const renderWidth = Math.max(availableWidth, contentWidth);
   const scale =
     autoHeight && availableWidth && renderWidth
@@ -214,75 +244,183 @@ export function Nodes({
   library,
   project,
   selected,
+  selectedIds = [],
   onSelect,
+  inheritedLocked = false,
+  materializedNodes = false,
 }: {
   nodes: ProjectNode[];
   library: ComponentLibrary;
   project: Project;
   selected: string | null;
-  onSelect: (id: string) => void;
+  selectedIds?: string[];
+  onSelect: (id: string, additive?: boolean) => void;
+  inheritedLocked?: boolean;
+  materializedNodes?: boolean;
 }) {
+  const { t } = useI18n();
+  const hasInstance = (rows: ProjectNode[]): boolean => rows.some((node) => node.instance || Object.values(node.slots).some(hasInstance));
+  const materialized = !materializedNodes && hasInstance(nodes)
+    ? resolveSceneNodes(project, nodes)
+    : nodes;
   return (
     <>
-      {nodes.map((node) => {
-        const definition =
-          library.id === project.library.id &&
-          library.version === project.library.version
-            ? library.components[node.type]
-            : undefined;
-        return (
-          <div
-            key={node.id}
-            data-node-id={node.id}
-            onClick={(e) => {
-              e.stopPropagation();
-              onSelect(node.id);
-            }}
-            style={
-              {
-                position: "relative",
-                padding: 8,
-                outline:
-                  node.id === selected
-                    ? "2px solid #4673e8"
-                    : "1px dashed #ddd",
-                borderRadius: 6,
-                marginBottom: 12,
-              } as CSSProperties
-            }
-          >
-            {definition ? (
-              <RenderBoundary resetKey={node.type + JSON.stringify(node.props)}>
-                <ComponentView
-                  definition={definition}
-                  props={node.props as Props}
-                  project={project}
+      {materialized
+        .filter((node) => !node.hidden)
+        .map((node) => {
+          const definition =
+            library.id === project.library.id &&
+            library.version === project.library.version
+              ? library.components[node.type]
+              : undefined;
+          const resolved = node.type === "StudioImage" || node.scene?.kind === "image" ? resolveProps(node.props as Props, project) : node.props;
+          return (
+            <div
+              key={node.id}
+              data-node-id={node.id}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (!node.locked && !inheritedLocked)
+                  onSelect(
+                    sceneSelectionId(node),
+                    e.shiftKey || e.metaKey || e.ctrlKey,
+                  );
+              }}
+              style={
+                {
+                  position: node.scene ? "absolute" : "relative",
+                  padding: node.scene ? 0 : 8,
+                  ...(node.scene
+                    ? {
+                        left: node.scene.x,
+                        top: node.scene.y,
+                        width: node.scene.width,
+                        height: node.scene.height,
+                        transform: `rotate(${node.scene.rotation ?? 0}deg)`,
+                        transformOrigin: "0 0",
+                        opacity: node.scene.opacity ?? 1,
+                        overflow: node.scene.clip ? "hidden" : "visible",
+                        background:
+                          node.scene.kind === "text"
+                            ? undefined
+                            : node.scene.fill,
+                        color:
+                          node.scene.kind === "text"
+                            ? node.scene.fill
+                            : undefined,
+                        border:
+                          node.scene.stroke && node.scene.kind !== "vector"
+                            ? `${node.scene.strokeWidth ?? 1}px solid ${node.scene.stroke}`
+                            : undefined,
+                        borderRadius: node.scene.radius ?? 0,
+                        boxSizing: "border-box",
+                      }
+                    : {}),
+                  outline:
+                    node.id === selected || selectedIds.includes(node.id)
+                      ? "2px solid #4673e8"
+                      : node.scene
+                        ? undefined
+                        : "1px dashed #ddd",
+                  ...(node.scene ? {} : { borderRadius: 6, marginBottom: 12 }),
+                } as CSSProperties
+              }
+            >
+              {node.scene?.kind === "text" ? (
+                <div
+                  style={{
+                    fontSize: node.scene.fontSize ?? 16,
+                    whiteSpace: "pre-wrap",
+                    overflowWrap: "anywhere",
+                    lineHeight: 1.4,
+                  }}
                 >
-                  {Object.keys(node.slots).length
-                    ? Object.entries(node.slots).map(([slot, children]) => (
-                        <div key={slot} data-slot={slot}>
-                          <Nodes
-                            {...{
-                              nodes: children,
-                              library,
-                              project,
-                              selected,
-                              onSelect,
-                            }}
-                          />
-                        </div>
-                      ))
-                    : undefined}
-                </ComponentView>
-              </RenderBoundary>
-            ) : (
-              <div role="status">
-                Недоступен {node.type} · исходные данные сохранены
-              </div>
-            )}
-          </div>
-        );
-      })}
+                  {String(
+                    resolveProps(node.props as Props, project).text ?? "",
+                  )}
+                </div>
+              ) : node.scene?.kind === "vector" ? (
+                <svg
+                  width="100%"
+                  height="100%"
+                  viewBox={`0 0 ${node.scene.width} ${node.scene.height}`}
+                >
+                  <path
+                    d={node.scene.path ?? ""}
+                    fill={node.scene.fill ?? "none"}
+                    stroke={node.scene.stroke}
+                    strokeWidth={node.scene.strokeWidth ?? 1}
+                  />
+                </svg>
+              ) : node.type === "StudioImage" ||
+                node.scene?.kind === "image" ? (
+                <img
+                  src={String(resolved.src ?? "")}
+                  alt={String(resolved.alt ?? "")}
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit:
+                      resolved.objectFit === "cover" ? "cover" : "contain",
+                    objectPosition: String(
+                      resolved.objectPosition ?? "50% 50%",
+                    ),
+                  }}
+                />
+              ) : node.scene?.kind === "frame" || node.type === "SceneFrame" ? (
+                Object.entries(node.slots).map(([slot, children]) => (
+                  <Nodes
+                    key={slot}
+                    {...{
+                      nodes: children,
+                      inheritedLocked: inheritedLocked || !!node.locked,
+                      materializedNodes: true,
+                      library,
+                      project,
+                      selected,
+                      selectedIds,
+                      onSelect,
+                    }}
+                  />
+                ))
+              ) : definition ? (
+                <RenderBoundary
+                  resetKey={node.type + JSON.stringify(node.props)}
+                >
+                  <ComponentView
+                    definition={definition}
+                    props={node.props as Props}
+                    project={project}
+                  >
+                    {Object.keys(node.slots).length
+                      ? Object.entries(node.slots).map(([slot, children]) => (
+                          <div key={slot} data-slot={slot}>
+                            <Nodes
+                              {...{
+                                nodes: children,
+                                inheritedLocked: inheritedLocked || !!node.locked,
+                                materializedNodes: true,
+                                library,
+                                project,
+                                selected,
+                                selectedIds,
+                                onSelect,
+                              }}
+                            />
+                          </div>
+                        ))
+                      : undefined}
+                  </ComponentView>
+                </RenderBoundary>
+              ) : (
+                <div role="status">
+                  {t("Недоступен")} {node.type}{" "}
+                  {t("· исходные данные сохранены")}
+                </div>
+              )}
+            </div>
+          );
+        })}
     </>
   );
 }

@@ -1,6 +1,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
+import { verifyRelease } from "../release/integrity.mjs";
 const { version } = JSON.parse(await readFile("package.json", "utf8"));
 const tag = process.env.RELEASE_TAG;
 if (tag !== `desktop-v${version}` || !version.includes("-alpha."))
@@ -16,6 +17,7 @@ async function walk(root) {
   }
   return files;
 }
+await verifyRelease("release-assets");
 const files = await walk("release-assets");
 const existing =
   spawnSync("gh", ["release", "view", tag], { stdio: "ignore" }).status === 0;

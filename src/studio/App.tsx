@@ -1,4 +1,15 @@
+import { useI18n } from "./i18n";
 import { StudioSelect } from "./StudioSelect";
+import { Assets } from "./Assets";
+import { LayerActions } from "./LayerActions";
+import { NodeLayoutInspector } from "./NodeLayoutInspector";
+import { Annotations } from "./Annotations";
+import { Handoff } from "./Handoff";
+import { StudioLanguageChoice } from "./i18n";
+import { useStudioShortcuts } from "./shortcuts";
+import { desktopMetadataLibrary } from "./desktopLibraries";
+import { DesktopLibraryContext } from "./desktopLibraryContext";
+import type { DesktopLibrary } from "../desktop/types";
 import { Groups, inGroup } from "./Groups";
 import { DEVICE_PRESETS } from "./devicePresets";
 import { ViewportControls } from "./ViewportControls";
@@ -136,7 +147,14 @@ function proposalChanges(project: Project, operation: Operation): string[] {
     return ["Переименовать экран " + operation.pageId + " → " + operation.name];
   return ["Заменить набор токенов"];
 }
-export function StudioApp() {
+export function StudioApp({
+  desktopLibrary,
+}: { desktopLibrary?: DesktopLibrary } = {}) {
+  const { t } = useI18n();
+
+  const activeLibraries = desktopLibrary
+    ? [...libraries, desktopMetadataLibrary(desktopLibrary.metadata)]
+    : libraries;
   const [studioTheme, setStudioTheme] = useState(readStudioTheme);
   useEffect(() => {
     try {
@@ -146,14 +164,24 @@ export function StudioApp() {
     }
   }, [studioTheme]);
   const [project, setProject] = useState<Project | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [loadProgress, setLoadProgress] = useState<{
+    received: number;
+    total?: number;
+  } | null>(null);
+  const loadingController = useRef<AbortController | null>(null);
   const current = useRef<Project | null>(null);
   const [client, setClient] = useState<StudioClient | null>(null);
   const [view, setView] = useState<
-    "catalog" | "tokens" | "editor" | "proposals" | "structure"
+    "catalog" | "tokens" | "editor" | "proposals" | "structure" | "assets"
   >("catalog");
   const [pageId, setPageId] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
-  const [inspectorDirty, setDirty] = useState(false);
+  const [multipleIds, setMultipleIds] = useState<string[]>([]);
+  const [propsDirty, setDirty] = useState(false);
+  const [layoutDirty, setLayoutDirty] = useState(false);
+  const [definitionDirty, setDefinitionDirty] = useState(false);
+  const inspectorDirty = propsDirty || layoutDirty || definitionDirty;
   const [viewportDirty, setViewportDirty] = useState(false);
   const viewportPageSnapshot = useRef<ProjectPage | null>(null);
   const dirty = inspectorDirty || viewportDirty;
@@ -161,8 +189,9 @@ export function StudioApp() {
   const [shade, setShade] = useState(false);
   const [deviceControlsOpen, setDeviceControlsOpen] = useState(false);
   useEffect(() => setShade(false), [pageId]);
+  useEffect(() => setMultipleIds([]), [pageId]);
   const [error, setError] = useState("");
-  const [status, setStatus] = useState("Подключение к локальным файлам…");
+  const [status, setStatus] = useState(t("Подключение к локальным файлам…"));
   const [reviewing, setReviewing] = useState<string | null>(null);
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [proposalList, setProposalList] = useState<"pending" | "history">(
@@ -192,19 +221,26 @@ export function StudioApp() {
     );
     setStatus(
       (__STUDIO_DEMO__
-        ? "Сохранено в браузере · ревизия "
-        : "Сохранено локально · ревизия ") + next.revision,
+        ? t("Сохранено в браузере · ревизия ")
+        : t("Сохранено локально · ревизия ")) + next.revision,
     );
   }, []);
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
+    loadingController.current = controller;
     let api: StudioClient;
     let busy = false;
     let poll: ReturnType<typeof setInterval> | undefined;
     void (async () => {
       try {
         api = await StudioClient.connect();
-        const initial = await api.read();
+        const initial = await api.read({
+          signal: controller.signal,
+          onProgress: (received, total) => {
+            if (active) setLoadProgress({ received, total });
+          },
+        });
         if (!active) return;
         setClient(api);
         accept(initial);
@@ -223,7 +259,7 @@ export function StudioApp() {
               if (active) {
                 setError(e.message);
                 setStatus(
-                  "Сервис недоступен · сохранённые файлы остаются локально",
+                  t("Сервис недоступен · сохранённые файлы остаются локально"),
                 );
               }
             })
@@ -232,11 +268,17 @@ export function StudioApp() {
             });
         }, 650);
       } catch (e) {
-        if (active) setError((e as Error).message);
+        if (active)
+          setError(
+            controller.signal.aborted
+              ? t("Загрузка отменена. Файлы проекта сохранены.")
+              : (e as Error).message,
+          );
       }
     })();
     return () => {
       active = false;
+      controller.abort();
       if (poll) clearInterval(poll);
       if (api)
         void api
@@ -248,7 +290,7 @@ export function StudioApp() {
           })
           .catch(() => {});
     };
-  }, [accept]);
+  }, [accept, loadAttempt]);
   useEffect(() => {
     if (!client || !project) return;
     const contextPage =
@@ -272,7 +314,9 @@ export function StudioApp() {
         .request("context", {
           clientId: clientId.current,
           pageId: contextPage.screenId,
-          selectedIds: selected ? [selected] : [],
+          selectedIds: [
+            ...new Set([...multipleIds, ...(selected ? [selected] : [])]),
+          ],
           viewport: {
             ...contextPage.viewport,
             content: contentViewport(contextPage.viewport),
@@ -287,18 +331,18 @@ export function StudioApp() {
     send();
     const timer = setInterval(send, 3500);
     return () => clearInterval(timer);
-  }, [client, project, pageId, selected, dirty, zoom]);
+  }, [client, project, pageId, selected, multipleIds, dirty, zoom]);
   const livePage = project?.pages.find((p) => p.screenId === pageId);
   if (livePage) viewportPageSnapshot.current = livePage;
   const page =
     livePage ??
     (viewportDirty ? viewportPageSnapshot.current : null) ??
     project?.pages[0];
-  const library: ComponentLibrary | undefined = libraries.find(
+  const library: ComponentLibrary | undefined = activeLibraries.find(
     (l) =>
       l.id === project?.library.id && l.version === project?.library.version,
   );
-  const displayLibrary = library ?? libraries[0];
+  const displayLibrary = library ?? activeLibraries[0];
   const groupedPages =
     project?.pages.filter((p) =>
       inGroup(project, groupFilter, "pages", p.screenId),
@@ -329,12 +373,14 @@ export function StudioApp() {
     ) {
       if (dirty) {
         setError(
-          "Выделенный слой удалён внешней правкой. Черновик сохранён: скопируй его или сбрось ввод.",
+          t(
+            "Выделенный слой удалён внешней правкой. Черновик сохранён: скопируй его или сбрось ввод.",
+          ),
         );
         return;
       }
       setSelected(null);
-      setError("Выделенный слой удалён внешней правкой.");
+      setError(t("Выделенный слой удалён внешней правкой."));
     }
   }, [project, selected, dirty]);
   async function mutate(
@@ -343,30 +389,35 @@ export function StudioApp() {
     baseRevision = current.current?.revision,
   ) {
     if (!client || baseRevision === undefined) return;
-    setStatus("Сохранение…");
+    setStatus(t("Сохранение…"));
     try {
       const next = await client.apply(baseRevision, operations, description);
       accept(next);
       setError("");
     } catch (e) {
-      setStatus("Правка не сохранена");
+      setStatus(t("Правка не сохранена"));
       setError((e as Error).message);
       throw e;
     }
   }
-  function select(id: string) {
+  function select(id: string, additive = false) {
     if (dirty && id !== selected) {
       setError(
-        "Есть несохранённый ввод. Примени или сбрось его перед сменой слоя.",
+        t("Есть несохранённый ввод. Примени или сбрось его перед сменой слоя."),
       );
       return;
     }
+    setMultipleIds((ids) =>
+      additive
+        ? [...new Set([...ids, ...(selected ? [selected] : []), id])]
+        : [id],
+    );
     setSelected(id);
   }
   async function history(kind: "undo" | "redo") {
     if (!client || !project) return;
     if (dirty || tokenDraft !== null) {
-      setError("Сначала примени или сбрось несохранённый ввод.");
+      setError(t("Сначала примени или сбрось несохранённый ввод."));
       return;
     }
     try {
@@ -376,6 +427,20 @@ export function StudioApp() {
       setError((e as Error).message);
     }
   }
+  useStudioShortcuts([
+    {
+      id: "undo",
+      shortcut: "Mod+Z",
+      enabled: () => !dirty && tokenDraft === null,
+      run: () => history("undo"),
+    },
+    {
+      id: "redo",
+      shortcut: "Mod+Shift+Z",
+      enabled: () => !dirty && tokenDraft === null,
+      run: () => history("redo"),
+    },
+  ]);
   async function addGroupedPage() {
     if (!project || dirty) return;
     const screenId = crypto.randomUUID();
@@ -384,7 +449,7 @@ export function StudioApp() {
         type: "addPage",
         page: {
           screenId,
-          name: "Новый экран",
+          name: t("Новый экран"),
           viewport: { width: 390 },
           nodes: [],
         },
@@ -398,7 +463,7 @@ export function StudioApp() {
         ),
       });
     try {
-      await mutate(operations, "Добавить экран в группу");
+      await mutate(operations, t("Добавить экран в группу"));
       setPageId(screenId);
       setSelected(null);
     } catch {
@@ -409,7 +474,9 @@ export function StudioApp() {
     if (!page || !client) return;
     if (!groupedPages.some((p) => p.screenId === page.screenId)) {
       setError(
-        "В выбранной группе нет экрана для добавления. Создай экран в разделе «Экраны».",
+        t(
+          "В выбранной группе нет экрана для добавления. Создай экран в разделе «Экраны».",
+        ),
       );
       return;
     }
@@ -432,7 +499,7 @@ export function StudioApp() {
             },
           },
         ],
-        "Добавить " + type,
+        t("Добавить ") + type,
       );
       setSelected(id);
       setView("editor");
@@ -449,719 +516,921 @@ export function StudioApp() {
       >
         <strong>{__STUDIO_DEMO__ ? "studio / demo" : "studio / local"}</strong>
         <p>{status}</p>
+        {loadProgress && (
+          <>
+            <progress
+              aria-label={t("Загрузка проекта")}
+              value={loadProgress.total ? loadProgress.received : undefined}
+              max={loadProgress.total}
+            />
+            <p>
+              {t("Получено")} {Math.ceil(loadProgress.received / 1024)}{" "}
+              {t("КБ")}
+              {loadProgress.total
+                ? t(" из {0} КБ", { 0: Math.ceil(loadProgress.total / 1024) })
+                : ""}
+            </p>
+          </>
+        )}
+        <button onClick={() => loadingController.current?.abort()}>
+          {t("Отменить загрузку")}
+        </button>
+        {error && (
+          <button
+            onClick={() => {
+              setError("");
+              setLoadProgress(null);
+              setLoadAttempt((attempt) => attempt + 1);
+            }}
+          >
+            {t("Повторить загрузку")}
+          </button>
+        )}
         {error && (
           <div role="alert">
             {error}
             <p>
-              Запусти студию через npm run dev или npm run studio. Статический
-              preview не запускает файловый сервис.
+              {t(
+                "Запусти студию через npm run dev или npm run studio. Статический preview не запускает файловый сервис.",
+              )}
             </p>
           </div>
         )}
       </main>
     );
   return (
-    <main
-      className="ds-studio"
-      data-studio-theme={studioTheme}
-      style={studioThemeStyle(studioTheme)}
-    >
-      <header className="ds-header">
-        <div className="ds-brand">
-          <span>s</span>
-          <div>
-            <strong>
-              {__STUDIO_DEMO__ ? "studio / demo" : "studio / local"}
-            </strong>
+    <DesktopLibraryContext.Provider value={desktopLibrary}>
+      <main
+        className="ds-studio"
+        data-studio-theme={studioTheme}
+        style={studioThemeStyle(studioTheme)}
+      >
+        <header className="ds-header">
+          <div className="ds-brand">
+            <span>s</span>
+            <div>
+              <strong>
+                {__STUDIO_DEMO__ ? "studio / demo" : "studio / local"}
+              </strong>
+              <small>
+                {__STUDIO_DEMO__
+                  ? t("Попробуй студию без установки")
+                  : t("Дизайн в твоих файлах")}
+              </small>
+            </div>
+          </div>
+          <div className="ds-project">
+            <strong>{project.name}</strong>
             <small>
-              {__STUDIO_DEMO__
-                ? "Попробуй студию без установки"
-                : "Дизайн в твоих файлах"}
+              {project.library.id} · {project.library.version}
             </small>
           </div>
-        </div>
-        <div className="ds-project">
-          <strong>{project.name}</strong>
-          <small>
-            {project.library.id} · {project.library.version}
-          </small>
-        </div>
-        <div className="ds-save" data-testid="save-status">
-          <span />
-          {status}
-        </div>
-        <StudioButton
-          onClick={() =>
-            download(
-              project.projectId + ".json",
-              JSON.stringify(project, null, 2),
-            )
-          }
-        >
-          Экспорт проекта ↗
-        </StudioButton>
-      </header>
-      <div className="ds-layout">
-        <aside className="ds-nav">
-          <nav className="ds-nav-menu" aria-label="Разделы студии">
-            <p className="eyebrow">Рабочее пространство</p>
-            {(
-              [
-                ["catalog", "Компоненты"],
-                ["tokens", "Основы"],
-                ["editor", "Экраны"],
-                ["proposals", "Предложения агента"],
-                ["structure", "Документ"],
-              ] as const
-            ).map(([id, name]) => (
-              <StudioButton
-                key={id}
-                aria-pressed={view === id}
-                onClick={() => {
-                  if ((dirty || tokenDraft !== null) && id !== view) {
-                    setError(
-                      "Есть несохранённый ввод. Примени или сбрось его перед сменой раздела.",
-                    );
-                    return;
-                  }
-                  setView(id);
-                }}
-              >
-                {name}
-                {id === "proposals" && pendingProposals.length > 0 && (
-                  <b>{pendingProposals.length}</b>
-                )}
-              </StudioButton>
-            ))}
-          </nav>
-          <div className="ds-nav-bottom">
-            <StudioThemeChoice value={studioTheme} onChange={setStudioTheme} />
-            <LocalCoreNotice demo={__STUDIO_DEMO__} />
+          <div className="ds-save" data-testid="save-status">
+            <span />
+            {status}
           </div>
-        </aside>
-        <div className="ds-workspace">
-          <div className="ds-toolbar">
-            <div>
-              <span className="connection-dot" />
-              {__STUDIO_DEMO__ ? "Браузерное демо" : "Файловый сервис"} ·{" "}
-              {project.pages.length} экранов
-            </div>
-            <label>
-              Тема{" "}
-              <select
-                aria-label="Тема проекта"
-                value={project.theme}
-                onChange={(e) =>
-                  void mutate(
-                    [{ type: "setTheme", theme: e.target.value }],
-                    "Изменить тему",
-                  ).catch(() => {})
-                }
-              >
-                {displayLibrary.themes.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <StudioButton onClick={() => void history("undo")}>
-              Отменить правку
-            </StudioButton>
-            <StudioButton onClick={() => void history("redo")}>
-              Повторить правку
-            </StudioButton>
-          </div>
-          {error && (
-            <div className="ds-error" role="alert">
-              {error}
-              <StudioButton
-                aria-label="Закрыть сообщение"
-                onClick={() => setError("")}
-              >
-                ×
-              </StudioButton>
-            </div>
-          )}
-          {!library && (
-            <div role="status" className="notice">
-              Библиотека {project.library.id}@{project.library.version}{" "}
-              недоступна. Исходный документ сохранён; подключи совместимую
-              версию локально.
-            </div>
-          )}
-          <div className="ds-content">
-            {(["catalog", "tokens", "editor"] as string[]).includes(view) && (
-              <Groups
-                project={project}
-                library={displayLibrary}
-                filter={groupFilter}
-                disabled={dirty || tokenDraft !== null}
-                onFilter={setGroupFilter}
-                onApply={(groups, revision) =>
-                  mutate(
-                    [{ type: "setGroups", groups }],
-                    "Изменить группы",
-                    revision,
-                  ).then(() => {})
-                }
+          <StudioButton
+            onClick={() =>
+              download(
+                project.projectId + ".json",
+                JSON.stringify(project, null, 2),
+              )
+            }
+          >
+            {t("Экспорт проекта ↗")}
+          </StudioButton>
+        </header>
+        <div className="ds-layout">
+          <aside className="ds-nav">
+            <nav className="ds-nav-menu" aria-label={t("Разделы студии")}>
+              <p className="eyebrow">{t("Рабочее пространство")}</p>
+              {(
+                [
+                  ["catalog", t("Компоненты")],
+                  ["tokens", t("Основы")],
+                  ["assets", t("Изображения")],
+                  ["editor", t("Экраны")],
+                  ["proposals", t("Предложения агента")],
+                  ["structure", t("Документ")],
+                ] as const
+              ).map(([id, name]) => (
+                <StudioButton
+                  key={id}
+                  aria-pressed={view === id}
+                  onClick={() => {
+                    if ((dirty || tokenDraft !== null) && id !== view) {
+                      setError(
+                        t(
+                          "Есть несохранённый ввод. Примени или сбрось его перед сменой раздела.",
+                        ),
+                      );
+                      return;
+                    }
+                    setView(id);
+                  }}
+                >
+                  {name}
+                  {id === "proposals" && pendingProposals.length > 0 && (
+                    <b>{pendingProposals.length}</b>
+                  )}
+                </StudioButton>
+              ))}
+            </nav>
+            <div className="ds-nav-bottom">
+              <StudioLanguageChoice />
+              <StudioThemeChoice
+                value={studioTheme}
+                onChange={setStudioTheme}
               />
+              <LocalCoreNotice demo={__STUDIO_DEMO__} />
+            </div>
+          </aside>
+          <div className="ds-workspace">
+            <div className="ds-toolbar">
+              <div>
+                <span className="connection-dot" />
+                {__STUDIO_DEMO__
+                  ? t("Браузерное демо")
+                  : t("Файловый сервис")}{" "}
+                · {project.pages.length} {t("экранов")}
+              </div>
+              <label>
+                {t("Тема")}{" "}
+                <select
+                  aria-label={t("Тема проекта")}
+                  value={project.theme}
+                  onChange={(e) =>
+                    void mutate(
+                      [{ type: "setTheme", theme: e.target.value }],
+                      t("Изменить тему"),
+                    ).catch(() => {})
+                  }
+                >
+                  {displayLibrary.themes.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <StudioButton onClick={() => void history("undo")}>
+                {t("Отменить правку")}
+              </StudioButton>
+              <StudioButton onClick={() => void history("redo")}>
+                {t("Повторить правку")}
+              </StudioButton>
+            </div>
+            {error && (
+              <div className="ds-error" role="alert">
+                {error}
+                <StudioButton
+                  aria-label={t("Закрыть сообщение")}
+                  onClick={() => setError("")}
+                >
+                  ×
+                </StudioButton>
+              </div>
             )}
-            {view === "editor" &&
-              dirty &&
-              page &&
-              !groupedPages.some((p) => p.screenId === page.screenId) && (
-                <p className="notice" role="alert">
-                  Состав группы изменился. Экран оставлен открытым, чтобы
-                  сохранить несохранённый ввод. Примени или сбрось его перед
-                  сменой экрана.
+            {!library && (
+              <div role="status" className="notice">
+                {t("Библиотека")} {project.library.id}@{project.library.version}{" "}
+                {t(
+                  "недоступна. Исходный документ сохранён; подключи совместимую версию локально.",
+                )}
+              </div>
+            )}
+            <div className="ds-content">
+              {(["catalog", "tokens", "editor"] as string[]).includes(view) && (
+                <Groups
+                  project={project}
+                  library={displayLibrary}
+                  filter={groupFilter}
+                  disabled={dirty || tokenDraft !== null}
+                  onFilter={setGroupFilter}
+                  onApply={(groups, revision) =>
+                    mutate(
+                      [{ type: "setGroups", groups }],
+                      t("Изменить группы"),
+                      revision,
+                    ).then(() => {})
+                  }
+                />
+              )}
+              {view === "editor" &&
+                dirty &&
+                page &&
+                !groupedPages.some((p) => p.screenId === page.screenId) && (
+                  <p className="notice" role="alert">
+                    {t(
+                      "Состав группы изменился. Экран оставлен открытым, чтобы сохранить несохранённый ввод. Примени или сбрось его перед сменой экрана.",
+                    )}
+                  </p>
+                )}
+              {view === "editor" && !groupedPages.length && !dirty && (
+                <p className="notice">
+                  {t(
+                    "В этой группе пока нет экранов. Добавь их через «Управлять группами» или создай новый.",
+                  )}
+                  <StudioButton
+                    disabled={dirty}
+                    onClick={() => void addGroupedPage()}
+                  >
+                    {t("Экран +")}
+                  </StudioButton>
                 </p>
               )}
-            {view === "editor" && !groupedPages.length && !dirty && (
-              <p className="notice">
-                В этой группе пока нет экранов. Добавь их через «Управлять
-                группами» или создай новый.
-                <StudioButton
-                  disabled={dirty}
-                  onClick={() => void addGroupedPage()}
-                >
-                  Экран +
-                </StudioButton>
-              </p>
-            )}
-            {view === "catalog" && (
-              <Catalog
-                library={displayLibrary}
-                project={project}
-                groupFilter={groupFilter}
-                onAdd={(type, props) => void add(type, props)}
-              />
-            )}
-            {view === "tokens" && (
-              <section>
-                <span className="eyebrow">Единый источник оформления</span>
-                <StudioHeading>Токены и темы</StudioHeading>
-                <p>
-                  Ссылки на токены остаются ссылками при смене темы. Локальные
-                  переопределения хранятся в проекте.
-                </p>
-                <div className="token-actions">
-                  <StudioButton
-                    onClick={() =>
-                      download(
-                        "tokens.json",
-                        exportTokensJSON(project.tokens, project.theme),
-                      )
-                    }
-                  >
-                    Экспорт токенов JSON
-                  </StudioButton>
-                  <StudioButton
-                    onClick={() =>
-                      download(
-                        "tokens.css",
-                        exportTokensCSS(project.tokens, project.theme),
-                        "text/css",
-                      )
-                    }
-                  >
-                    Экспорт CSS variables
-                  </StudioButton>
-                  <StudioButton
-                    onClick={() => {
-                      setTokenDraft(JSON.stringify(project.tokens, null, 2));
-                      setTokenBase(project.revision);
-                    }}
-                  >
-                    Редактировать токены
-                  </StudioButton>
-                </div>
-                {tokenDraft !== null && (
-                  <div className="token-editor">
-                    <label>
-                      Токены JSON
-                      <textarea
-                        value={tokenDraft}
-                        onChange={(e) => setTokenDraft(e.target.value)}
-                        aria-label="Токены JSON"
-                      />
-                    </label>
+              {view === "catalog" && (
+                <Catalog
+                  library={displayLibrary}
+                  project={project}
+                  groupFilter={groupFilter}
+                  onAdd={(type, props) => void add(type, props)}
+                />
+              )}
+              {view === "assets" && client && (
+                <Assets
+                  client={client}
+                  revision={project.revision}
+                  onInsert={async (asset) => {
+                    if (!page || dirty)
+                      throw new Error(
+                        t("Сначала выбери экран и сохрани текущий ввод."),
+                      );
+                    const id = crypto.randomUUID();
+                    await mutate(
+                      [
+                        {
+                          type: "insertNode",
+                          pageId: page.screenId,
+                          index: page.nodes.length,
+                          node: {
+                            id,
+                            type: "StudioImage",
+                            name: asset.name,
+                            props: {
+                              src: asset.path,
+                              alt: asset.name,
+                              objectFit: "contain",
+                              objectPosition: "50% 50%",
+                            },
+                            slots: {},
+                            scene: {
+                              kind: "image",
+                              x: 0,
+                              y: 0,
+                              width: Math.min(
+                                asset.width ?? 320,
+                                page.viewport.width,
+                              ),
+                              height: Math.min(asset.height ?? 240, 600),
+                            },
+                          },
+                        },
+                      ],
+                      t("Добавить изображение"),
+                    );
+                    setSelected(id);
+                    setView("editor");
+                  }}
+                />
+              )}
+              {view === "tokens" && (
+                <section>
+                  <span className="eyebrow">
+                    {t("Единый источник оформления")}
+                  </span>
+                  <StudioHeading>{t("Токены и темы")}</StudioHeading>
+                  <p>
+                    {t(
+                      "Ссылки на токены остаются ссылками при смене темы. Локальные переопределения хранятся в проекте.",
+                    )}
+                  </p>
+                  <div className="token-actions">
+                    <StudioButton
+                      onClick={() =>
+                        download(
+                          "tokens.json",
+                          exportTokensJSON(project.tokens, project.theme),
+                        )
+                      }
+                    >
+                      {t("Экспорт токенов JSON")}
+                    </StudioButton>
+                    <StudioButton
+                      onClick={() =>
+                        download(
+                          "tokens.css",
+                          exportTokensCSS(project.tokens, project.theme),
+                          "text/css",
+                        )
+                      }
+                    >
+                      {t("Экспорт CSS variables")}
+                    </StudioButton>
                     <StudioButton
                       onClick={() => {
-                        try {
-                          const tokens = JSON.parse(tokenDraft) as Tokens;
-                          void mutate(
-                            [{ type: "setTokens", tokens }],
-                            "Изменить токены",
-                            tokenBase,
-                          )
-                            .then(() => setTokenDraft(null))
-                            .catch(() => {});
-                        } catch (e) {
-                          setError((e as Error).message);
-                        }
+                        setTokenDraft(JSON.stringify(project.tokens, null, 2));
+                        setTokenBase(project.revision);
                       }}
                     >
-                      Сохранить токены
-                    </StudioButton>
-                    <StudioButton onClick={() => setTokenDraft(null)}>
-                      Отмена
+                      {t("Редактировать токены")}
                     </StudioButton>
                   </div>
-                )}
-                <div className="token-grid">
-                  {Object.entries(resolveTokens(project.tokens, project.theme))
-                    .filter(([name]) =>
-                      inGroup(project, groupFilter, "tokens", name),
-                    )
-                    .map(([name, value]) => (
-                      <article key={name}>
-                        <div
-                          className="token-swatch"
-                          style={{
-                            background:
-                              project.tokens[name].type === "color"
-                                ? String(value)
-                                : undefined,
-                          }}
-                        >
-                          {project.tokens[name].type !== "color" && "Aa"}
-                        </div>
-                        <div>
-                          <strong>{name}</strong>
-                          <code>{String(value)}</code>
-                          <small>
-                            {project.tokens[name].type}
-                            {typeof project.tokens[name].value === "object"
-                              ? " · ссылка"
-                              : " · значение"}
-                          </small>
-                        </div>
-                      </article>
-                    ))}
-                </div>
-              </section>
-            )}
-            {view === "editor" &&
-              page &&
-              (groupedPages.length > 0 || dirty) && (
-                <section className="editor-section">
-                  <div className="section-title">
-                    <div>
-                      <span className="eyebrow">Живые компоненты</span>
-                      <StudioHeading>{page.name}</StudioHeading>
-                    </div>
-                    <div className="editor-controls">
-                      <StudioSelect
-                        label="Экран"
-                        value={page.screenId}
-                        fallback={page.name}
-                        disabled={dirty}
-                        onChange={(id) => {
-                          setPageId(id);
-                          setSelected(null);
+                  {tokenDraft !== null && (
+                    <div className="token-editor">
+                      <label>
+                        {t("Токены JSON")}
+                        <textarea
+                          value={tokenDraft}
+                          onChange={(e) => setTokenDraft(e.target.value)}
+                          aria-label={t("Токены JSON")}
+                        />
+                      </label>
+                      <StudioButton
+                        onClick={() => {
+                          try {
+                            const tokens = JSON.parse(tokenDraft) as Tokens;
+                            void mutate(
+                              [{ type: "setTokens", tokens }],
+                              t("Изменить токены"),
+                              tokenBase,
+                            )
+                              .then(() => setTokenDraft(null))
+                              .catch(() => {});
+                          } catch (e) {
+                            setError((e as Error).message);
+                          }
                         }}
-                        sections={[
-                          ...(project.groups ?? [])
-                            .map((group) => ({
-                              label: group.name,
+                      >
+                        {t("Сохранить токены")}
+                      </StudioButton>
+                      <StudioButton onClick={() => setTokenDraft(null)}>
+                        {t("Отмена")}
+                      </StudioButton>
+                    </div>
+                  )}
+                  <div className="token-grid">
+                    {Object.entries(
+                      resolveTokens(project.tokens, project.theme),
+                    )
+                      .filter(([name]) =>
+                        inGroup(project, groupFilter, "tokens", name),
+                      )
+                      .map(([name, value]) => (
+                        <article key={name}>
+                          <div
+                            className="token-swatch"
+                            style={{
+                              background:
+                                project.tokens[name].type === "color"
+                                  ? String(value)
+                                  : undefined,
+                            }}
+                          >
+                            {project.tokens[name].type !== "color" && "Aa"}
+                          </div>
+                          <div>
+                            <strong>{name}</strong>
+                            <code>{String(value)}</code>
+                            <small>
+                              {project.tokens[name].type}
+                              {typeof project.tokens[name].value === "object"
+                                ? t(" · ссылка")
+                                : t(" · значение")}
+                            </small>
+                          </div>
+                        </article>
+                      ))}
+                  </div>
+                </section>
+              )}
+              {view === "editor" &&
+                page &&
+                (groupedPages.length > 0 || dirty) && (
+                  <section className="editor-section">
+                    <div className="section-title">
+                      <div>
+                        <span className="eyebrow">{t("Живые компоненты")}</span>
+                        <StudioHeading>{page.name}</StudioHeading>
+                      </div>
+                      <div className="editor-controls">
+                        <StudioSelect
+                          label={t("Экран")}
+                          value={page.screenId}
+                          fallback={page.name}
+                          disabled={dirty}
+                          onChange={(id) => {
+                            setPageId(id);
+                            setSelected(null);
+                          }}
+                          sections={[
+                            ...(project.groups ?? [])
+                              .map((group) => ({
+                                label: group.name,
+                                options: groupedPages
+                                  .filter((p) =>
+                                    group.pages.includes(p.screenId),
+                                  )
+                                  .map((p) => ({
+                                    value: p.screenId,
+                                    label: p.name,
+                                  })),
+                              }))
+                              .filter((section) => section.options.length),
+                            {
+                              label: t("Без группы"),
                               options: groupedPages
-                                .filter((p) => group.pages.includes(p.screenId))
+                                .filter(
+                                  (p) =>
+                                    !(project.groups ?? []).some((group) =>
+                                      group.pages.includes(p.screenId),
+                                    ),
+                                )
                                 .map((p) => ({
                                   value: p.screenId,
                                   label: p.name,
                                 })),
-                            }))
-                            .filter((section) => section.options.length),
-                          {
-                            label: "Без группы",
-                            options: groupedPages
-                              .filter(
-                                (p) =>
-                                  !(project.groups ?? []).some((group) =>
-                                    group.pages.includes(p.screenId),
-                                  ),
-                              )
-                              .map((p) => ({
-                                value: p.screenId,
-                                label: p.name,
-                              })),
-                          },
-                        ]}
-                      />
-                      <StudioButton
-                        disabled={dirty}
-                        onClick={() => void addGroupedPage()}
-                      >
-                        Экран +
-                      </StudioButton>
-                      <select
-                        aria-label="Масштаб"
-                        value={zoom}
-                        onChange={(e) => setZoom(Number(e.target.value))}
-                      >
-                        {[0.5, 0.75, 1].map((z) => (
-                          <option key={z} value={z}>
-                            {z * 100}%
-                          </option>
-                        ))}
-                      </select>
-                      <StudioButton
-                        aria-label="Настройки устройства"
-                        aria-expanded={deviceControlsOpen}
-                        aria-controls="device-controls"
-                        onClick={() => setDeviceControlsOpen((open) => !open)}
-                      >
-                        {(DEVICE_PRESETS.find(
-                          (preset) =>
-                            preset.id === page.viewport.device?.preset,
-                        )?.name.split(" · ")[0] ?? "Свои размеры") +
-                          ` · ${page.viewport.width} × ${page.viewport.height ?? 850}`}
-                        {viewportDirty ? " · не сохранено" : ""}
-                        {deviceControlsOpen ? " ▴" : " ▾"}
-                      </StudioButton>
+                            },
+                          ]}
+                        />
+                        <StudioButton
+                          disabled={dirty}
+                          onClick={() => void addGroupedPage()}
+                        >
+                          {t("Экран +")}
+                        </StudioButton>
+                        <select
+                          aria-label={t("Масштаб")}
+                          value={zoom}
+                          onChange={(e) => setZoom(Number(e.target.value))}
+                        >
+                          {[0.5, 0.75, 1].map((z) => (
+                            <option key={z} value={z}>
+                              {z * 100}%
+                            </option>
+                          ))}
+                        </select>
+                        <StudioButton
+                          aria-label={t("Настройки устройства")}
+                          aria-expanded={deviceControlsOpen}
+                          aria-controls="device-controls"
+                          onClick={() => setDeviceControlsOpen((open) => !open)}
+                        >
+                          {(DEVICE_PRESETS.find(
+                            (preset) =>
+                              preset.id === page.viewport.device?.preset,
+                          )?.name.split(" · ")[0] ?? t("Свои размеры")) +
+                            ` · ${page.viewport.width} × ${page.viewport.height ?? 850}`}
+                          {viewportDirty ? t(" · не сохранено") : ""}
+                          {deviceControlsOpen ? " ▴" : " ▾"}
+                        </StudioButton>
+                      </div>
                     </div>
-                  </div>
-                  {!project.pages.some((p) => p.screenId === page.screenId) && (
-                    <p className="notice" role="alert">
-                      Выбранный экран удалён. Ввод размеров сохранён: скопируй
-                      его или нажми «Сбросить размеры».
-                    </p>
-                  )}
-                  <div id="device-controls" hidden={!deviceControlsOpen}>
-                    <ViewportControls
-                      key={page.screenId}
-                      viewport={page.viewport}
-                      groups={project.groups ?? []}
-                      pageId={page.screenId}
-                      pageCount={project.pages.length}
-                      onBulkApply={async (value, revision, groupId) => {
-                        const group = groupId
-                          ? project.groups?.find((g) => g.id === groupId)
-                          : undefined;
-                        if (groupId && !group)
-                          throw new Error(
-                            "Группа удалена. Выбери актуальную группу.",
-                          );
-                        const targets = group
-                          ? project.pages.filter((p) =>
-                              group.pages.includes(p.screenId),
-                            )
-                          : project.pages;
-                        if (!targets.length)
-                          throw new Error("В группе нет экранов.");
-                        await mutate(
-                          targets.map((target) => ({
-                            type: "setViewport",
-                            pageId: target.screenId,
-                            width: value.width,
-                            height: value.height,
-                            device: value.device ?? null,
-                          })),
-                          group
-                            ? `Применить устройство к группе «${group.name}»`
-                            : "Применить устройство ко всем экранам",
-                          revision,
-                        );
-                        return {
-                          count: targets.length,
-                          includesCurrent: targets.some(
-                            (target) => target.screenId === page.screenId,
-                          ),
-                        };
-                      }}
-                      revision={project.revision}
-                      disabled={inspectorDirty}
-                      onDirty={setViewportDirty}
-                      shade={shade}
-                      onShadeChange={setShade}
-                      onApply={async (value, revision) => {
-                        await mutate(
-                          [
-                            {
+                    {!project.pages.some(
+                      (p) => p.screenId === page.screenId,
+                    ) && (
+                      <p className="notice" role="alert">
+                        {t(
+                          "Выбранный экран удалён. Ввод размеров сохранён: скопируй его или нажми «Сбросить размеры».",
+                        )}
+                      </p>
+                    )}
+                    <div id="device-controls" hidden={!deviceControlsOpen}>
+                      <ViewportControls
+                        key={page.screenId}
+                        viewport={page.viewport}
+                        groups={project.groups ?? []}
+                        pageId={page.screenId}
+                        pageCount={project.pages.length}
+                        onBulkApply={async (value, revision, groupId) => {
+                          const group = groupId
+                            ? project.groups?.find((g) => g.id === groupId)
+                            : undefined;
+                          if (groupId && !group)
+                            throw new Error(
+                              t("Группа удалена. Выбери актуальную группу."),
+                            );
+                          const targets = group
+                            ? project.pages.filter((p) =>
+                                group.pages.includes(p.screenId),
+                              )
+                            : project.pages;
+                          if (!targets.length)
+                            throw new Error(t("В группе нет экранов."));
+                          await mutate(
+                            targets.map((target) => ({
                               type: "setViewport",
-                              pageId: page.screenId,
+                              pageId: target.screenId,
                               width: value.width,
                               height: value.height,
                               device: value.device ?? null,
-                            },
-                          ],
-                          "Изменить устройство и размеры",
-                          revision,
-                        );
+                            })),
+                            group
+                              ? t("Применить устройство к группе «{0}»", {
+                                  0: group.name,
+                                })
+                              : t("Применить устройство ко всем экранам"),
+                            revision,
+                          );
+                          return {
+                            count: targets.length,
+                            includesCurrent: targets.some(
+                              (target) => target.screenId === page.screenId,
+                            ),
+                          };
+                        }}
+                        revision={project.revision}
+                        disabled={inspectorDirty}
+                        onDirty={setViewportDirty}
+                        shade={shade}
+                        onShadeChange={setShade}
+                        onApply={async (value, revision) => {
+                          await mutate(
+                            [
+                              {
+                                type: "setViewport",
+                                pageId: page.screenId,
+                                width: value.width,
+                                height: value.height,
+                                device: value.device ?? null,
+                              },
+                            ],
+                            t("Изменить устройство и размеры"),
+                            revision,
+                          );
+                        }}
+                      />
+                    </div>
+                    <LayerActions
+                      project={project}
+                      page={page}
+                      selectedIds={[
+                        ...new Set([
+                          ...multipleIds.filter((id) => locate(page.nodes, id)),
+                          ...(selected ? [selected] : []),
+                        ]),
+                      ]}
+                      disabled={propsDirty || layoutDirty || viewportDirty}
+                      onDirty={setDefinitionDirty}
+                      mutate={mutate}
+                      onSelection={(ids) => {
+                        setMultipleIds(ids);
+                        setSelected(ids[0] ?? null);
                       }}
                     />
-                  </div>
-                  <div className="document-editor">
-                    <aside className="layer-list">
-                      <h3>Слои</h3>
-                      {flatten(page.nodes).map(({ node, depth }) => (
-                        <StudioButton
-                          key={node.id}
-                          aria-label={"Выделить " + node.id}
-                          aria-pressed={selected === node.id}
-                          style={{ paddingLeft: 12 + depth * 14 }}
-                          onClick={() => select(node.id)}
-                        >
-                          <strong>{node.type}</strong>
-                          <small>{node.id}</small>
-                        </StudioButton>
-                      ))}
-                      {!page.nodes.length && (
-                        <p>Добавь компоненты из библиотеки.</p>
-                      )}
-                      <p data-testid="selection">Выделено: {selected ?? "—"}</p>
-                    </aside>
-                    <div className="page-stage" ref={stage}>
-                      <div style={{ width: page.viewport.width, zoom }}>
-                        <DeviceFrame
-                          viewport={page.viewport}
-                          theme={project.theme}
-                          shade={shade}
-                          onCloseShade={() => setShade(false)}
-                        >
-                          {(size) => (
-                            <Preview
-                              library={displayLibrary}
-                              project={project}
-                              theme={project.theme}
-                              title={"Экран " + page.name}
-                              height={size.height}
-                              nodes={page.nodes}
-                              selected={selected}
-                              onSelect={select}
+                    <Annotations
+                      key={page.screenId}
+                      project={project}
+                      page={page}
+                      nodeId={selected}
+                      disabled={dirty}
+                      mutate={mutate}
+                      onVariant={(id) => {
+                        setPageId(id);
+                        setSelected(null);
+                        setMultipleIds([]);
+                      }}
+                    />
+                    {client && (
+                      <Handoff
+                        key={page.screenId + "-handoff"}
+                        project={project}
+                        page={page}
+                        nodeId={selected}
+                        client={client}
+                      />
+                    )}
+                    <div className="document-editor">
+                      <aside className="layer-list">
+                        <h3>{t("Слои")}</h3>
+                        {flatten(page.nodes).map(({ node, depth }) => (
+                          <div key={node.id} className="layer-row">
+                            <input
+                              type="checkbox"
+                              aria-label={
+                                t("Выбрать слой ") + (node.name ?? node.id)
+                              }
+                              checked={
+                                multipleIds.includes(node.id) ||
+                                selected === node.id
+                              }
+                              disabled={dirty}
+                              onChange={(e) => {
+                                const ids = [
+                                  ...new Set([
+                                    ...multipleIds,
+                                    ...(selected ? [selected] : []),
+                                  ]),
+                                ];
+                                const next = e.target.checked
+                                  ? [...new Set([...ids, node.id])]
+                                  : ids.filter((id) => id !== node.id);
+                                setMultipleIds(next);
+                                setSelected(next[0] ?? null);
+                              }}
                             />
-                          )}
-                        </DeviceFrame>
-                      </div>
-                    </div>
-                    <aside>
-                      {node ? (
-                        <Inspector
-                          key={node.id}
-                          node={node}
-                          revision={project.revision}
-                          onDirty={setDirty}
-                          onApply={(props, revision) =>
-                            mutate(
-                              [
-                                {
-                                  type: "updateProps",
-                                  nodeId: node.id,
-                                  props: props as JSONRecord,
-                                },
-                              ],
-                              "Изменить свойства " + node.id,
-                              revision,
-                            )
-                          }
-                        />
-                      ) : (
-                        <div className="inspector">
-                          <h3>Инспектор</h3>
-                          <p>Выдели компонент на экране или в дереве слоёв.</p>
-                        </div>
-                      )}
-                      {node && (
-                        <div className="inspector">
-                          <StudioButton
-                            onClick={() =>
-                              void mutate(
-                                [{ type: "removeNode", nodeId: node.id }],
-                                "Удалить слой",
-                              ).catch(() => {})
-                            }
+                            <StudioButton
+                              key={node.id}
+                              aria-label={t("Выделить ") + node.id}
+                              aria-pressed={selected === node.id}
+                              style={{ paddingLeft: 12 + depth * 14 }}
+                              onClick={() => select(node.id)}
+                            >
+                              <strong>
+                                {node.name ?? node.type}
+                                {node.hidden ? t(" · скрыт") : ""}
+                                {node.locked ? t(" · заблокирован") : ""}
+                              </strong>
+                              <small>{node.id}</small>
+                            </StudioButton>
+                          </div>
+                        ))}
+                        {!page.nodes.length && (
+                          <p>{t("Добавь компоненты из библиотеки.")}</p>
+                        )}
+                        <p data-testid="selection">
+                          {t("Выделено:")} {selected ?? "—"}
+                        </p>
+                      </aside>
+                      <div className="page-stage" ref={stage}>
+                        <div style={{ width: page.viewport.width, zoom }}>
+                          <DeviceFrame
+                            viewport={page.viewport}
+                            theme={project.theme}
+                            shade={shade}
+                            onCloseShade={() => setShade(false)}
                           >
-                            Удалить слой
-                          </StudioButton>
+                            {(size) => (
+                              <Preview
+                                library={displayLibrary}
+                                project={project}
+                                theme={project.theme}
+                                title={t("Экран ") + page.name}
+                                height={size.height}
+                                nodes={page.nodes}
+                                selected={selected}
+                                selectedIds={multipleIds}
+                                onSelect={select}
+                              />
+                            )}
+                          </DeviceFrame>
                         </div>
-                      )}
-                    </aside>
-                  </div>
-                </section>
-              )}
-            {view === "proposals" && (
-              <section>
-                <span className="eyebrow">MCP / общий документ</span>
-                <StudioHeading>Предложения агента</StudioHeading>
-                {__STUDIO_DEMO__ && (
-                  <div className="notice">
-                    <p>
-                      Интерактивный пример правки. AI и MCP здесь не подключены;
-                      настоящие агенты работают с установленной локальной
-                      студией.
-                    </p>
-                    <StudioButton
-                      onClick={() =>
-                        void client
-                          ?.request("demo/proposal", {})
-                          .then(() => client.proposals())
-                          .then(setProposals)
-                          .catch((e) => setError(e.message))
-                      }
-                    >
-                      Создать пример предложения
-                    </StudioButton>
-                  </div>
+                      </div>
+                      <aside>
+                        {node && (
+                          <NodeLayoutInspector
+                            key={node.id + "-layout"}
+                            node={node}
+                            project={project}
+                            disabled={propsDirty || definitionDirty}
+                            onDirty={setLayoutDirty}
+                            onApply={mutate}
+                          />
+                        )}
+                        {node ? (
+                          <Inspector
+                            key={node.id}
+                            node={node}
+                            revision={project.revision}
+                            onDirty={setDirty}
+                            onApply={(props, revision) =>
+                              mutate(
+                                [
+                                  {
+                                    type: "updateProps",
+                                    nodeId: node.id,
+                                    props: props as JSONRecord,
+                                  },
+                                ],
+                                t("Изменить свойства ") + node.id,
+                                revision,
+                              )
+                            }
+                          />
+                        ) : (
+                          <div className="inspector">
+                            <h3>{t("Инспектор")}</h3>
+                            <p>
+                              {t(
+                                "Выдели компонент на экране или в дереве слоёв.",
+                              )}
+                            </p>
+                          </div>
+                        )}
+                        {node && (
+                          <div className="inspector">
+                            <StudioButton
+                              onClick={() =>
+                                void mutate(
+                                  [{ type: "removeNode", nodeId: node.id }],
+                                  t("Удалить слой"),
+                                ).catch(() => {})
+                              }
+                            >
+                              {t("Удалить слой")}
+                            </StudioButton>
+                          </div>
+                        )}
+                      </aside>
+                    </div>
+                  </section>
                 )}
-                <p>
-                  По умолчанию агент предлагает правки, а ты подтверждаешь
-                  применение. Один пакет — один шаг отмены.
-                </p>
-                <div
-                  className="proposal-sections"
-                  role="group"
-                  aria-label="Разделы предложений"
-                >
-                  <StudioButton
-                    aria-label="Ожидают решения"
-                    aria-pressed={proposalList === "pending"}
-                    onClick={() => setProposalList("pending")}
-                  >
-                    Ожидают решения · {pendingProposals.length}
-                  </StudioButton>
-                  <StudioButton
-                    aria-label="История предложений"
-                    aria-pressed={proposalList === "history"}
-                    onClick={() => setProposalList("history")}
-                  >
-                    История · {historyProposals.length}
-                  </StudioButton>
-                </div>
-                {proposalList === "history" && (
-                  <p>
-                    Применённые и отклонённые предложения сохраняются без
-                    ограничения срока.
-                  </p>
-                )}
-                {!visibleProposals.length && proposalList === "history" && (
-                  <div className="empty-state">
-                    История пока пуста. Здесь появятся применённые и отклонённые
-                    предложения.
-                  </div>
-                )}
-                {!pendingProposals.length &&
-                  proposalList === "pending" &&
-                  proposals.length > 0 && (
-                    <div className="empty-state">
-                      Нет предложений, ожидающих решения. Завершённые доступны в
-                      истории.
+              {view === "proposals" && (
+                <section>
+                  <span className="eyebrow">{t("MCP / общий документ")}</span>
+                  <StudioHeading>{t("Предложения агента")}</StudioHeading>
+                  {__STUDIO_DEMO__ && (
+                    <div className="notice">
+                      <p>
+                        {t(
+                          "Интерактивный пример правки. AI и MCP здесь не подключены; настоящие агенты работают с установленной локальной студией.",
+                        )}
+                      </p>
+                      <StudioButton
+                        onClick={() =>
+                          void client
+                            ?.request("demo/proposal", {})
+                            .then(() => client.proposals())
+                            .then(setProposals)
+                            .catch((e) => setError(e.message))
+                        }
+                      >
+                        {t("Создать пример предложения")}
+                      </StudioButton>
                     </div>
                   )}
-                {!proposals.length && proposalList === "pending" && (
-                  <div className="empty-state">
-                    {__STUDIO_DEMO__
-                      ? "Пока нет предложений. Нажми «Создать пример предложения», чтобы попробовать подтверждение правки."
-                      : "Пока нет предложений. Подключи агента по инструкции MCP в README."}
+                  <p>
+                    {t(
+                      "По умолчанию агент предлагает правки, а ты подтверждаешь применение. Один пакет — один шаг отмены.",
+                    )}
+                  </p>
+                  <div
+                    className="proposal-sections"
+                    role="group"
+                    aria-label={t("Разделы предложений")}
+                  >
+                    <StudioButton
+                      aria-label={t("Ожидают решения")}
+                      aria-pressed={proposalList === "pending"}
+                      onClick={() => setProposalList("pending")}
+                    >
+                      {t("Ожидают решения ·")} {pendingProposals.length}
+                    </StudioButton>
+                    <StudioButton
+                      aria-label={t("История предложений")}
+                      aria-pressed={proposalList === "history"}
+                      onClick={() => setProposalList("history")}
+                    >
+                      {t("История ·")} {historyProposals.length}
+                    </StudioButton>
                   </div>
-                )}
-                {visibleProposals.map((p) => (
-                  <article className="proposal-card" key={p.id}>
-                    <header>
-                      <h2>
-                        {p.description ||
-                          p.batch.description ||
-                          "Предложение правки"}
-                      </h2>
-                      <span>{p.status}</span>
-                    </header>
+                  {proposalList === "history" && (
                     <p>
-                      Автор: {p.batch.author ?? "agent"} · базовая ревизия{" "}
-                      {p.batch.baseRevision} · {p.batch.operations.length}{" "}
-                      операций
-                    </p>
-                    {proposalList === "pending" && (
-                      <ul>
-                        {p.batch.operations
-                          .flatMap((op) => proposalChanges(project, op))
-                          .map((change, i) => (
-                            <li key={i}>{change}</li>
-                          ))}
-                      </ul>
-                    )}
-                    <ProposalPreview
-                      project={project}
-                      proposal={p}
-                      library={displayLibrary}
-                    />
-                    <details>
-                      <summary>Посмотреть точные изменения</summary>
-                      <pre>{JSON.stringify(p.batch.operations, null, 2)}</pre>
-                    </details>
-                    {p.status !== "applied" && p.status !== "rejected" && (
-                      <StudioButton
-                        className="accent"
-                        disabled={
-                          p.batch.baseRevision !== project.revision ||
-                          dirty ||
-                          !!reviewing ||
-                          !!buildProposalPreview(project, p.batch, [
-                            libraryMetadata(displayLibrary),
-                          ]).error
-                        }
-                        onClick={() => {
-                          if (!client) return;
-                          setReviewing(p.id);
-                          void client
-                            .approve(p.id)
-                            .then(accept)
-                            .then(() => client.proposals())
-                            .then(setProposals)
-                            .catch((e) => setError(e.message))
-                            .finally(() => setReviewing(null));
-                        }}
-                      >
-                        Подтвердить и применить
-                      </StudioButton>
-                    )}
-                    {p.status !== "applied" && p.status !== "rejected" && (
-                      <StudioButton
-                        disabled={!!reviewing}
-                        onClick={() => {
-                          if (!client) return;
-                          setReviewing(p.id);
-                          void client
-                            .reject(p.id)
-                            .then(() => client.proposals())
-                            .then(setProposals)
-                            .catch((e) => setError(e.message))
-                            .finally(() => setReviewing(null));
-                        }}
-                      >
-                        Отклонить
-                      </StudioButton>
-                    )}
-                    {p.status === "rejected" && (
-                      <p>Предложение отклонено · проект не изменён</p>
-                    )}
-                    {p.status !== "applied" &&
-                      p.status !== "rejected" &&
-                      p.batch.baseRevision !== project.revision && (
-                        <p className="notice">
-                          Устаревшая ревизия. Агенту нужно перечитать документ и
-                          создать новое предложение.
-                        </p>
+                      {t(
+                        "Применённые и отклонённые предложения сохраняются без ограничения срока.",
                       )}
-                  </article>
-                ))}
-              </section>
-            )}
-            {view === "structure" && (
-              <section>
-                <StudioHeading>Документ проекта</StudioHeading>
-                <p>
-                  {__STUDIO_DEMO__
-                    ? "Каноническая схема v2 · изменения сохраняются в браузере. JSON можно экспортировать."
-                    : "Каноническая схема v2 · сохранена в локальном project.json. Ключи и пути подключения агента хранятся отдельно."}
-                </p>
-                <pre data-testid="project-document">
-                  {JSON.stringify(project, null, 2)}
-                </pre>
-              </section>
-            )}
+                    </p>
+                  )}
+                  {!visibleProposals.length && proposalList === "history" && (
+                    <div className="empty-state">
+                      {t(
+                        "История пока пуста. Здесь появятся применённые и отклонённые предложения.",
+                      )}
+                    </div>
+                  )}
+                  {!pendingProposals.length &&
+                    proposalList === "pending" &&
+                    proposals.length > 0 && (
+                      <div className="empty-state">
+                        {t(
+                          "Нет предложений, ожидающих решения. Завершённые доступны в истории.",
+                        )}
+                      </div>
+                    )}
+                  {!proposals.length && proposalList === "pending" && (
+                    <div className="empty-state">
+                      {__STUDIO_DEMO__
+                        ? t(
+                            "Пока нет предложений. Нажми «Создать пример предложения», чтобы попробовать подтверждение правки.",
+                          )
+                        : t(
+                            "Пока нет предложений. Подключи агента по инструкции MCP в README.",
+                          )}
+                    </div>
+                  )}
+                  {visibleProposals.map((p) => (
+                    <article className="proposal-card" key={p.id}>
+                      <header>
+                        <h2>
+                          {p.description ||
+                            p.batch.description ||
+                            t("Предложение правки")}
+                        </h2>
+                        <span>{p.status}</span>
+                      </header>
+                      <p>
+                        {t("Автор:")} {p.batch.author ?? "agent"}{" "}
+                        {t("· базовая ревизия")} {p.batch.baseRevision} ·{" "}
+                        {p.batch.operations.length} {t("операций")}
+                      </p>
+                      {proposalList === "pending" && (
+                        <ul>
+                          {p.batch.operations
+                            .flatMap((op) => proposalChanges(project, op))
+                            .map((change, i) => (
+                              <li key={i}>{change}</li>
+                            ))}
+                        </ul>
+                      )}
+                      <ProposalPreview
+                        project={project}
+                        proposal={p}
+                        library={displayLibrary}
+                      />
+                      <details>
+                        <summary>{t("Посмотреть точные изменения")}</summary>
+                        <pre>{JSON.stringify(p.batch.operations, null, 2)}</pre>
+                      </details>
+                      {p.status !== "applied" && p.status !== "rejected" && (
+                        <StudioButton
+                          className="accent"
+                          disabled={
+                            p.batch.baseRevision !== project.revision ||
+                            dirty ||
+                            !!reviewing ||
+                            !!buildProposalPreview(project, p.batch, [
+                              libraryMetadata(displayLibrary),
+                            ]).error
+                          }
+                          onClick={() => {
+                            if (!client) return;
+                            setReviewing(p.id);
+                            void client
+                              .approve(p.id)
+                              .then(accept)
+                              .then(() => client.proposals())
+                              .then(setProposals)
+                              .catch((e) => setError(e.message))
+                              .finally(() => setReviewing(null));
+                          }}
+                        >
+                          {t("Подтвердить и применить")}
+                        </StudioButton>
+                      )}
+                      {p.status !== "applied" && p.status !== "rejected" && (
+                        <StudioButton
+                          disabled={!!reviewing}
+                          onClick={() => {
+                            if (!client) return;
+                            setReviewing(p.id);
+                            void client
+                              .reject(p.id)
+                              .then(() => client.proposals())
+                              .then(setProposals)
+                              .catch((e) => setError(e.message))
+                              .finally(() => setReviewing(null));
+                          }}
+                        >
+                          {t("Отклонить")}
+                        </StudioButton>
+                      )}
+                      {p.status === "rejected" && (
+                        <p>{t("Предложение отклонено · проект не изменён")}</p>
+                      )}
+                      {p.status !== "applied" &&
+                        p.status !== "rejected" &&
+                        p.batch.baseRevision !== project.revision && (
+                          <p className="notice">
+                            {t(
+                              "Устаревшая ревизия. Агенту нужно перечитать документ и создать новое предложение.",
+                            )}
+                          </p>
+                        )}
+                    </article>
+                  ))}
+                </section>
+              )}
+              {view === "structure" && (
+                <section>
+                  <StudioHeading>{t("Документ проекта")}</StudioHeading>
+                  <p>
+                    {__STUDIO_DEMO__
+                      ? t(
+                          "Каноническая схема v2 · изменения сохраняются в браузере. JSON можно экспортировать.",
+                        )
+                      : t(
+                          "Каноническая схема v2 · сохранена в локальном project.json. Ключи и пути подключения агента хранятся отдельно.",
+                        )}
+                  </p>
+                  <pre data-testid="project-document">
+                    {JSON.stringify(project, null, 2)}
+                  </pre>
+                </section>
+              )}
+            </div>
           </div>
         </div>
-      </div>
-    </main>
+      </main>
+    </DesktopLibraryContext.Provider>
   );
 }

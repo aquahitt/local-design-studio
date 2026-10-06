@@ -1,3 +1,4 @@
+import { useI18n } from "./i18n";
 import { useEffect, useState } from "react";
 import {
   parseViewport,
@@ -52,6 +53,8 @@ export function ViewportControls({
   shade: boolean;
   onShadeChange: (value: boolean) => void;
 }) {
+  const { t } = useI18n();
+
   const [targetGroup, setTargetGroup] = useState(
     () => groups.find((group) => group.pages.includes(pageId))?.id ?? "",
   );
@@ -79,7 +82,9 @@ export function ViewportControls({
     } catch (e) {
       setError(
         (e as Error).message === "INVALID_VIEWPORT"
-          ? "Размеры: ширина 320–3840, высота 240–3840, зоны 0–240 px; рабочая область не меньше 120 × 120."
+          ? t(
+              "Размеры: ширина 320–3840, высота 240–3840, зоны 0–240 px; рабочая область не меньше 120 × 120.",
+            )
           : (e as Error).message,
       );
     } finally {
@@ -115,15 +120,17 @@ export function ViewportControls({
       );
       if (result.includesCurrent) setEditing(false);
       setBulkStatus(
-        `Применено к ${result.count} экранам.` +
+        t("Применено к {0} экранам.", { 0: result.count }) +
           (editing && !result.includesCurrent
-            ? " Ввод текущего экрана сохранён в черновике."
+            ? t(" Ввод текущего экрана сохранён в черновике.")
             : ""),
       );
     } catch (error) {
       setError(
         (error as Error).message === "INVALID_VIEWPORT"
-          ? "Проверь размеры и системные зоны: рабочая область должна быть не меньше 120 × 120 px."
+          ? t(
+              "Проверь размеры и системные зоны: рабочая область должна быть не меньше 120 × 120 px.",
+            )
           : (error as Error).message,
       );
     } finally {
@@ -136,9 +143,9 @@ export function ViewportControls({
     <div className="viewport-controls">
       <div className="viewport-presets">
         <label>
-          Устройство
+          {t("Устройство")}
           <select
-            aria-label="Тип устройства"
+            aria-label={t("Тип устройства")}
             value={preset?.id ?? "custom"}
             disabled={disabled || busy || editing}
             onChange={(e) => {
@@ -153,7 +160,7 @@ export function ViewportControls({
                 });
             }}
           >
-            <option value="custom">Свои размеры</option>
+            <option value="custom">{t("Свои размеры")}</option>
             {[...new Set(DEVICE_PRESETS.map((p) => p.group))].map((group) => (
               <optgroup label={group} key={group}>
                 {DEVICE_PRESETS.filter((p) => p.group === group).map((p) => (
@@ -201,16 +208,16 @@ export function ViewportControls({
               });
           }}
         >
-          Повернуть устройство
+          {t("Повернуть устройство")}
         </StudioButton>
         <label className="shade-toggle">
           <input
             type="checkbox"
-            aria-label="Шторка уведомлений"
+            aria-label={t("Шторка уведомлений")}
             checked={shade}
             onChange={(e) => onShadeChange(e.target.checked)}
           />
-          Шторка уведомлений
+          {t("Шторка уведомлений")}
         </label>
       </div>
       <form
@@ -235,9 +242,9 @@ export function ViewportControls({
         }}
       >
         <label>
-          Ширина
+          {t("Ширина")}
           <input
-            aria-label="Ширина экрана"
+            aria-label={t("Ширина экрана")}
             type="number"
             min={320}
             max={3840}
@@ -252,9 +259,9 @@ export function ViewportControls({
         </label>
         <span aria-hidden="true">×</span>
         <label>
-          Высота
+          {t("Высота")}
           <input
-            aria-label="Высота экрана"
+            aria-label={t("Высота экрана")}
             type="number"
             min={240}
             max={3840}
@@ -272,7 +279,7 @@ export function ViewportControls({
           className="accent"
           disabled={disabled || busy || !editing}
         >
-          Применить размеры
+          {t("Применить размеры")}
         </StudioButton>
         {editing && (
           <StudioButton
@@ -283,20 +290,20 @@ export function ViewportControls({
               setError("");
             }}
           >
-            Сбросить размеры
+            {t("Сбросить размеры")}
           </StudioButton>
         )}
         <details>
-          <summary>Системные зоны и вырез</summary>
+          <summary>{t("Системные зоны и вырез")}</summary>
           <div className="safe-area-fields">
             {(["top", "right", "bottom", "left"] as (keyof SafeArea)[]).map(
               (side, i) => (
                 <label key={side}>
-                  {["Сверху", "Справа", "Снизу", "Слева"][i]}
+                  {[t("Сверху"), t("Справа"), t("Снизу"), t("Слева")][i]}
                   <input
                     aria-label={
-                      "Системная зона " +
-                      ["сверху", "справа", "снизу", "слева"][i]
+                      t("Системная зона ") +
+                      [t("сверху"), t("справа"), t("снизу"), t("слева")][i]
                     }
                     type="number"
                     min={0}
@@ -319,9 +326,9 @@ export function ViewportControls({
               ),
             )}
             <label>
-              Вырез
+              {t("Вырез")}
               <select
-                aria-label="Вырез устройства"
+                aria-label={t("Вырез устройства")}
                 value={values.cutout}
                 disabled={disabled || busy}
                 onChange={(e) => {
@@ -332,9 +339,9 @@ export function ViewportControls({
                   setEditing(true);
                 }}
               >
-                <option value="none">Нет</option>
-                <option value="pill">Островок</option>
-                <option value="notch">Вырез</option>
+                <option value="none">{t("Нет")}</option>
+                <option value="pill">{t("Островок")}</option>
+                <option value="notch">{t("Вырез")}</option>
               </select>
             </label>
           </div>
@@ -345,12 +352,12 @@ export function ViewportControls({
           disabled={disabled || busy || !pageCount}
           onClick={() => void bulk()}
         >
-          Применить ко всем
+          {t("Применить ко всем")}
         </StudioButton>
         <StudioSelect
-          label="Группа для применения устройства"
+          label={t("Группа для применения устройства")}
           value={selectedGroup?.id ?? ""}
-          fallback="Выбери группу"
+          fallback={t("Выбери группу")}
           disabled={disabled || busy || !groups.length}
           onChange={setTargetGroup}
           sections={[
@@ -358,7 +365,10 @@ export function ViewportControls({
               label: "",
               options: groups.map((group) => ({
                 value: group.id,
-                label: `${group.name} · ${group.pages.length} экранов`,
+                label: t("{0} · {1} экранов", {
+                  0: group.name,
+                  1: group.pages.length,
+                }),
               })),
             },
           ]}
@@ -367,12 +377,12 @@ export function ViewportControls({
           disabled={disabled || busy || !selectedGroup?.pages.length}
           onClick={() => void bulk(selectedGroup!.id)}
         >
-          Применить к группе
+          {t("Применить к группе")}
         </StudioButton>
         <small>
-          Все: {pageCount} экранов · выбранная группа:{" "}
-          {selectedGroup?.pages.length ?? 0}. Используются текущие размеры,
-          вырез и системные зоны.
+          {t("Все:")} {pageCount} {t("экранов · выбранная группа:")}{" "}
+          {selectedGroup?.pages.length ?? 0}
+          {t(". Используются текущие размеры, вырез и системные зоны.")}
         </small>
       </div>
       {bulkStatus && (
@@ -381,17 +391,17 @@ export function ViewportControls({
         </p>
       )}
       <small>
-        CSS px · рабочая область {size.width} × {size.height} · системные зоны —
-        визуальная модель
+        {t("CSS px · рабочая область")} {size.width} × {size.height}{" "}
+        {t("· системные зоны — визуальная модель")}
       </small>
       {editing && values.baseRevision !== revision && (
         <p className="notice" role="status">
-          Документ изменился. Твой ввод размеров сохранён.{" "}
+          {t("Документ изменился. Твой ввод размеров сохранён.")}{" "}
           <StudioButton
             disabled={disabled || busy}
             onClick={() => setValues({ ...values, baseRevision: revision })}
           >
-            Использовать новую ревизию
+            {t("Использовать новую ревизию")}
           </StudioButton>
         </p>
       )}

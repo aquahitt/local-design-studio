@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, realpath, lstat } from "node:fs/promises";
 import { resolve, extname, relative, isAbsolute } from "node:path";
 export const STUDIO_ORIGIN = "studio://app";
 export interface DesktopSession {
@@ -22,6 +22,8 @@ export function createDesktopHandler(
   root: string,
   active: () => DesktopSession | undefined,
   request: typeof fetch = fetch,
+  library: () =>
+    { id: string; root: string; files: string[] } | undefined = () => undefined,
 ) {
   return async (req: Request): Promise<Response> => {
     try {
@@ -41,7 +43,7 @@ export function createDesktopHandler(
         return json(403, "INVALID_PATH");
       if (
         path.startsWith("/api/") ||
-        /^\/assets\/[a-f0-9]{64}\.svg$/.test(path)
+        /^\/assets\/[a-f0-9]{64}\.(?:svg|png)$/.test(path)
       ) {
         const session = active();
         if (!session) return json(503, "NO_PROJECT_OPEN");
@@ -52,10 +54,10 @@ export function createDesktopHandler(
                 { headers: { "Cache-Control": "no-store" } },
               )
             : json(405, "METHOD_NOT_ALLOWED");
-        const asset = /^\/assets\/[a-f0-9]{64}\.svg$/.test(path);
+        const asset = /^\/assets\/[a-f0-9]{64}\.(?:svg|png)$/.test(path);
         if (
           !asset &&
-          !/^\/api\/(project|components|tokens|context|proposals(?:\/[^/]+(?:\/(approve|apply|reject))?)?|operations|undo|redo|assets|schema|capabilities)$/.test(
+          !/^\/api\/(project|components|tokens|context|proposals(?:\/[^/]+(?:\/(approve|apply|reject))?)?|operations|undo|redo|assets|assets-list|assets-delete|render|inspect|handoff|schema|capabilities)$/.test(
             path,
           )
         )
@@ -76,7 +78,10 @@ export function createDesktopHandler(
         if (req.method === "POST") headers["Content-Type"] = "application/json";
         const body =
           req.method === "POST" ? await req.arrayBuffer() : undefined;
-        if (body && body.byteLength > 1024 * 1024)
+        if (
+          body &&
+          body.byteLength > (path === "/api/assets" ? 12 : 1) * 1024 * 1024
+        )
           return json(413, "PAYLOAD_TOO_LARGE");
         const response = await request(
           session.url + (asset ? "/api" + path : path),
@@ -101,6 +106,39 @@ export function createDesktopHandler(
         });
       }
       if (req.method !== "GET") return json(405, "METHOD_NOT_ALLOWED");
+      if (path.startsWith("/library/")) {
+        if (url.hostname !== "preview")
+          return json(403, "PREVIEW_LIBRARY_ONLY");
+        const bundle = library();
+        const match = path.match(/^\/library\/([^/]+)\/([^/]+)$/);
+        if (
+          !bundle ||
+          !match ||
+          match[1] !== bundle.id ||
+          !bundle.files.includes(match[2])
+        )
+          return json(404, "LIBRARY_NOT_FOUND");
+        const file = resolve(bundle.root, match[2]);
+        if (
+          (await lstat(bundle.root)).isSymbolicLink() ||
+          (await lstat(file)).isSymbolicLink()
+        )
+          return json(403, "INVALID_PATH");
+        const rootPath = await realpath(bundle.root);
+        if (rootPath !== resolve(bundle.root)) return json(403, "INVALID_PATH");
+        const canonical = await realpath(file);
+        const rel = relative(rootPath, canonical);
+        if (rel.startsWith("..") || isAbsolute(rel))
+          return json(403, "INVALID_PATH");
+        return new Response(await readFile(canonical), {
+          headers: {
+            "Content-Type": mime[extname(file)] ?? "application/octet-stream",
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "default-src 'none'",
+          },
+        });
+      }
       const file = resolve(
         root,
         ["/", "/preview", "/pilot"].includes(path) ? "index.html" : "." + path,

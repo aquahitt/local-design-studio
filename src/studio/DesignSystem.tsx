@@ -1,3 +1,4 @@
+import { useI18n } from "./i18n";
 import { useState } from "react";
 import { studioPalette } from "./palette";
 import type {
@@ -7,6 +8,8 @@ import type {
   CSSProperties,
 } from "react";
 export function StudioButton(props: ButtonHTMLAttributes<HTMLButtonElement>) {
+  const { t } = useI18n();
+
   return <button {...props} />;
 }
 export function StudioHeading({
@@ -16,6 +19,8 @@ export function StudioHeading({
   children: ReactNode;
   size?: number;
 }) {
+  const { t } = useI18n();
+
   return (
     <h1 style={size === undefined ? undefined : { fontSize: size }}>
       {children}
@@ -23,13 +28,17 @@ export function StudioHeading({
   );
 }
 export function LocalCoreNotice({ demo = false }: { demo?: boolean }) {
+  const { t } = useI18n();
+
   return (
     <div className="ds-core-notice">
-      <strong>Локальное ядро</strong>
+      <strong>{t("Локальное ядро")}</strong>
       <p>
         {demo
-          ? "Дизайн-система самой студии. Правки остаются в браузере."
-          : "Один документ для человека и агента. AI подключается через MCP."}
+          ? t("Дизайн-система самой студии. Правки остаются в браузере.")
+          : t(
+              "Один документ для человека и агента. AI подключается через MCP.",
+            )}
       </p>
       <a
         href={
@@ -38,7 +47,7 @@ export function LocalCoreNotice({ demo = false }: { demo?: boolean }) {
             : "/pilot"
         }
       >
-        {demo ? "Установить локально ↗" : "Открыть технический пилот ↗"}
+        {demo ? t("Установить локально ↗") : t("Открыть технический пилот ↗")}
       </a>
     </div>
   );
@@ -53,6 +62,8 @@ export function readStudioTheme(): "light" | "dark" {
 }
 
 export function StudioSearch(props: InputHTMLAttributes<HTMLInputElement>) {
+  const { t } = useI18n();
+
   return <input type="search" {...props} />;
 }
 export function StudioThemeChoice({
@@ -62,21 +73,25 @@ export function StudioThemeChoice({
   value: "light" | "dark";
   onChange: (value: "light" | "dark") => void;
 }) {
+  const { t } = useI18n();
+
   return (
     <label className="ds-theme-choice">
-      Тема студии
+      {t("Тема студии")}
       <select
-        aria-label="Тема студии"
+        aria-label={t("Тема студии")}
         value={value}
         onChange={(event) => onChange(event.target.value as "light" | "dark")}
       >
-        <option value="light">Светлая</option>
-        <option value="dark">Тёмная</option>
+        <option value="light">{t("Светлая")}</option>
+        <option value="dark">{t("Тёмная")}</option>
       </select>
     </label>
   );
 }
 export function StudioThemeExample() {
+  const { t } = useI18n();
+
   const [value, setValue] = useState<"light" | "dark">("light");
   return <StudioThemeChoice value={value} onChange={setValue} />;
 }

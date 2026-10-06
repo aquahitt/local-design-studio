@@ -1,3 +1,5 @@
+import { useI18n } from "./i18n";
+import { restoreFocusOnClose } from "./shortcuts";
 import { StudioSelect } from "./StudioSelect";
 import { useEffect, useRef, useState } from "react";
 import type { Project, ProjectGroup } from "../core/project";
@@ -30,6 +32,8 @@ export function Groups({
   disabled: boolean;
   onApply: (groups: ProjectGroup[], revision: number) => Promise<void>;
 }) {
+  const { t } = useI18n();
+
   const [open, setOpen] = useState(false);
   const validFilter =
     filter === "ungrouped" || project.groups?.some((g) => g.id === filter)
@@ -37,9 +41,9 @@ export function Groups({
       : "";
   return (
     <div className="group-toolbar">
-      <span>Группа</span>
+      <span>{t("Группа")}</span>
       <StudioSelect
-        label="Группа проекта"
+        label={t("Группа проекта")}
         disabled={disabled}
         value={validFilter}
         onChange={onFilter}
@@ -47,8 +51,8 @@ export function Groups({
           {
             label: "",
             options: [
-              { value: "", label: "Все группы" },
-              { value: "ungrouped", label: "Без группы" },
+              { value: "", label: t("Все группы") },
+              { value: "ungrouped", label: t("Без группы") },
               ...(project.groups ?? []).map((group) => ({
                 value: group.id,
                 label: group.name,
@@ -58,7 +62,7 @@ export function Groups({
         ]}
       />
       <button disabled={disabled} onClick={() => setOpen(true)}>
-        Управлять группами
+        {t("Управлять группами")}
       </button>
       {open && (
         <GroupEditor
@@ -82,6 +86,8 @@ function GroupEditor({
   onClose: () => void;
   onApply: (groups: ProjectGroup[], revision: number) => Promise<void>;
 }) {
+  const { t } = useI18n();
+
   const dialog = useRef<HTMLDialogElement>(null);
   const [groups, setGroups] = useState(() =>
     structuredClone(project.groups ?? []),
@@ -94,7 +100,9 @@ function GroupEditor({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   useEffect(() => {
+    const restore = restoreFocusOnClose(document);
     dialog.current?.showModal();
+    return restore;
   }, []);
   const group = groups.find((g) => g.id === selected);
   const stale = revision !== project.revision;
@@ -114,7 +122,8 @@ function GroupEditor({
             ]),
           ].map((type) => [
             type,
-            library.components[type]?.name ?? `${type} · недоступен`,
+            library.components[type]?.name ??
+              t("{0} · недоступен", { 0: type }),
           ]);
   const filteredItems = items.filter(([id, name]) =>
     (id + " " + name).toLowerCase().includes(query.toLowerCase()),
@@ -123,21 +132,26 @@ function GroupEditor({
     <dialog
       ref={dialog}
       className="group-dialog"
-      aria-label="Управление группами"
+      aria-label={t("Управление группами")}
       onCancel={(event) => {
         event.preventDefault();
         if (!busy) onClose();
       }}
     >
       <header>
-        <h2>Группы проекта</h2>
-        <button aria-label="Закрыть группы" disabled={busy} onClick={onClose}>
+        <h2>{t("Группы проекта")}</h2>
+        <button
+          aria-label={t("Закрыть группы")}
+          disabled={busy}
+          onClick={onClose}
+        >
           ×
         </button>
       </header>
       <p>
-        Объединяй экраны, компоненты и токены. Элемент может входить в несколько
-        групп.
+        {t(
+          "Объединяй экраны, компоненты и токены. Элемент может входить в несколько групп.",
+        )}
       </p>
       <form
         className="group-create"
@@ -148,11 +162,11 @@ function GroupEditor({
             !name ||
             groups.some((g) => g.name.toLowerCase() === name.toLowerCase())
           ) {
-            setError("Укажи уникальное название группы.");
+            setError(t("Укажи уникальное название группы."));
             return;
           }
           if (groups.length >= 100) {
-            setError("Можно создать до 100 групп.");
+            setError(t("Можно создать до 100 групп."));
             return;
           }
           const id = crypto.randomUUID();
@@ -166,17 +180,17 @@ function GroupEditor({
         }}
       >
         <input
-          aria-label="Название новой группы"
+          aria-label={t("Название новой группы")}
           placeholder="PWA Buyer, PWA Business, Site…"
           maxLength={100}
           value={newName}
           disabled={busy}
           onChange={(event) => setNewName(event.target.value)}
         />
-        <button disabled={busy}>Создать группу</button>
+        <button disabled={busy}>{t("Создать группу")}</button>
       </form>
       <div className="group-editor-body">
-        <aside aria-label="Список групп">
+        <aside aria-label={t("Список групп")}>
           {groups.map((g) => (
             <button
               key={g.id}
@@ -189,20 +203,20 @@ function GroupEditor({
             >
               {g.name}
               <small>
-                {g.pages.length} экранов · {g.components.length} компонентов ·{" "}
-                {g.tokens.length} токенов
+                {g.pages.length} {t("экранов ·")} {g.components.length}{" "}
+                {t("компонентов ·")} {g.tokens.length} {t("токенов")}
               </small>
             </button>
           ))}
-          {!groups.length && <p>Создай первую группу.</p>}
+          {!groups.length && <p>{t("Создай первую группу.")}</p>}
         </aside>
         {group && (
           <section className="group-members">
             <div className="group-name">
               <label>
-                Название{" "}
+                {t("Название")}{" "}
                 <input
-                  aria-label="Название группы"
+                  aria-label={t("Название группы")}
                   value={group.name}
                   maxLength={100}
                   disabled={busy}
@@ -216,15 +230,15 @@ function GroupEditor({
                   setSelected(groups.find((g) => g.id !== selected)?.id ?? "");
                 }}
               >
-                Удалить группу
+                {t("Удалить группу")}
               </button>
             </div>
             <div className="group-tabs">
               {(
                 [
-                  ["pages", "Экраны"],
-                  ["components", "Компоненты"],
-                  ["tokens", "Токены"],
+                  ["pages", t("Экраны")],
+                  ["components", t("Компоненты")],
+                  ["tokens", t("Токены")],
                 ] as const
               ).map(([value, name]) => (
                 <button
@@ -240,8 +254,8 @@ function GroupEditor({
               ))}
             </div>
             <input
-              aria-label="Поиск элементов группы"
-              placeholder="Найти элемент…"
+              aria-label={t("Поиск элементов группы")}
+              placeholder={t("Найти элемент…")}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
@@ -259,7 +273,7 @@ function GroupEditor({
                   })
                 }
               >
-                Выбрать найденные
+                {t("Выбрать найденные")}
               </button>
               <button
                 disabled={busy || !filteredItems.length}
@@ -268,7 +282,7 @@ function GroupEditor({
                   update({ [kind]: group[kind].filter((id) => !ids.has(id)) });
                 }}
               >
-                Убрать найденные
+                {t("Убрать найденные")}
               </button>
             </div>
             <div className="group-member-list">
@@ -276,7 +290,7 @@ function GroupEditor({
                 <label key={id}>
                   <input
                     type="checkbox"
-                    aria-label={`В группу: ${name}`}
+                    aria-label={t("В группу: {0}", { 0: name })}
                     checked={group[kind].includes(id)}
                     disabled={busy}
                     onChange={(event) =>
@@ -290,22 +304,25 @@ function GroupEditor({
                   {name}
                 </label>
               ))}
-              {!items.length && <p>В проекте пока нет элементов этого типа.</p>}
+              {!items.length && (
+                <p>{t("В проекте пока нет элементов этого типа.")}</p>
+              )}
             </div>
           </section>
         )}
       </div>
       {stale && (
         <p role="alert">
-          Проект изменился. Закрой окно и открой снова, чтобы работать с
-          актуальной версией.
+          {t(
+            "Проект изменился. Закрой окно и открой снова, чтобы работать с актуальной версией.",
+          )}
         </p>
       )}
       {error && <p role="alert">{error}</p>}
       <footer>
-        <span>Удаление группы сохраняет её элементы.</span>
+        <span>{t("Удаление группы сохраняет её элементы.")}</span>
         <button disabled={busy} onClick={onClose}>
-          Отмена
+          {t("Отмена")}
         </button>
         <button
           disabled={busy || stale}
@@ -325,7 +342,7 @@ function GroupEditor({
             }
           }}
         >
-          Сохранить группы
+          {t("Сохранить группы")}
         </button>
       </footer>
     </dialog>

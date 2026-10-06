@@ -1,3 +1,4 @@
+import { useI18n } from "./i18n";
 import { useEffect, useId, useRef, useState } from "react";
 export type SelectOption = { value: string; label: string };
 export type SelectSection = { label: string; options: SelectOption[] };
@@ -16,6 +17,8 @@ export function StudioSelect({
   disabled?: boolean;
   fallback?: string;
 }) {
+  const { t } = useI18n();
+
   const id = useId();
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -128,7 +131,7 @@ export function StudioSelect({
           }
         }}
       >
-        <span>{selected?.label ?? fallback ?? "Выбрать…"}</span>
+        <span>{selected?.label ?? fallback ?? t("Выбрать…")}</span>
         <span aria-hidden="true">{open ? "▴" : "▾"}</span>
       </button>
       {open && (
@@ -171,8 +174,12 @@ export function StudioSelect({
           <input
             ref={search}
             type="search"
-            aria-label={`Поиск: ${label}`}
-            placeholder="Найти…"
+            role="combobox"
+            aria-expanded="true"
+            aria-haspopup="listbox"
+            aria-autocomplete="list"
+            aria-label={t("Поиск: {0}", { 0: label })}
+            placeholder={t("Найти…")}
             value={query}
             aria-controls={id}
             aria-activedescendant={
@@ -223,7 +230,7 @@ export function StudioSelect({
                 })}
               </div>
             ))}
-            {!options.length && <p role="status">Ничего не найдено</p>}
+            {!options.length && <p role="status">{t("Ничего не найдено")}</p>}
           </div>
         </div>
       )}

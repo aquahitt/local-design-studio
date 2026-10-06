@@ -1,6 +1,6 @@
 {
   "name": "local-design-studio",
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.0-alpha.3",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,7 +10,8 @@
     "test": "vitest run",
     "test:browser": "playwright test",
     "service": "tsx src/service/cli.ts",
-    "mcp": "tsx src/service/mcp.ts",
+    "mcp": "node scripts/mcp.mjs",
+    "build:mcp": "node scripts/mcp-build.mjs",
     "studio": "vite --host 127.0.0.1 --port 5178 --strictPort",
     "build:demo": "tsc --noEmit && vite build --mode demo && node scripts/demo-notices.mjs",
     "preview:demo": "vite preview --mode demo --host 127.0.0.1",
@@ -20,16 +21,19 @@
     "package:desktop": "npm run build:desktop && electron-forge package",
     "make:desktop": "npm run build:desktop && electron-forge make",
     "test:desktop": "playwright test --config playwright.desktop.config.ts",
-    "test:desktop:packaged": "node scripts/desktop/test-packaged.mjs"
+    "test:desktop:packaged": "node scripts/desktop/test-packaged.mjs",
+    "test:accessibility": "playwright test --config playwright.accessibility.config.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.0",
     "@puckeditor/core": "0.23.0",
+    "fflate": "0.8.2",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "zod": "4.6.5"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@electron-forge/cli": "8.0.1",
     "@electron-forge/maker-deb": "8.0.1",
     "@electron-forge/maker-squirrel": "8.0.1",

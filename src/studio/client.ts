@@ -1,5 +1,7 @@
+import { readStudioLocale, translate } from "./i18n";
 import type { Project } from "../core/project";
 import type { Batch, Operation } from "../core/operations";
+import { readJsonResponse } from "./read-response";
 export interface Proposal {
   id: string;
   description: string;
@@ -19,11 +21,22 @@ export class StudioClient {
       return new BrowserDemoClient(window.localStorage);
     }
     const response = await fetch("/api/session");
-    if (!response.ok) throw new Error("Локальный сервис недоступен");
+    if (!response.ok)
+      throw new Error(
+        translate(readStudioLocale(), "Локальный сервис недоступен"),
+      );
     const session = await response.json();
     return new StudioClient(session.token, session.uiToken);
   }
-  async request<T>(path: string, data?: unknown, approve = false): Promise<T> {
+  async request<T>(
+    path: string,
+    data?: unknown,
+    approve = false,
+    options: {
+      signal?: AbortSignal;
+      onProgress?: (received: number, total?: number) => void;
+    } = {},
+  ): Promise<T> {
     const response = await fetch("/api/" + path, {
       method: data === undefined ? "GET" : "POST",
       headers: {
@@ -37,10 +50,16 @@ export class StudioClient {
         ...(approve ? { "x-studio-ui-token": this.uiToken } : {}),
       },
       body: data === undefined ? undefined : JSON.stringify(data),
+      signal: options.signal,
     });
-    const result = await response.json();
+    const result = (await readJsonResponse(response, options)) as T & {
+      error?: string;
+    };
     if (!response.ok)
-      throw new Error(result.error ?? "Ошибка локального сервиса");
+      throw new Error(
+        result.error ??
+          translate(readStudioLocale(), "Ошибка локального сервиса"),
+      );
     return result;
   }
   async materialize(value: unknown): Promise<unknown> {
@@ -61,8 +80,13 @@ export class StudioClient {
       );
     return value;
   }
-  read() {
-    return this.request<Project>("project");
+  read(
+    options: {
+      signal?: AbortSignal;
+      onProgress?: (received: number, total?: number) => void;
+    } = {},
+  ) {
+    return this.request<Project>("project", undefined, false, options);
   }
   apply(revision: number, operations: Operation[], description: string) {
     return this.request<Project>("operations", {

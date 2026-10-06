@@ -1,3 +1,5 @@
+import { inspectDocument } from "./inspect";
+import { exportReactHandoff } from "./handoff";
 import { syncDirectory } from "../core/durability";
 import { toCoreTokens, type LibraryMetadata } from "../library/sdk";
 import {
@@ -12,7 +14,17 @@ import { ProjectStore } from "../core/store";
 import type { Project } from "../core/project";
 import { batchSchema, projectSchema, validateComponentProps } from "./schema";
 import { applyBatch, type Batch } from "../core/operations";
-import { writeSVGAsset, readSVGAsset } from "./assets";
+import {
+  writeImageAsset,
+  readImageAsset,
+  listImageAssets,
+  deleteImageAsset,
+} from "./image-assets";
+import {
+  prepareRenderSnapshot,
+  type RenderOptions,
+  type RenderResult,
+} from "./render";
 
 export interface StudioOptions {
   root: string;
@@ -22,6 +34,10 @@ export interface StudioOptions {
   allowedOrigins?: string[];
   libraryMetadata?: unknown;
   autoApply?: boolean;
+  renderSnapshot?: (
+    project: Project,
+    options: RenderOptions,
+  ) => Promise<RenderResult>;
 }
 type Proposal = {
   id: string;
@@ -43,12 +59,12 @@ const secret = () => randomBytes(32).toString("hex");
 const equal = (a: string, b: string) =>
   Buffer.byteLength(a) === Buffer.byteLength(b) &&
   timingSafeEqual(Buffer.from(a), Buffer.from(b));
-async function body(req: IncomingMessage) {
+async function body(req: IncomingMessage, maxBytes = 1024 * 1024) {
   let size = 0;
   const parts: Buffer[] = [];
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > 1024 * 1024) throw new HttpError(413, "PAYLOAD_TOO_LARGE");
+    if (size > maxBytes) throw new HttpError(413, "PAYLOAD_TOO_LARGE");
     parts.push(chunk);
   }
   try {
@@ -172,9 +188,11 @@ export async function createStudioServer(options: StudioOptions) {
           throw new HttpError(400, "INVALID_PATH");
         if (req.method === "GET") {
           if (path.startsWith("/api/assets/")) {
-            const bytes = await readSVGAsset(options.root, path.slice(12));
+            const bytes = await readImageAsset(options.root, path.slice(12));
             res.writeHead(200, {
-              "Content-Type": "image/svg+xml",
+              "Content-Type": path.endsWith(".png")
+                ? "image/png"
+                : "image/svg+xml",
               "Content-Security-Policy": "default-src 'none'; sandbox",
               "X-Content-Type-Options": "nosniff",
               "Cache-Control": "private, max-age=31536000, immutable",
@@ -183,6 +201,12 @@ export async function createStudioServer(options: StudioOptions) {
             return;
           }
           if (path === "/api/project") return send(res, 200, store.read());
+          if (path === "/api/assets-list")
+            return send(
+              res,
+              200,
+              await listImageAssets(options.root, store.read()),
+            );
           if (path === "/api/components")
             return send(res, 200, options.libraryMetadata ?? []);
           if (path === "/api/tokens")
@@ -220,8 +244,38 @@ export async function createStudioServer(options: StudioOptions) {
         }
         if (req.method !== "POST")
           throw new HttpError(405, "METHOD_NOT_ALLOWED");
-        const data = await body(req);
+        const data = await body(
+          req,
+          path === "/api/assets" ? 12 * 1024 * 1024 : 1024 * 1024,
+        );
         const task = serial.then(async () => {
+          if (path === "/api/inspect") {
+            return inspectDocument(
+              structuredClone(store.read()),
+              data,
+              Array.isArray(options.libraryMetadata)
+                ? (options.libraryMetadata as LibraryMetadata[])
+                : [],
+              options.renderSnapshot,
+            );
+          }
+          if (path === "/api/handoff") {
+            return exportReactHandoff(
+              structuredClone(store.read()),
+              data,
+              Array.isArray(options.libraryMetadata)
+                ? (options.libraryMetadata as LibraryMetadata[])
+                : [],
+              (name) => readImageAsset(options.root, name),
+            );
+          }
+          if (path === "/api/render") {
+            const snapshot = structuredClone(store.read());
+            prepareRenderSnapshot(snapshot, data);
+            if (!options.renderSnapshot)
+              throw new HttpError(503, "RENDERER_UNAVAILABLE");
+            return options.renderSnapshot(snapshot, data);
+          }
           if (path === "/api/assets") {
             if (
               !origin ||
@@ -229,7 +283,19 @@ export async function createStudioServer(options: StudioOptions) {
               !equal(String(req.headers["x-studio-ui-token"] ?? ""), uiToken)
             )
               throw new HttpError(403, "UI_AUTHORIZATION_REQUIRED");
-            return writeSVGAsset(options.root, data.svg);
+            return data.svg !== undefined
+              ? writeImageAsset(options.root, { data: Buffer.from(String(data.svg), "utf8").toString("base64"), name: "Imported SVG", mediaType: "image/svg+xml" })
+              : writeImageAsset(options.root, data);
+          }
+          if (path === "/api/assets-delete") {
+            if (
+              !origin ||
+              !origins.includes(origin) ||
+              !equal(String(req.headers["x-studio-ui-token"] ?? ""), uiToken)
+            )
+              throw new HttpError(403, "UI_AUTHORIZATION_REQUIRED");
+            await deleteImageAsset(options.root, data.path, store.read());
+            return { deleted: data.path };
           }
           if (path === "/api/context") {
             if (
@@ -380,7 +446,11 @@ export async function createStudioServer(options: StudioOptions) {
         );
         send(res, 200, await task);
       } catch (error) {
-        const e = error as Error & { code?: string; status?: number };
+        const e = error as Error & {
+          code?: string;
+          status?: number;
+          path?: string;
+        };
         send(
           res,
           e.status ??
@@ -393,6 +463,7 @@ export async function createStudioServer(options: StudioOptions) {
                   : 400),
           {
             error: e.code ?? e.message,
+            ...(e.path ? { path: e.path, message: e.message } : {}),
           },
         );
       }

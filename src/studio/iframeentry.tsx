@@ -1,5 +1,13 @@
+import { I18nProvider, translate } from "./i18n";
 import { observePreviewSize } from "./previewSizing";
+import * as React from "react";
+import * as ReactDOM from "react-dom";
+import * as jsxRuntime from "react/jsx-runtime";
+import * as jsxDevRuntime from "react/jsx-dev-runtime";
 import { useEffect, useRef, useState } from "react";
+import { loadDesktopLibrary } from "./desktopLibraries";
+import type { DesktopLibrary } from "../desktop/types";
+import type { ComponentLibrary } from "../library/sdk";
 import { libraries } from "virtual:studio-libraries";
 import {
   ComponentView,
@@ -11,10 +19,38 @@ import { resolveTokens } from "../core/tokens";
 import type { Project } from "../core/project";
 type Input = Omit<PreviewInput, "library" | "onSelect"> & {
   library: { id: string; version: string };
+  desktopLibrary?: DesktopLibrary;
 };
+if (__STUDIO_DESKTOP__)
+  Object.assign(globalThis, {
+    __studioRuntime: {
+      react: React,
+      reactDOM: ReactDOM,
+      jsxRuntime,
+      jsxDevRuntime,
+    },
+  });
 export function PreviewApp() {
   const content = useRef<HTMLDivElement>(null);
   const [input, setInput] = useState<Input | null>(null);
+  const [external, setExternal] = useState<ComponentLibrary | null>(null);
+  const [externalError, setExternalError] = useState("");
+  useEffect(() => {
+    let active = true;
+    setExternal(null);
+    setExternalError("");
+    if (__STUDIO_DESKTOP__ && input?.desktopLibrary)
+      void loadDesktopLibrary(input.desktopLibrary)
+        .then((value) => {
+          if (active) setExternal(value);
+        })
+        .catch((error) => {
+          if (active) setExternalError(error.message);
+        });
+    return () => {
+      active = false;
+    };
+  }, [input?.desktopLibrary?.bundleUrl]);
   useEffect(() => {
     const ready = () =>
       parent.postMessage(
@@ -35,9 +71,25 @@ export function PreviewApp() {
     ready();
     return () => window.removeEventListener("message", receive);
   }, []);
-  const library = libraries.find(
+  const library = [...libraries, ...(external ? [external] : [])].find(
     (l) => l.id === input?.library.id && l.version === input?.library.version,
   );
+  useEffect(() => {
+    delete document.documentElement.dataset.studioPreviewRevision;
+    if (!input || !library) return;
+    let second = 0;
+    const first = requestAnimationFrame(() => {
+      second = requestAnimationFrame(() => {
+        document.documentElement.dataset.studioPreviewRevision = String(
+          input.project.revision,
+        );
+      });
+    });
+    return () => {
+      cancelAnimationFrame(first);
+      cancelAnimationFrame(second);
+    };
+  }, [input, library]);
   useEffect(() => {
     if (!input || !library) return;
     const mode = library.themes.find((t) => t.id === input.theme);
@@ -72,36 +124,66 @@ export function PreviewApp() {
     );
   }, [input, library]);
   if (!input) return null;
-  if (!library) return <p>Библиотека недоступна</p>;
+  if (!library)
+    return (
+      <p role="status">
+        {externalError ||
+          (input.desktopLibrary
+            ? translate(
+                input.locale === "en" ? "en" : "ru",
+                "Загружаем библиотеку…",
+              )
+            : translate(
+                input.locale === "en" ? "en" : "ru",
+                "Библиотека недоступна",
+              ))}
+      </p>
+    );
   const project = { ...input.project, theme: input.theme } as Project;
   const definition =
     input.component && library.components[input.component.type];
   return (
-    <div ref={content} style={{ display: "flow-root" }}>
-      <RenderBoundary
-        resetKey={String(project.revision) + JSON.stringify(input.component)}
+    <I18nProvider locale={input.locale === "en" ? "en" : "ru"}>
+      <div
+        ref={content}
+        style={{
+          display: "flow-root",
+          position: "relative",
+          minHeight: input.nodes?.some((node) => node.scene)
+            ? (input.project.pages.find((page) =>
+                page.nodes.some((node) =>
+                  input.nodes?.some((current) => current.id === node.id),
+                ),
+              )?.viewport.height ?? 850)
+            : undefined,
+        }}
       >
-        {input.component && definition ? (
-          <ComponentView
-            definition={definition}
-            props={input.component.props}
-            project={project}
-          />
-        ) : (
-          <Nodes
-            nodes={input.nodes ?? []}
-            library={library}
-            project={project}
-            selected={input.selected ?? null}
-            onSelect={(id) =>
-              parent.postMessage(
-                { type: "studio-preview-select", id },
-                __STUDIO_DESKTOP__ ? "studio://app" : location.origin,
-              )
-            }
-          />
-        )}
-      </RenderBoundary>
-    </div>
+        <RenderBoundary
+          resetKey={String(project.revision) + JSON.stringify(input.component)}
+        >
+          {input.component && definition ? (
+            <ComponentView
+              definition={definition}
+              props={input.component.props}
+              project={project}
+            />
+          ) : (
+            <Nodes
+              nodes={input.nodes ?? []}
+              library={library}
+              project={project}
+              selected={input.selected ?? null}
+              selectedIds={input.selectedIds}
+              onSelect={(id, additive) =>
+                parent.postMessage(
+                  { type: "studio-preview-select", id, additive },
+                  __STUDIO_DESKTOP__ ? "studio://app" : location.origin,
+                )
+              }
+            />
+          )}
+        </RenderBoundary>
+      </div>
+    </I18nProvider>
   );
 }

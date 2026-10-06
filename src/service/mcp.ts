@@ -4,11 +4,24 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { readFile, lstat } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { createStudioServer } from "./server";
-import { batchSchema } from "./schema";
-import { readProjectPage } from "./read";
+import { batchSchema, projectSchema } from "./schema";
+import { renderSnapshot } from "./render";
+import { readAnnotations } from "../core/annotations";
+import { readImageAsset } from "./image-assets";
+import {
+  readProjectPage,
+  readComponents,
+  readComponent,
+  readPages,
+} from "./read";
+import {
+  readOwnerConnection,
+  createOwnerRequest,
+  OwnerRequestError,
+  type OwnerConnection,
+} from "./connection";
 import { getConfiguredLibraryMetadata } from "../../scripts/library/plugin";
 const args = process.argv.slice(2),
   at = args.indexOf("--project");
@@ -16,56 +29,25 @@ if (at < 0 || !args[at + 1])
   throw new Error("MCP requires explicit --project <directory>");
 const root = resolve(args[at + 1]);
 let owner: Awaited<ReturnType<typeof createStudioServer>> | undefined;
-let connection: { url: string; token: string; pid?: number };
-let ownerDead = false;
+let connection: OwnerConnection;
 try {
-  for (const path of [root, join(root, ".studio")]) {
-    try {
-      if ((await lstat(path)).isSymbolicLink())
-        throw new Error("UNSAFE_SYMLINK");
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
-    }
-  }
-  const path = join(root, ".studio/connection.json");
-  if ((await lstat(path)).isSymbolicLink()) throw new Error("UNSAFE_SYMLINK");
-  connection = JSON.parse(await readFile(path, "utf8"));
-  if (!Number.isInteger(connection.pid) || connection.pid! <= 0)
-    throw new Error("INVALID_CONNECTION");
-  try {
-    process.kill(connection.pid!, 0);
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === "ESRCH") ownerDead = true;
-    throw e;
-  }
-  const url = new URL(connection.url);
-  if (
-    url.hostname !== "127.0.0.1" ||
-    url.protocol !== "http:" ||
-    !url.port ||
-    url.pathname !== "/" ||
-    url.username ||
-    url.password ||
-    url.search ||
-    url.hash
-  )
-    throw new Error("INVALID_CONNECTION");
-  const response = await fetch(connection.url + "/api/project", {
-    headers: { Authorization: `Bearer ${connection.token}` },
-    signal: AbortSignal.timeout(3000),
-  });
-  if (!response.ok) throw new Error("OWNER_UNAVAILABLE");
+  connection = await readOwnerConnection(root);
 } catch (e) {
-  if ((e as NodeJS.ErrnoException).code !== "ENOENT" && !ownerDead) throw e;
+  if ((e as Error).message !== "OWNER_NOT_RUNNING") throw e;
   owner = await createStudioServer({
     root,
     port: 0,
     autoApply: process.env.STUDIO_AUTO_APPLY === "1",
+    renderSnapshot: (project, options) =>
+      renderSnapshot(project, options, {
+        externalRoot: process.env.STUDIO_LIBRARY_ROOT,
+        readAsset: (name) => readImageAsset(root, name),
+      }),
     libraryMetadata: getConfiguredLibraryMetadata({
       externalRoot: process.env.STUDIO_LIBRARY_ROOT,
     }),
   });
-  connection = { url: owner.url, token: owner.token };
+  connection = { url: owner.url, token: owner.token, pid: process.pid };
 }
 const object = (
   properties: Record<string, unknown> = {},
@@ -120,9 +102,69 @@ const tools = [
     ),
   },
   {
+    name: "inspect_read",
+    description:
+      "Read model geometry, token references, registered component mapping and actual browser-computed styles/bounds at a revision. Missing styles are explicit diagnostics.",
+    inputSchema: object({ pageId: str, revision: integer, nodeId: str }, [
+      "pageId",
+      "revision",
+      "nodeId",
+    ]),
+  },
+  {
+    name: "react_export",
+    description:
+      "Export a reviewable React/CSS/tokens/assets file map for one registered page. Exact trusted runtime must be supplied separately; unsupported mappings are explicit diagnostics.",
+    inputSchema: object({ pageId: str, revision: integer }, [
+      "pageId",
+      "revision",
+    ]),
+  },
+  {
+    name: "annotations_read",
+    description:
+      "Read portable page/node discussions and decisions with computed orphaned-anchor status. Changes use proposal_create with setAnnotations; approval remains in the UI.",
+    inputSchema: object({
+      pageId: str,
+      nodeId: str,
+      status: { enum: ["open", "resolved"] },
+      orphaned: { type: "boolean" },
+      offset: integer,
+      limit: { type: "integer", minimum: 1, maximum: 500 },
+    }),
+  },
+  {
+    name: "document_render",
+    description:
+      "Capture a read-only PNG of one page or node at an explicit revision using the owner's real component renderer. Returns native image plus viewport, bounds and warnings.",
+    inputSchema: object(
+      {
+        pageId: str,
+        revision: integer,
+        nodeId: str,
+        theme: str,
+        viewport: projectSchema.$defs.page.properties.viewport,
+      },
+      ["pageId", "revision"],
+    ),
+  },
+  {
     name: "components_list",
-    description: "Read component library metadata.",
-    inputSchema: object(),
+    description:
+      "List compact component summaries (field names only), with optional library, category and name filters and pagination. Use component_read for full schema.",
+    inputSchema: object({
+      libraryId: str,
+      category: str,
+      query: str,
+      offset: integer,
+      limit: { type: "integer", minimum: 1, maximum: 500 },
+    }),
+  },
+  {
+    name: "component_read",
+    description:
+      "Read the complete schema, fixtures and defaults for one component.",
+    inputSchema: object({ libraryId: str, id: str }, ["libraryId", "id"]),
   },
   {
     name: "editor_context",
@@ -168,19 +210,7 @@ const server = new Server(
   { capabilities: { tools: {} } },
 );
 server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
-async function request(path: string, body?: unknown) {
-  const r = await fetch(connection.url + "/api/" + path, {
-    method: body ? "POST" : "GET",
-    headers: {
-      Authorization: `Bearer ${connection.token}`,
-      "Content-Type": "application/json",
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const result = await r.json();
-  if (!r.ok) throw new Error(result.error ?? `HTTP_${r.status}`);
-  return result;
-}
+const request = createOwnerRequest(root, connection);
 server.setRequestHandler(CallToolRequestSchema, async (req) => {
   try {
     const a = req.params.arguments ?? {};
@@ -191,23 +221,39 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       case "pages_list": {
         const p = await request("project");
         if (req.params.name === "pages_list") {
-          result = {
-            ...p,
-            pages: p.pages.map((page: any) => ({
-              screenId: page.screenId,
-              name: page.name,
-              viewport: page.viewport,
-            })),
-          };
+          result = readPages(p);
           break;
         }
-        result = readProjectPage(p, {
-          pageId: typeof a.pageId === "string" ? a.pageId : undefined,
-          nodeId: typeof a.nodeId === "string" ? a.nodeId : undefined,
-          offset: typeof a.offset === "number" ? a.offset : undefined,
-          limit: typeof a.limit === "number" ? a.limit : undefined,
-        });
+        result = readProjectPage(
+          p,
+          {
+            pageId: typeof a.pageId === "string" ? a.pageId : undefined,
+            nodeId: typeof a.nodeId === "string" ? a.nodeId : undefined,
+            offset: typeof a.offset === "number" ? a.offset : undefined,
+            limit: typeof a.limit === "number" ? a.limit : undefined,
+          },
+          req.params.name === "project_read",
+        );
         break;
+      }
+      case "inspect_read":
+        result = await request("inspect", a);
+        break;
+      case "react_export":
+        result = await request("handoff", a);
+        break;
+      case "annotations_read":
+        result = readAnnotations(await request("project"), a);
+        break;
+      case "document_render": {
+        const rendered = await request("render", a);
+        const { data, mimeType, ...metadata } = rendered;
+        return {
+          content: [
+            { type: "image", data, mimeType },
+            { type: "text", text: JSON.stringify(metadata) },
+          ],
+        };
       }
       case "schema_read":
         result = await request("schema");
@@ -216,7 +262,14 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         result = await request("capabilities");
         break;
       case "components_list":
-        result = await request("components");
+        result = readComponents(await request("components"), a);
+        break;
+      case "component_read":
+        result = readComponent(
+          await request("components"),
+          String(a.libraryId),
+          String(a.id),
+        );
         break;
       case "editor_context":
         result = await request("context");
@@ -255,7 +308,14 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
     return {
       isError: true,
       content: [
-        { type: "text", text: JSON.stringify({ error: (e as Error).message }) },
+        {
+          type: "text",
+          text: JSON.stringify(
+            e instanceof OwnerRequestError
+              ? e.details
+              : { error: (e as Error).message },
+          ),
+        },
       ],
     };
   }

@@ -13,6 +13,7 @@ export class CoreError extends Error {
   constructor(
     public code: string,
     detail = "",
+    public path?: string,
   ) {
     super(`${code}${detail ? ": " + detail : ""}`);
   }
@@ -35,7 +36,7 @@ export function resolveTokens(
     const token = tokens[key];
     if (!token) throw new CoreError("MISSING_TOKEN", key);
     if (
-      !/^[a-zA-Z][\w.-]*$/.test(key) ||
+      !/^(?:--)?[a-zA-Z][\w.-]*$/.test(key) ||
       !["color", "number", "dimension", "string", "fontFamily"].includes(
         token.type,
       )

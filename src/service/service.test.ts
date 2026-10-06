@@ -21,6 +21,28 @@ const initialProject: any = {
   theme: "light",
   tokens: {},
 };
+it("returns the invalid JSON field path without changing the project", async () => {
+  const root = await mkdtemp(join(tmpdir(), "studio-field-path-"));
+  const service = await createStudioServer({ root, initialProject, port: 0 });
+  try {
+    const response = await fetch(service.url + "/api/proposals", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${service.token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ batch: {
+        requestId: "unsafe-field", baseRevision: 0,
+        operations: [{ type: "updateProps", nodeId: "text", props: { onClick: "evil" } }],
+      } }),
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      error: "EXECUTABLE_FIELD", path: "pages[0].nodes[0].props.onClick",
+    });
+    expect(JSON.parse(await readFile(join(root, "project.json"), "utf8")).revision).toBe(0);
+  } finally {
+    await service.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
 it("authenticates fixed-root API and requires separate UI authorization for durable proposals", async () => {
   const root = await mkdtemp(join(tmpdir(), "studio-service-"));
   const service = await createStudioServer({ root, initialProject, port: 0 });

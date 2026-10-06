@@ -20,8 +20,9 @@ import {
 import { demoProject } from "../src/demo/project";
 import { builtinLibrary } from "../src/library/builtin";
 import { exampleLibrary } from "../src/library/example";
-import { libraryMetadata } from "../src/library/sdk";
+import { libraryMetadata, type LibraryMetadata } from "../src/library/sdk";
 import { connectStudioOwner } from "../src/service/attach";
+import type { RenderOptions, RenderResult } from "../src/service/render";
 
 export type DesktopProjectSession = {
   root: string;
@@ -72,7 +73,13 @@ export class DesktopProjects {
   };
   private settingsRoot?: string;
 
-  constructor(private readonly userData: string) {}
+  constructor(
+    private readonly userData: string,
+    private readonly externalLibraries?: (
+      project: string,
+    ) => Promise<LibraryMetadata[]>,
+    private readonly renderSnapshot?: (project: Project, options: RenderOptions) => Promise<RenderResult>,
+  ) {}
 
   get current(): DesktopProjectSession | undefined {
     return this.active ? { ...this.active.session } : undefined;
@@ -196,10 +203,12 @@ export class DesktopProjects {
       port: 0,
       allowedOrigins: ["studio://app"],
       autoApply: false,
+      renderSnapshot: this.renderSnapshot,
       libraryMetadata: [
         libraryMetadata(studioLibrary),
         libraryMetadata(builtinLibrary),
         libraryMetadata(exampleLibrary),
+        ...((await this.externalLibraries?.(canonical)) ?? []),
       ],
     });
     const session: DesktopProjectSession = {

@@ -1,3 +1,4 @@
+import { backupLegacyProject } from "./migrations";
 import { syncDirectory } from "./durability";
 import { EventEmitter } from "node:events";
 import { mkdir, open, lstat, rename, unlink, readdir } from "node:fs/promises";
@@ -141,12 +142,13 @@ export class ProjectStore extends EventEmitter {
         await this.materialize(pending);
       }
       if (hasProject || (await exists(projectFile))) {
-        const bytes = await readFile(projectFile, "utf8");
-        const parsed = JSON.parse(bytes);
+        const original = await readFile(projectFile);
+        const parsed = JSON.parse(original.toString("utf8"));
         const project =
           parsed.schemaVersion === 1
             ? migrateProject(parsed)
             : parseProject(parsed);
+        if (parsed.schemaVersion === 1) await backupLegacyProject(this.root, original);
         if (await exists(this.path("state.json"))) {
           this.state = this.parseState(
             await readFile(this.path("state.json"), "utf8"),

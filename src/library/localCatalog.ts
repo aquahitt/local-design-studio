@@ -214,7 +214,18 @@ export const localDefaults: Record<string, Props> = {
     currency: "BYN",
     labels: { empty: "Нет изменений", title: "История" },
   },
-  Tabs: { value: "overview", variant: "underline", size: "md" },
+  Tabs: {
+    value: "overview",
+    variant: "underline",
+    size: "md",
+    activationMode: "automatic",
+    className: "",
+    triggerClassName: "",
+    tabs: [
+      { value: "overview", label: "Обзор", content: "Обзор проекта" },
+      { value: "details", label: "Детали", content: "Синтетические детали" },
+    ],
+  },
   SheetHeader: {
     title: "Детали",
     titleMode: "inline",
@@ -255,6 +266,9 @@ export const localDefaults: Record<string, Props> = {
   TabsTrigger: {},
   TabsContent: {},
 };
+// These primitives need Tabs context, so the catalog previews their composition.
+for (const name of ["TabsList", "TabsTrigger", "TabsContent"])
+  localDefaults[name] = localDefaults.Tabs;
 localDefaults.ImageLightbox = { ...localDefaults.ImageCarousel, index: 0 };
 for (const name of [
   "AnagramGame",
@@ -284,7 +298,18 @@ export function createLocalMetadata(input: {
   for (const item of input.exports ?? []) {
     if (item.kind !== "component") continue;
     const defaults = localDefaults[item.name];
-    const fields = { ...input.fields[item.name] };
+    const composedTabs = /^Tabs(?:List|Trigger|Content)?$/.test(item.name);
+    const fields: Record<string, FieldSchema> = composedTabs
+      ? {
+          value: { type: "string" },
+          variant: { type: "select", options: ["underline", "pill"] },
+          size: { type: "select", options: ["sm", "md"] },
+          activationMode: { type: "select", options: ["automatic", "manual"] },
+          className: { type: "string" },
+          triggerClassName: { type: "string" },
+          tabs: { type: "json" },
+        }
+      : { ...input.fields[item.name] };
     for (const [key, value] of Object.entries(defaults ?? {}))
       if (!fields[key])
         fields[key] = {
@@ -299,6 +324,22 @@ export function createLocalMetadata(input: {
         };
     const fixtures = [{ name: "Default", props: {} as Props }];
     const states = ["default"];
+    if (composedTabs)
+      fixtures.push(
+        { name: "Small pills", props: { variant: "pill", size: "sm" } },
+        { name: "Medium pills", props: { variant: "pill", size: "md" } },
+        {
+          name: "Custom tabs",
+          props: {
+            value: "prices",
+            triggerClassName: "px-4 py-2",
+            tabs: [
+              { value: "photos", label: "Фото", content: "Галерея проекта" },
+              { value: "prices", label: "Цены", content: "От 120 000 BYN" },
+            ],
+          },
+        },
+      );
     if (fields.disabled) {
       fixtures.push({ name: "Disabled", props: { disabled: true } });
       states.push("disabled");

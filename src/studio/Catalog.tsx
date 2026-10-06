@@ -1,3 +1,4 @@
+import { useI18n } from "./i18n";
 import { inGroup } from "./Groups";
 import { StudioSearch, StudioHeading } from "./DesignSystem";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -31,6 +32,8 @@ function CatalogCard({
   chosen: string;
   onChoose: (type: string, name: string) => void;
 }) {
+  const { t } = useI18n();
+
   const [span, setSpan] = useState(20);
   const content = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -62,19 +65,19 @@ function CatalogCard({
             library={library}
             project={project}
             theme={project.theme}
-            title={"Пример " + type}
+            title={t("Пример ") + type}
             component={{ type, props }}
             autoHeight
           />
         </div>
         <header>
           <div>
-            <small>{definition.category ?? "Компонент"}</small>
+            <small>{definition.category ?? t("Компонент")}</small>
             <h2>{definition.name}</h2>
           </div>
           <span className="support">
             {definition.support === "requires-context"
-              ? "Нужен контекст"
+              ? t("Нужен контекст")
               : "React"}
           </span>
         </header>
@@ -83,7 +86,7 @@ function CatalogCard({
         )}
         <footer>
           <select
-            aria-label={"Состояние " + type}
+            aria-label={t("Состояние ") + type}
             value={fixture?.name ?? ""}
             disabled={!definition.fixtures.length}
             onChange={(e) => onChoose(type, e.target.value)}
@@ -96,7 +99,7 @@ function CatalogCard({
             onClick={() => onAdd(type, props)}
             disabled={definition.support === "requires-context"}
           >
-            На экран +
+            {t("На экран +")}
           </button>
         </footer>
       </article>
@@ -105,6 +108,8 @@ function CatalogCard({
 }
 
 export function Catalog(props: CatalogProps) {
+  const { t } = useI18n();
+
   return (
     <CatalogBoard
       key={props.library.id + "@" + props.library.version}
@@ -119,6 +124,8 @@ function CatalogBoard({
   onAdd,
   groupFilter = "",
 }: CatalogProps) {
+  const { t } = useI18n();
+
   const [query, setQuery] = useState("");
   const [chosen, setChosen] = useState<Record<string, string>>({});
   const [category, setCategory] = useState<string | null>(null);
@@ -126,7 +133,7 @@ function CatalogBoard({
   const sentinel = useRef<HTMLDivElement>(null);
   const all = useMemo(() => Object.entries(library.components), [library]);
   const categories = useMemo(
-    () => [...new Set(all.map(([, c]) => c.category ?? "Компонент"))],
+    () => [...new Set(all.map(([, c]) => c.category ?? t("Компонент")))],
     [all],
   );
   const entries = useMemo(
@@ -134,7 +141,7 @@ function CatalogBoard({
       all.filter(
         ([type, c]) =>
           inGroup(project, groupFilter, "components", type) &&
-          (!category || (c.category ?? "Компонент") === category) &&
+          (!category || (c.category ?? t("Компонент")) === category) &&
           (
             type +
             " " +
@@ -180,20 +187,20 @@ function CatalogBoard({
     setVisibleCount(BATCH_SIZE);
   };
   return (
-    <section className="catalog-board" aria-label="Библиотека компонентов">
+    <section className="catalog-board" aria-label={t("Библиотека компонентов")}>
       <div className="section-title catalog-heading">
         <div>
           <span className="eyebrow">
             {library.name} · {library.version}
           </span>
-          <StudioHeading>Библиотека компонентов</StudioHeading>
+          <StudioHeading>{t("Библиотека компонентов")}</StudioHeading>
           <p data-testid="catalog-count">
-            {all.length} компонентов · выбери состояние и добавь на экран
+            {all.length} {t("компонентов · выбери состояние и добавь на экран")}
           </p>
         </div>
         <StudioSearch
-          aria-label="Поиск компонентов"
-          placeholder="Найти компонент…"
+          aria-label={t("Поиск компонентов")}
+          placeholder={t("Найти компонент…")}
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);
@@ -204,7 +211,7 @@ function CatalogBoard({
       <div
         className="catalog-filters"
         role="group"
-        aria-label="Категории компонентов"
+        aria-label={t("Категории компонентов")}
       >
         <button
           aria-pressed={category === null}
@@ -213,7 +220,7 @@ function CatalogBoard({
             setVisibleCount(BATCH_SIZE);
           }}
         >
-          Все компоненты
+          {t("Все компоненты")}
         </button>
         {categories.map((name) => (
           <button
@@ -242,9 +249,9 @@ function CatalogBoard({
       </div>
       {!entries.length && (
         <div className="catalog-empty">
-          <h2>Ничего не найдено</h2>
-          <p>Попробуй другое название или категорию.</p>
-          <button onClick={reset}>Сбросить фильтры</button>
+          <h2>{t("Ничего не найдено")}</h2>
+          <p>{t("Попробуй другое название или категорию.")}</p>
+          <button onClick={reset}>{t("Сбросить фильтры")}</button>
         </div>
       )}
       {!!entries.length && (
@@ -254,8 +261,8 @@ function CatalogBoard({
           data-testid="catalog-sentinel"
         >
           <p role="status" aria-live="polite">
-            Показано {shown} из {entries.length}
-            {!hasMore && " · Все компоненты загружены"}
+            {t("Показано")} {shown} {t("из")} {entries.length}
+            {!hasMore && t(" · Все компоненты загружены")}
           </p>
           {hasMore && (
             <button
@@ -265,7 +272,7 @@ function CatalogBoard({
                 )
               }
             >
-              Показать ещё
+              {t("Показать ещё")}
             </button>
           )}
         </div>

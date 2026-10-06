@@ -77,7 +77,7 @@ STUDIO_LIBRARY_ROOT="$(pwd)/examples/library/external" npm run studio
 npm run mcp -- --project /absolute/path/to/design-project
 ```
 
-Для подключения клиента запускай Node напрямую, чтобы служебный вывод npm не попал в stdio протокол:
+Для подключения клиента используй launcher с абсолютным путём: он находит `tsx` и исходники относительно собственного файла и работает из любого каталога. Node 24.2+ и зависимости студии должны быть установлены; служебный вывод npm не попадает в stdio протокол.
 
 ```json
 {
@@ -85,22 +85,29 @@ npm run mcp -- --project /absolute/path/to/design-project
     "local-design-studio": {
       "command": "/absolute/path/to/node",
       "args": [
-        "--import",
-        "tsx",
-        "src/service/mcp.ts",
+        "/absolute/path/to/local-design-studio/scripts/mcp.mjs",
         "--project",
         "/absolute/path/to/design-project"
       ],
-      "cwd": "/absolute/path/to/local-design-studio",
       "env": { "STUDIO_LIBRARY_ROOT": "/absolute/path/to/trusted-library" }
     }
   }
 }
 ```
 
-Используй одинаковые пути проекта и библиотеки для UI и MCP. Если сервис уже работает, MCP подключается к нему. Иначе MCP запускает единственного headless-владельца; UI может подключиться позднее. Для отдельного сервиса: `npm run service -- --project /absolute/path/to/design-project --port 5190`.
+Для Claude Code (подставь абсолютные пути):
 
-Инструменты: `schema_read`, `capabilities_read`, `project_read`, `pages_list`, `document_read`, `components_list`, `tokens_read`, `editor_context`, `proposal_create`, `proposal_read`, `proposal_apply`, `undo`. Чтение узлов возвращает `pagination.nextOffset`; предел страницы 500 узлов. Контекст включает выделение, viewport и bounds, а после закрытия UI явно сообщает отсутствие соединения. Инструментов shell и произвольного доступа к файлам нет.
+```bash
+claude mcp add --transport stdio local-design-studio -- /absolute/path/to/node /absolute/path/to/local-design-studio/scripts/mcp.mjs --project /absolute/path/to/design-project
+```
+
+`npm run build:mcp` создаёт автономный `mcp-dist/studio-mcp.mjs`: его можно перенести отдельно и запускать через Node без `tsx`, checkout и `node_modules`. Такой helper также подходит для включения в desktop-дистрибутив. В конфигурации замени путь launcher на абсолютный путь bundle.
+
+Используй одинаковые пути проекта и библиотеки для UI и MCP. Если сервис уже работает, MCP подключается к нему. Иначе при старте MCP запускает единственного headless-владельца; UI может подключиться позднее. После замены владельца уже подключённый MCP повторно читает проверенный `.studio/connection.json` при сетевой ошибке или HTTP 401 и повторяет запрос один раз с прежним `requestId`. При отсутствии владельца возвращается `OWNER_NOT_RUNNING`; новый владелец во время повторного запроса не запускается. Для отдельного сервиса: `npm run service -- --project /absolute/path/to/design-project --port 5190`.
+
+Инструменты: `schema_read`, `capabilities_read`, `project_read`, `pages_list`, `document_read`, `components_list`, `component_read`, `annotations_read`, `document_render`, `inspect_read`, `react_export`, `tokens_read`, `editor_context`, `proposal_create`, `proposal_read`, `proposal_apply`, `undo`. Чтение узлов возвращает `pagination.nextOffset`; предел страницы 500 узлов. `pages_list` и `document_read` сохраняют revision и группы, но не повторяют токены, полные definitions и обсуждения. Токены и обсуждения читаются через `tokens_read` / `annotations_read`; полный документ с definitions остаётся в совместимом `project_read`. `project_read` сохраняет совместимый ответ с токенами. `components_list` возвращает компактные `components` (libraryId, id, name, category и имена fields), фильтры `libraryId`, `category`, `query` и страницу `offset`/`limit` с `pagination.nextOffset`. Полные fields, fixtures и defaultProps одного компонента читает `component_read` с `libraryId` и `id`. Контекст включает выделение, viewport и bounds, а после закрытия UI явно сообщает отсутствие соединения. Инструментов shell и произвольного доступа к файлам нет.
+
+`annotations_read` читает переносимые обсуждения и решения с orphaned-статусом; создание комментариев (`setAnnotations`) и вариантов экрана (`duplicatePage`) проходит через обычное предложение. Происхождение варианта, обсуждения и решения сохраняются в `project.json`, включая clone и перезапуск. Подробности: [варианты и обсуждения](docs/annotations.md), [revision-bound снимки](docs/render.md), [inspect и React handoff](docs/handoff.md).
 
 Порядок работы агента: прочитать capabilities/schema и проект → получить выделенный ID → создать предложение с текущей `baseRevision` и уникальным `requestId` → пользователь подтверждает в UI → проверить результат. MCP не может выдать себе ручное подтверждение. Устаревший пакет отклоняется целиком. Повтор запроса с тем же содержимым безопасен; другое содержимое с тем же ID отклоняется.
 

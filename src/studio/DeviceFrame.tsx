@@ -1,3 +1,4 @@
+import { useI18n } from "./i18n";
 import type { ReactNode } from "react";
 import { contentViewport, type Viewport } from "../core/viewport";
 import { StudioButton } from "./DesignSystem";
@@ -16,6 +17,8 @@ export function DeviceFrame({
   onCloseShade?: () => void;
   children: (size: { width: number; height: number }) => ReactNode;
 }) {
+  const { t } = useI18n();
+
   const safe = viewport.device?.safeArea ?? {
     top: 0,
     right: 0,
@@ -78,16 +81,20 @@ export function DeviceFrame({
           className="device-shade"
           role="dialog"
           style={{ paddingTop: Math.max(20, safe.top + 12) }}
-          aria-label="Шторка уведомлений"
+          aria-label={t("Шторка уведомлений")}
         >
           <header>
-            <strong>Шторка уведомлений</strong>
+            <strong>{t("Шторка уведомлений")}</strong>
             {onCloseShade && (
-              <StudioButton onClick={onCloseShade}>Закрыть шторку</StudioButton>
+              <StudioButton onClick={onCloseShade}>
+                {t("Закрыть шторку")}
+              </StudioButton>
             )}
           </header>
-          <p>Системная область уведомлений</p>
-          <small>Визуальная модель: данные устройства не подключены.</small>
+          <p>{t("Системная область уведомлений")}</p>
+          <small>
+            {t("Визуальная модель: данные устройства не подключены.")}
+          </small>
         </div>
       )}
     </div>

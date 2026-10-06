@@ -1,0 +1,703 @@
+{
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": 2
+    },
+    "projectId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "pages": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/page"
+      }
+    },
+    "library": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "id",
+        "version"
+      ],
+      "additionalProperties": false
+    },
+    "theme": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tokens": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "enum": [
+              "color",
+              "number",
+              "dimension",
+              "string",
+              "fontFamily"
+            ]
+          },
+          "value": {},
+          "themes": {
+            "type": "object",
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "type",
+          "value"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "groups": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "pages": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "uniqueItems": true,
+            "maxItems": 10000
+          },
+          "components": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "uniqueItems": true,
+            "maxItems": 10000
+          },
+          "tokens": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "uniqueItems": true,
+            "maxItems": 10000
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "pages",
+          "components",
+          "tokens"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "designComponents": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "nodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/node"
+            }
+          },
+          "variants": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": {}
+              }
+            }
+          },
+          "properties": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "nodeId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "prop": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "default": {}
+              },
+              "required": [
+                "nodeId",
+                "prop",
+                "default"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "version",
+          "nodes"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "annotations": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "pageId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "nodeId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "x": {
+            "type": "number",
+            "minimum": -1000000,
+            "maximum": 1000000
+          },
+          "y": {
+            "type": "number",
+            "minimum": -1000000,
+            "maximum": 1000000
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 10000
+          },
+          "status": {
+            "enum": [
+              "open",
+              "resolved"
+            ]
+          },
+          "decision": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 10000
+          },
+          "proposalId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "createdAt": {
+            "type": "string",
+            "minLength": 1,
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "text",
+          "status",
+          "createdAt"
+        ],
+        "additionalProperties": false,
+        "dependentRequired": {
+          "x": [
+            "y",
+            "pageId"
+          ],
+          "y": [
+            "x",
+            "pageId"
+          ]
+        }
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "projectId",
+    "name",
+    "revision",
+    "pages",
+    "library",
+    "theme",
+    "tokens"
+  ],
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "node": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "props": {
+          "type": "object",
+          "additionalProperties": {}
+        },
+        "slots": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/node"
+            }
+          }
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "hidden": {
+          "type": "boolean"
+        },
+        "locked": {
+          "type": "boolean"
+        },
+        "scene": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "frame",
+                "text",
+                "vector",
+                "component",
+                "image"
+              ]
+            },
+            "x": {
+              "type": "number",
+              "minimum": -1000000,
+              "maximum": 1000000
+            },
+            "y": {
+              "type": "number",
+              "minimum": -1000000,
+              "maximum": 1000000
+            },
+            "width": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000000
+            },
+            "height": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000000
+            },
+            "rotation": {
+              "type": "number",
+              "minimum": -1000000,
+              "maximum": 1000000
+            },
+            "opacity": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "fill": {
+              "type": "string"
+            },
+            "stroke": {
+              "type": "string"
+            },
+            "strokeWidth": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000000
+            },
+            "radius": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000000
+            },
+            "clip": {
+              "type": "boolean"
+            },
+            "path": {
+              "type": "string",
+              "maxLength": 100000
+            },
+            "fontSize": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000000
+            }
+          },
+          "required": [
+            "kind",
+            "x",
+            "y",
+            "width",
+            "height"
+          ],
+          "additionalProperties": false
+        },
+        "instance": {
+          "type": "object",
+          "properties": {
+            "definitionId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "variant": {
+              "type": "string",
+              "minLength": 1
+            },
+            "overrides": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": {}
+              }
+            }
+          },
+          "required": [
+            "definitionId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "props",
+        "slots"
+      ],
+      "additionalProperties": false
+    },
+    "page": {
+      "type": "object",
+      "properties": {
+        "screenId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "viewport": {
+          "type": "object",
+          "properties": {
+            "width": {
+              "type": "integer",
+              "minimum": 320,
+              "maximum": 3840
+            },
+            "height": {
+              "type": "integer",
+              "minimum": 240,
+              "maximum": 3840
+            },
+            "device": {
+              "type": "object",
+              "properties": {
+                "preset": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "orientation": {
+                  "enum": [
+                    "portrait",
+                    "landscape"
+                  ]
+                },
+                "cutout": {
+                  "enum": [
+                    "none",
+                    "pill",
+                    "notch"
+                  ]
+                },
+                "safeArea": {
+                  "type": "object",
+                  "properties": {
+                    "top": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 240
+                    },
+                    "right": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 240
+                    },
+                    "bottom": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 240
+                    },
+                    "left": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 240
+                    }
+                  },
+                  "required": [
+                    "top",
+                    "right",
+                    "bottom",
+                    "left"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "preset",
+                "orientation",
+                "cutout",
+                "safeArea"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "width"
+          ],
+          "additionalProperties": false,
+          "dependentRequired": {
+            "device": [
+              "height"
+            ]
+          }
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/node"
+          }
+        },
+        "provenance": {
+          "type": "object",
+          "properties": {
+            "sourcePageId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "sourceRevision": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "sourcePageId",
+            "sourceRevision"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "screenId",
+        "name",
+        "viewport",
+        "nodes"
+      ],
+      "additionalProperties": false
+    },
+    "scene": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "frame",
+            "text",
+            "vector",
+            "component",
+            "image"
+          ]
+        },
+        "x": {
+          "type": "number",
+          "minimum": -1000000,
+          "maximum": 1000000
+        },
+        "y": {
+          "type": "number",
+          "minimum": -1000000,
+          "maximum": 1000000
+        },
+        "width": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1000000
+        },
+        "height": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1000000
+        },
+        "rotation": {
+          "type": "number",
+          "minimum": -1000000,
+          "maximum": 1000000
+        },
+        "opacity": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "fill": {
+          "type": "string"
+        },
+        "stroke": {
+          "type": "string"
+        },
+        "strokeWidth": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "radius": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "clip": {
+          "type": "boolean"
+        },
+        "path": {
+          "type": "string",
+          "maxLength": 100000
+        },
+        "fontSize": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000
+        }
+      },
+      "required": [
+        "kind",
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "additionalProperties": false
+    },
+    "componentDefinition": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/node"
+          }
+        },
+        "variants": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": {}
+            }
+          }
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "nodeId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "prop": {
+                "type": "string",
+                "minLength": 1
+              },
+              "default": {}
+            },
+            "required": [
+              "nodeId",
+              "prop",
+              "default"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "version",
+        "nodes"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
