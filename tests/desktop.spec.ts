@@ -254,7 +254,8 @@ test("desktop installed MCP survives owner replacement, trusted library restart 
       args: [...(packaged ? [] : [resolve(".")]), "--studio-mcp", "--project", projectRoot],
       cwd,
       env,
-      stderr: "pipe",
+      // Keep native bootstrap failures visible in cross-platform CI logs.
+      stderr: "inherit",
     });
     await client.connect(helper());
     connected = true;
@@ -351,7 +352,7 @@ test("desktop installed MCP survives owner replacement, trusted library restart 
     await expect(preview.locator(".smoke-root")).toHaveAttribute("data-size", "md");
     const current = await call("project_read");
     const rendered = await raw("document_render", { pageId: initial.pages[0].screenId, revision: current.revision, viewport: { width: 390, height: 600 } });
-    expect(rendered.isError).not.toBe(true);
+    expect(rendered.isError, JSON.stringify(rendered.content.filter((item) => item.type === "text"))).not.toBe(true);
     const image = (rendered.content as { type: string; mimeType: string; data: string }[]).find((item) => item.type === "image")!;
     expect(image.mimeType).toBe("image/png");
     const png = Buffer.from(image.data, "base64");
@@ -363,7 +364,7 @@ test("desktop installed MCP survives owner replacement, trusted library restart 
     expect(png.readUInt32BE(16)).toBe(390);
     expect(png.readUInt32BE(20)).toBe(600);
     const cropped = await raw("document_render", { pageId: initial.pages[0].screenId, revision: current.revision, nodeId: "smoke-tabs", viewport: { width: 390, height: 600 } });
-    expect(cropped.isError).not.toBe(true);
+    expect(cropped.isError, JSON.stringify(cropped.content.filter((item) => item.type === "text"))).not.toBe(true);
     const croppedContent = cropped.content as { type: string; text: string; data: string }[];
     const croppedMetadata = JSON.parse(croppedContent.find((item) => item.type === "text")!.text);
     const croppedBound = croppedMetadata.bounds.find((bound: { id: string }) => bound.id === "smoke-tabs");
