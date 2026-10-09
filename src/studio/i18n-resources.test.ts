@@ -8,6 +8,7 @@ it("every localized editor string has Russian and English resources", () => {
     "Assets",
     "Annotations",
     "LayerActions",
+    "GeometryActions",
     "NodeLayoutInspector",
     "Inspector",
     "Catalog",
