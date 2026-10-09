@@ -7,6 +7,7 @@ import {
   pasteLayers,
   duplicateLayers,
   layerCommandOperations,
+  moveLayersToEnd,
   type LayerClipboard,
 } from "../core/layer-commands";
 import { useStudioShortcuts } from "./shortcuts";
@@ -343,24 +344,13 @@ export function LayerActions({
           disabled={blocked || !selectedIds.length}
           onClick={() =>
             void run(async () => {
-              const roots = copyLayers(project, selectedIds).nodes;
               const frame = frames.find((node) => node.id === parent),
                 slot = frame && Object.keys(frame.slots)[0];
-              let index = frame
-                ? frame.slots[slot!].length
-                : target.nodes.length;
-              const sourceList = frame ? frame.slots[slot!] : target.nodes;
-              index -= roots.filter((node) =>
-                sourceList.some((current) => current.id === node.id),
-              ).length;
               await mutate(
-                roots.map((node, offset) => ({
-                  type: "moveNode",
-                  nodeId: node.id,
+                moveLayersToEnd(project, selectedIds, {
                   pageId: target.screenId,
                   ...(frame ? { parentId: frame.id, slot } : {}),
-                  index: index + offset,
-                })),
+                }),
                 t("Перенести слои"),
               );
             })

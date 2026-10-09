@@ -80,9 +80,15 @@ export async function compileLibrary(
 ): Promise<DesktopLibraryBundle> {
   const local = inspectLocal({ externalRoot: root });
   if (!local) throw new Error("LIBRARY_NOT_FOUND");
-  // Packaged copies of the adapter sources are included alongside the compiler.
-  const sources = existsSync(join(__dirname, "library-sources"))
-    ? join(__dirname, "library-sources")
+  // esbuild's native process cannot read Electron's virtual ASAR filesystem.
+  // Use the explicit unpacked SDK shipped with the app, never a consumer's cwd.
+  const bundled = join(__dirname, "library-sources").replace(
+    /\.asar([\\/])/, ".asar.unpacked$1",
+  );
+  if (/\.asar[\\/]/.test(__dirname) && !existsSync(bundled))
+    throw new Error("BUNDLED_SDK_SOURCES_MISSING");
+  const sources = existsSync(bundled)
+    ? bundled
     : resolve("src/library");
   const entry = desktopLibraryEntry(
     local,

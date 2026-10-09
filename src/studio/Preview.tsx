@@ -1,3 +1,4 @@
+import { layerStyle } from "../core/handoff";
 import { useI18n, type StudioLocale } from "./i18n";
 import {
   Component,
@@ -290,32 +291,7 @@ export function Nodes({
                 {
                   position: node.scene ? "absolute" : "relative",
                   padding: node.scene ? 0 : 8,
-                  ...(node.scene
-                    ? {
-                        left: node.scene.x,
-                        top: node.scene.y,
-                        width: node.scene.width,
-                        height: node.scene.height,
-                        transform: `rotate(${node.scene.rotation ?? 0}deg)`,
-                        transformOrigin: "0 0",
-                        opacity: node.scene.opacity ?? 1,
-                        overflow: node.scene.clip ? "hidden" : "visible",
-                        background:
-                          node.scene.kind === "text"
-                            ? undefined
-                            : node.scene.fill,
-                        color:
-                          node.scene.kind === "text"
-                            ? node.scene.fill
-                            : undefined,
-                        border:
-                          node.scene.stroke && node.scene.kind !== "vector"
-                            ? `${node.scene.strokeWidth ?? 1}px solid ${node.scene.stroke}`
-                            : undefined,
-                        borderRadius: node.scene.radius ?? 0,
-                        boxSizing: "border-box",
-                      }
-                    : {}),
+                  ...(node.scene ? layerStyle(node) : {}),
                   outline:
                     node.id === selected || selectedIds.includes(node.id)
                       ? "2px solid #4673e8"

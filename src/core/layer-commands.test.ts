@@ -5,6 +5,42 @@ import * as commands from "./layer-commands";
 import { sceneProject } from "./scene-fixtures";
 import { componentProject } from "./scene-fixtures";
 
+it("appends a non-adjacent multi-selection without changing its relative order", () => {
+  const project = parseProject(sceneProject());
+  const template = project.pages[0].nodes[0].slots.content[0];
+  project.pages[0].nodes = ["a", "b", "c", "d"].map((id) => ({
+    ...structuredClone(template), id,
+  }));
+  const next = applyBatch(project, {
+    requestId: "move-selection", baseRevision: 0,
+    operations: commands.moveLayersToEnd(project, ["c", "a"], { pageId: "home" }),
+  });
+  expect(next.pages[0].nodes.map((node) => node.id)).toEqual(["b", "d", "a", "c"]);
+  expect(project.pages[0].nodes.map((node) => node.id)).toEqual(["a", "b", "c", "d"]);
+});
+
+it("moves mixed root and nested selections to one frame and rejects cycles atomically", () => {
+  const project = parseProject(sceneProject());
+  project.pages[0].nodes.push({
+    ...structuredClone(project.pages[0].nodes[0].slots.content[0]), id: "outside",
+  });
+  const next = applyBatch(project, {
+    requestId: "move-nested", baseRevision: 0,
+    operations: commands.moveLayersToEnd(project, ["outside", "label"], {
+      pageId: "home", parentId: "frame", slot: "content",
+    }),
+  });
+  expect(next.pages[0].nodes).toHaveLength(1);
+  expect(next.pages[0].nodes[0].slots.content.map((node) => node.id)).toEqual(["shape", "label", "outside"]);
+  expect(() => applyBatch(project, {
+    requestId: "move-cycle", baseRevision: 0,
+    operations: commands.moveLayersToEnd(project, ["frame", "label"], {
+      pageId: "home", parentId: "frame", slot: "content",
+    }),
+  })).toThrow("NODE_CYCLE");
+  expect(project.pages[0].nodes.map((node) => node.id)).toEqual(["frame", "outside"]);
+});
+
 it("deduplicates parent/child selections and generates fresh subtree IDs for duplicate", () => {
   const api = commands;
   const project = parseProject(sceneProject());

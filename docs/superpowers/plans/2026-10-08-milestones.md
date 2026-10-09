@@ -22,10 +22,10 @@
 
 - [x] Изолировать опубликованный baseline ada78eb от существующих незакоммиченных UI-изменений.
 - [x] Проверить baseline: npm test (232 passed/5 skipped), npm run typecheck, npm run build, integrity tests (4 passed), test:browser (27 passed/8 skipped).
-- [ ] Пройти независимое spec/quality review 22 integration issues. Найденные multi-move, stroke-coordinate и CSS-handoff дефекты должны получить regressions и исправления до merge.
+- [x] Пройти независимое spec/quality review 22 integration issues. Найденные multi-move, stroke-coordinate и CSS-handoff дефекты должны получить regressions и исправления до merge.
 - [ ] Пройти updated targeted checks, затем актуальный полный профиль CI. Отдельно external SDK: STUDIO_LIBRARY_ROOT=<checkout>/examples/library/external npx playwright test tests/studio-external.spec.ts.
-- [ ] Desktop: npm run test:desktop → npm run package:desktop → npm run test:desktop:packaged; платформа и архитектура записываются, остальные ОС подтверждаются собственными CI/ручными отчётами.
-- [ ] Accessibility: npm run test:accessibility. Проверка клавиатурой RU/EN и restart; VoiceOver/NVDA остаются отдельной ручной приёмкой #29.
+- [x] Desktop (macOS arm64): npm run test:desktop → npm run package:desktop → npm run test:desktop:packaged; платформа и архитектура записываются, остальные ОС подтверждаются собственными CI/ручными отчётами.
+- [x] Accessibility: npm run test:accessibility (9 passed). Проверка клавиатурой RU/EN и restart; VoiceOver/NVDA остаются отдельной ручной приёмкой #29.
 - [ ] Создать консолидирующий PR, дождаться обязательных checks, завершить review, интегрировать проверенный scope в main.
 - [ ] Закрыть только issues с полностью подтверждёнными исходными критериями; partial/manual gates оставить открытыми. Stacked PR закрывать только если весь diff включён и проверен.
 - [ ] Оценить alpha.3: рабочая компонентная студия и агентные proposals уже полезны; отсутствие законченного свободного холста ограничивает самостоятельный дизайн. При pending desktop/a11y gate выпуск отложить; перейти к alpha.4 с перечислением остатка.
@@ -41,3 +41,10 @@
 ## Отложенная приёмка
 
 На начало исполнения ручные clean-install/screen-reader результаты отсутствуют. Опрос предлагает CI + независимый ручной аудит; альтернативы — пользовательский аудит или явное отложение. Без фактических результатов #27/#29/#72 не закрываются полностью.
+
+## Проверка исправлений, 2026-10-09
+
+Локальные результаты и границы: [alpha3-acceptance.md](../../alpha3-acceptance.md).
+241 unit/integration, 24 общих browser, 1 external SDK, 2 demo, 9 accessibility,
+2 packaged desktop macOS arm64 и clean MCP smoke прошли. Полный CI на итоговом
+commit и main integration ещё ожидаются; ручные #27/#29/#72 остаются открытыми.

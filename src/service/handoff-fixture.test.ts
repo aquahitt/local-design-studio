@@ -17,7 +17,7 @@ import { renderSnapshot } from "./render";
 import { inspectDocument } from "./inspect";
 const require = createRequire(import.meta.url);
 
-it("exported registered screen builds and renders in an isolated fixture with matching real styles and spacing", async () => {
+it.each(["components", "scene"])("exported %s screen builds and renders in an isolated fixture with matching real styles and spacing", async (mode) => {
   const project: Project = {
     schemaVersion: 2,
     projectId: "fixture",
@@ -25,7 +25,7 @@ it("exported registered screen builds and renders in an isolated fixture with ma
     revision: 2,
     library: { id: "builtin", version: "1" },
     theme: "light",
-    tokens: { label: { type: "string", value: "Exported actual component" } },
+    tokens: { label: { type: "string", value: "Exported actual component" }, sample: { type: "string", value: "Line\nnext" } },
     pages: [
       {
         screenId: "home",
@@ -57,6 +57,14 @@ it("exported registered screen builds and renders in an isolated fixture with ma
       },
     ],
   };
+  if (mode === "scene") {
+    const stack = project.pages[0].nodes[0];
+    stack.scene = { kind: "component", x: 10, y: 20, width: 280, height: 160 };
+    project.pages[0].nodes = [{ id: "frame", type: "SceneFrame", props: {},
+      scene: { kind: "frame", x: 40, y: 30, width: 300, height: 200,
+        stroke: "#123456", strokeWidth: 10, clip: true },
+      slots: { content: [stack] } }];
+  }
   const metadata = [libraryMetadata(builtinLibrary)];
   const exported = createReactHandoff(
     project,
@@ -177,6 +185,24 @@ it("exported registered screen builds and renders in an isolated fixture with ma
     expect(inspection.bounds?.width).toBe(styles.bounds.width);
     expect(inspection.tokenRefs[0].value).toBe("Exported actual component");
     expect(inspection.diagnostics).toEqual([]);
+    await page.evaluate(() => {
+      const style = document.createElement("style");
+      style.textContent = '#css-string{white-space:pre;line-height:10px}#css-string::before{content:var(--sample)}';
+      document.head.append(style);
+      const probe = document.createElement("div"); probe.id = "css-string";
+      document.body.append(probe);
+    });
+    expect((await page.locator("#css-string").boundingBox())?.height).toBe(20);
+    if (mode === "scene") {
+      const rootBounds = await page.locator(".studio-handoff").boundingBox();
+      const frameBounds = await page.locator('[data-node-id="frame"]').boundingBox();
+      expect(rootBounds).toMatchObject({ x: 20, y: 20, width: 350, height: 600 });
+      expect(frameBounds).toMatchObject({ x: 60, y: 50, width: 300, height: 200 });
+      const frame = await inspectDocument(project, { pageId: "home", revision: 2, nodeId: "frame" }, metadata, renderSnapshot);
+      expect(frame.bounds).toEqual({ id: "frame", ...frameBounds });
+      expect(await page.locator('[data-node-id="frame"]').evaluate(node => getComputedStyle(node).boxShadow)).toContain("inset");
+      expect(frame.modelStyle.boxShadow).toBe("inset 0 0 0 10px #123456");
+    }
   } finally {
     await browser.close();
     if (server)

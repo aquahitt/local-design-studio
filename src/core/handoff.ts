@@ -5,7 +5,7 @@ import {
   type ProjectNode,
   type JSONValue,
 } from "./project";
-import { resolveTokens } from "./tokens";
+import { resolveTokens, serializeCSSValue, type TokenType } from "./tokens";
 import { resolveSceneNodes, definitionNodes } from "./design-components";
 import type { LibraryMetadata } from "../library/sdk";
 import { handoffRuntime } from "./handoff-runtime";
@@ -41,9 +41,9 @@ export function layerStyle(node: ProjectNode): Record<string, string | number> {
       overflow: s.clip ? "hidden" : "visible",
       background: s.kind === "text" ? undefined : s.fill,
       color: s.kind === "text" ? s.fill : undefined,
-      border:
+      boxShadow:
         s.stroke && s.kind !== "vector"
-          ? `${s.strokeWidth ?? 1}px solid ${s.stroke}`
+          ? `inset 0 0 0 ${s.strokeWidth ?? 1}px ${s.stroke}`
           : undefined,
       borderRadius: s.radius ?? 0,
       boxSizing: "border-box",
@@ -227,8 +227,16 @@ export function createReactHandoff(
   const variables: Record<string, string> = {};
   for (const token of library?.tokens ?? [])
     variables[token.name] = token.themes?.[snapshot.theme] ?? token.value;
-  for (const [name, value] of Object.entries(tokens))
-    variables[name.startsWith("--") ? name : "--" + name] = String(value);
+  const tokenVariableNames = new Set<string>();
+  const variableTypes = new Map<string, TokenType>();
+  for (const [name, value] of Object.entries(tokens)) {
+    const variable = name.startsWith("--") ? name : "--" + name;
+    if (tokenVariableNames.has(variable))
+      throw new CoreError("TOKEN_CSS_COLLISION", variable);
+    tokenVariableNames.add(variable);
+    variableTypes.set(variable, snapshot.tokens[name].type);
+    variables[variable] = String(value);
+  }
   const theme = library?.themes.find((theme) => theme.id === snapshot.theme);
   if (library && !theme)
     diagnostics.push({
@@ -257,18 +265,24 @@ export function createReactHandoff(
     diagnostics,
   };
   const json = (value: unknown) => JSON.stringify(value, null, 2) + "\n";
-  const tokenCSS = Object.entries(variables)
+  const cssVariables = Object.fromEntries(
+    Object.entries(variables).map(([name, value]) => [
+      name,
+      serializeCSSValue(value, variableTypes.get(name), name),
+    ]),
+  );
+  const tokenCSS = Object.entries(cssVariables)
     .filter(([name]) => /^--[\w.-]+$/.test(name))
-    .map(([name, value]) => {
-      const token = snapshot.tokens[name] ?? snapshot.tokens[name.slice(2)];
-      return `  ${name.replaceAll(".", "\\.")}: ${token?.type === "string" ? JSON.stringify(value) : value};`;
-    })
+    .map(([name, value]) => `  ${name.replaceAll(".", "\\.")}: ${value};`)
     .join("\n");
+  const sceneMinHeight = page.nodes.some((node) => node.scene)
+    ? page.viewport.height ?? 850
+    : undefined;
   const files: Record<string, string> = {
-    "Screen.tsx": `import { useEffect } from "react";\nimport { RenderNodes, type HandoffNode, type RegisteredLibrary } from "./Runtime";\nimport "./styles.css";\nimport "./tokens.css";\nconst nodes=${JSON.stringify(nodes)} as HandoffNode[];\nconst expected=${JSON.stringify(snapshot.library)};\nconst variables=${JSON.stringify(variables)};\nconst theme=${JSON.stringify(theme ?? {})} as {className?:string;attributes?:Record<string,string>};\nexport function Screen({library}:{library:RegisteredLibrary}){\n  useEffect(()=>{document.documentElement.className=theme.className??"";for(const [key,value] of Object.entries((theme as {attributes?:Record<string,string>}).attributes??{}))document.documentElement.setAttribute(key,value);for(const [key,value] of Object.entries(variables))document.body.style.setProperty(key,value)},[]);\n  return <main className="studio-handoff"><RenderNodes nodes={nodes} library={library} expected={expected}/></main>;\n}\n`,
+    "Screen.tsx": `import { useEffect } from "react";\nimport { RenderNodes, type HandoffNode, type RegisteredLibrary } from "./Runtime";\nimport "./styles.css";\nimport "./tokens.css";\nconst nodes=${JSON.stringify(nodes)} as HandoffNode[];\nconst expected=${JSON.stringify(snapshot.library)};\nconst variables=${JSON.stringify(cssVariables)};\nconst theme=${JSON.stringify(theme ?? {})} as {className?:string;attributes?:Record<string,string>};\nexport function Screen({library}:{library:RegisteredLibrary}){\n  useEffect(()=>{document.documentElement.className=theme.className??"";for(const [key,value] of Object.entries((theme as {attributes?:Record<string,string>}).attributes??{}))document.documentElement.setAttribute(key,value);for(const [key,value] of Object.entries(variables))document.body.style.setProperty(key,value)},[]);\n  return <main className="studio-handoff"${sceneMinHeight === undefined ? "" : ` style={{minHeight:${sceneMinHeight}}}`}><RenderNodes nodes={nodes} library={library} expected={expected}/></main>;\n}\n`,
     "Runtime.tsx": handoffRuntime,
     "styles.css":
-      "html,body{margin:0;min-height:100vh;box-sizing:border-box;background:var(--bg,#fff);color:var(--text-primary,#17202c);font-family:system-ui,sans-serif}body{padding:20px}.studio-handoff{display:flow-root}\n",
+      "html,body{margin:0;min-height:100vh;box-sizing:border-box;background:var(--bg,#fff);color:var(--text-primary,#17202c);font-family:system-ui,sans-serif}body{padding:20px}.studio-handoff{display:flow-root;position:relative}\n",
     "tokens.css": `:root {\n${tokenCSS}\n}\n`,
     "tokens.json": json({
       theme: snapshot.theme,

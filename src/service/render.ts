@@ -1,7 +1,7 @@
 import { computedStylesExpression } from "./computed-styles";
 import { createServer } from "node:http";
 import { once } from "node:events";
-import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile, rm, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve, extname, relative, isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -137,7 +137,9 @@ export async function renderSnapshot(
   if (!library) throw new CoreError("LIBRARY_UNAVAILABLE");
   if (!library.themes.some((theme) => theme.id === input.theme))
     throw new CoreError("INVALID_THEME");
-  const temporary = await mkdtemp(join(tmpdir(), "studio-render-"));
+  // Windows TEMP can contain an 8.3 alias (RUNNER~1). Vite/Rolldown resolve
+  // entries to long paths; root and input must use the same canonical spelling.
+  const temporary = await realpath(await mkdtemp(join(tmpdir(), "studio-render-")));
   let browser: import("@playwright/test").Browser | undefined;
   let server: ReturnType<typeof createServer> | undefined;
   try {

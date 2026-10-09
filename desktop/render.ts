@@ -1,5 +1,5 @@
 import { computedStylesExpression } from "../src/service/computed-styles";
-import { BrowserWindow } from "electron";
+import { BrowserWindow, nativeImage } from "electron";
 import type { Project } from "../src/core/project";
 import {
   prepareRenderSnapshot,
@@ -72,9 +72,19 @@ export async function captureDesktopSnapshot(
         }
       : undefined;
     const image = await window.webContents.capturePage(rectangle);
+    // capturePage follows the display scale (for example, Retina 2x). Recreate a
+    // single 1x representation before resizing so PNG pixels match CSS coordinates.
+    const png = nativeImage
+      .createFromBuffer(image.toPNG(), { scaleFactor: 1 })
+      .resize({
+        width: rectangle?.width ?? input.viewport.width,
+        height: rectangle?.height ?? input.viewport.height,
+        quality: "best",
+      })
+      .toPNG({ scaleFactor: 1 });
     return {
       mimeType: "image/png",
-      data: image.toPNG().toString("base64"),
+      data: png.toString("base64"),
       revision: project.revision,
       pageId: input.page.screenId,
       ...(input.nodeId ? { nodeId: input.nodeId } : {}),

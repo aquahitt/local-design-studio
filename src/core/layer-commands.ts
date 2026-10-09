@@ -77,6 +77,31 @@ export function layerCommandOperations(
         : { type: "setNodeMetadata", nodeId, locked: command.value },
   );
 }
+/** Append selected roots in document order; indices follow each intermediate move. */
+export function moveLayersToEnd(
+  project: Project,
+  nodeIds: string[],
+  destination: Omit<LayerDestination, "index">,
+): Operation[] {
+  const page = project.pages.find((page) => page.screenId === destination.pageId);
+  if (!page) throw new CoreError("PAGE_NOT_FOUND");
+  let list = page.nodes;
+  if (destination.parentId) {
+    const parent = definitionNodes(page.nodes).get(destination.parentId);
+    if (!parent) throw new CoreError("PARENT_NOT_FOUND");
+    if (!destination.slot || !Object.hasOwn(parent.slots, destination.slot))
+      throw new CoreError("INVALID_SLOT");
+    list = parent.slots[destination.slot];
+  } else if (destination.slot) throw new CoreError("INVALID_SLOT");
+  const ids = list.map((node) => node.id);
+  return selectedRoots(project, nodeIds).map((node) => {
+    const existing = ids.indexOf(node.id);
+    if (existing !== -1) ids.splice(existing, 1);
+    const index = ids.length;
+    ids.push(node.id);
+    return { type: "moveNode", nodeId: node.id, ...destination, index };
+  });
+}
 function visitJSON(value: unknown, visit: (value: unknown) => void) {
   visit(value);
   if (value && typeof value === "object")

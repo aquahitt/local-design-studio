@@ -2,6 +2,8 @@
 
 Не опубликовано: версия и tag выбираются после прохождения release CI на одном commit. В release pipeline добавлены переносимые scene/frame/text/vector/image данные, определения/instances компонентов, annotations и React handoff, встроенный MCP helper и подключение доверенных библиотек. Точные ограничения описаны в документации соответствующих функций.
 
+Исправлены два расхождения готового desktop с development: нативный компилятор библиотеки читает публичные SDK-исходники из `app.asar.unpacked`, а PNG-снимки на Retina сохраняют размеры в CSS pixels. Автоматизированная [desktop-приёмка](desktop.md#автоматическая-desktop-приёмка) проверяет встроенный MCP helper, операторское доверие библиотеке, UI review и перезапуск владельца на публичных synthetic данных. Локальное прохождение macOS arm64 не заменяет матрицу остальных ОС или ручную установку скачанного artifact.
+
 Перед обновлением прочитайте [совместимость и резервные копии](compatibility.md). Schema-1 migration сохраняет точные исходные байты до rewrite; для schema-2 проекта требуется собственная полная копия папки. Новые scene/annotations поля могут не открыться в старом alpha binary.
 
 Установщики остаются unsigned alpha. Для каждого platform artifact pipeline добавляет лицензии, standalone helper, build metadata и SHA256SUMS; tag build добавляет provenance bundle. [Проверка и воспроизводимая сборка](release.md). Не заявляйте выпуск RC, пока matrix/core/browser/MCP/filesystem/Git gates и ручная установка скачанного artifact не подтверждены.

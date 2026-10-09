@@ -1,6 +1,80 @@
 import { test, expect } from "@playwright/test";
 import { selectStudioOption } from "./select-helpers";
 
+test("frame stroke preserves child coordinates and multi-move preserves document order", async ({ page }) => {
+  await page.goto("/");
+  const screenId = "scene-geometry-regression";
+  const state = await page.evaluate(async (screenId) => {
+    const session = await fetch("/api/session").then((r) => r.json());
+    const headers = {
+      Authorization: `Bearer ${session.token}`, "x-studio-ui-token": session.uiToken,
+      "Content-Type": "application/json",
+    };
+    const project = await fetch("/api/project", { headers }).then((r) => r.json());
+    const nodes = ["a", "b", "c", "d"].map((id, index) => ({
+      id: "regression-" + id, name: id.toUpperCase(), type: "SceneText",
+      props: { text: id }, slots: {},
+      scene: { kind: "text", x: 400, y: index * 40, width: 100, height: 30 },
+    }));
+    nodes.push({
+      id: "regression-frame", name: "Frame", type: "SceneFrame", props: {},
+      slots: { content: [{
+        id: "regression-child", type: "SceneText", props: { text: "Child" }, slots: {},
+        scene: { kind: "text", x: 10, y: 20, width: 120, height: 40 },
+      }] },
+      scene: { kind: "frame", x: 40, y: 30, width: 300, height: 200,
+        stroke: "#123456", strokeWidth: 10, clip: true },
+    } as any);
+    const response = await fetch("/api/operations", {
+      method: "POST", headers,
+      body: JSON.stringify({ requestId: crypto.randomUUID(), baseRevision: project.revision,
+        operations: [{ type: "addPage", page: {
+          screenId, name: "Геометрия и порядок", viewport: { width: 800, height: 700 }, nodes,
+        } }] }),
+    });
+    if (!response.ok) throw new Error(await response.text());
+    return { headers, revision: (await response.json()).revision };
+  }, screenId);
+  const order = () => page.evaluate(async ({ headers, screenId }) => {
+    const project = await fetch("/api/project", { headers }).then((r) => r.json());
+    return project.pages.find((p: any) => p.screenId === screenId).nodes.map((n: any) => n.id);
+  }, { headers: state.headers, screenId });
+  try {
+    await expect(page.getByTestId("save-status")).toContainText("ревизия " + state.revision);
+    await page.getByRole("button", { name: "Экраны", exact: true }).click();
+    await selectStudioOption(page, "Экран", "Геометрия и порядок");
+    const frame = page.frameLocator('iframe[title="Экран Геометрия и порядок"]');
+    const child = frame.locator('[data-node-id="regression-child"]');
+    await expect(child).toBeVisible();
+    const geometry = await child.evaluate((node) => {
+      const parent = node.parentElement!.closest('[data-node-id="regression-frame"]')!;
+      const a = node.getBoundingClientRect(), b = parent.getBoundingClientRect();
+      return { x: a.x - b.x, y: a.y - b.y, width: b.width, height: b.height };
+    });
+    expect(geometry).toEqual({ x: 10, y: 20, width: 300, height: 200 });
+    await page.getByRole("button", { name: "Выделить regression-a", exact: true }).click();
+    await page.getByRole("checkbox", { name: "Выбрать слой C", exact: true }).check();
+    await page.getByRole("button", { name: "Перенести", exact: true }).click();
+    await expect.poll(order).toEqual([
+      "regression-b", "regression-d", "regression-frame", "regression-a", "regression-c",
+    ]);
+    await page.getByRole("button", { name: "Отменить правку", exact: true }).click();
+    await expect.poll(order).toEqual([
+      "regression-a", "regression-b", "regression-c", "regression-d", "regression-frame",
+    ]);
+  } finally {
+    await page.evaluate(async ({ headers, screenId }) => {
+      const project = await fetch("/api/project", { headers }).then((r) => r.json());
+      const response = await fetch("/api/operations", {
+        method: "POST", headers,
+        body: JSON.stringify({ requestId: crypto.randomUUID(), baseRevision: project.revision,
+          operations: [{ type: "removePage", pageId: screenId }] }),
+      });
+      if (!response.ok) throw new Error(await response.text());
+    }, { headers: state.headers, screenId });
+  }
+});
+
 test("scene layers create, edit, move, duplicate, hide and undo through durable operations", async ({ page }) => {
   await page.goto("/");
   const id = "scene-acceptance";

@@ -99,6 +99,27 @@ export function resolveTokens(
 export function exportTokensJSON(tokens: Tokens, theme: string): string {
   return JSON.stringify(resolveTokens(tokens, theme), null, 2) + "\n";
 }
+/** CSS quoted strings use hexadecimal escapes for controls, not JSON's \n/\t escapes. */
+export function serializeCSSValue(
+  value: string,
+  type?: TokenType,
+  key = "",
+): string {
+  if (type === "string")
+    return (
+      '"' +
+      value.replace(/["\\\x00-\x1f\x7f<>]/g, (character) =>
+        character === '"' || character === "\\"
+          ? "\\" + character
+          : "\\" + character.codePointAt(0)!.toString(16) + " ",
+      ) +
+      '"'
+    );
+  // Unquoted CSS values must not terminate a declaration or consume its suffix.
+  if (/[;{}<>\x00-\x1f\x7f]/.test(value) || /\/\*|\*\//.test(value))
+    throw new CoreError("UNSAFE_TOKEN_CSS", key);
+  return value;
+}
 export function exportTokensCSS(tokens: Tokens, theme: string): string {
   const values = resolveTokens(tokens, theme);
   const names = new Set<string>();
@@ -107,12 +128,14 @@ export function exportTokensCSS(tokens: Tokens, theme: string): string {
     Object.keys(values)
       .sort()
       .map((key) => {
-        const name = key.replace(/[._]/g, "-");
+        const name = key.replace(/^--/, "").replace(/[._]/g, "-");
         if (names.has(name)) throw new CoreError("TOKEN_CSS_COLLISION", name);
         names.add(name);
-        const value = String(values[key]);
-        if (/[;{}<>\n\r]/.test(value))
-          throw new CoreError("UNSAFE_TOKEN_CSS", key);
+        const value = serializeCSSValue(
+          String(values[key]),
+          tokens[key].type,
+          key,
+        );
         return `  --${name}: ${value};`;
       })
       .join("\n") +

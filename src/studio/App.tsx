@@ -151,6 +151,10 @@ export function StudioApp({
   desktopLibrary,
 }: { desktopLibrary?: DesktopLibrary } = {}) {
   const { t } = useI18n();
+  // Keep the file connection stable while long-lived callbacks use the current
+  // language. Reconnecting on a locale change would reset screen/selection.
+  const translator = useRef(t);
+  translator.current = t;
 
   const activeLibraries = desktopLibrary
     ? [...libraries, desktopMetadataLibrary(desktopLibrary.metadata)]
@@ -221,8 +225,8 @@ export function StudioApp({
     );
     setStatus(
       (__STUDIO_DEMO__
-        ? t("Сохранено в браузере · ревизия ")
-        : t("Сохранено локально · ревизия ")) + next.revision,
+        ? translator.current("Сохранено в браузере · ревизия ")
+        : translator.current("Сохранено локально · ревизия ")) + next.revision,
     );
   }, []);
   useEffect(() => {
@@ -259,7 +263,9 @@ export function StudioApp({
               if (active) {
                 setError(e.message);
                 setStatus(
-                  t("Сервис недоступен · сохранённые файлы остаются локально"),
+                  translator.current(
+                    "Сервис недоступен · сохранённые файлы остаются локально",
+                  ),
                 );
               }
             })
@@ -271,7 +277,7 @@ export function StudioApp({
         if (active)
           setError(
             controller.signal.aborted
-              ? t("Загрузка отменена. Файлы проекта сохранены.")
+              ? translator.current("Загрузка отменена. Файлы проекта сохранены.")
               : (e as Error).message,
           );
       }

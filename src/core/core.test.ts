@@ -480,3 +480,16 @@ it("counts portable document limits in UTF-8 bytes", () => {
   p.pages[0].nodes[0].props.text = "я".repeat(2_600_000);
   expect(() => parseProject(p)).toThrow("PROJECT_TOO_LARGE");
 });
+
+it("exports CSS strings without interpreting JSON newline escapes", () => {
+  expect(exportTokensCSS({ label: { type: "string", value: 'Line\nnext\t"quote"\\tail; } <style>' } }, "light"))
+    .toContain('--label: "Line\\a next\\9 \\"quote\\"\\\\tail; } \\3c style\\3e ";');
+});
+it("exports one CSS prefix while retaining legacy token-name collision checks", () => {
+  expect(exportTokensCSS({ "--bg": { type: "color", value: "#fff" } }, "light")).toContain("--bg: #fff");
+  expect(exportTokensCSS({ "--bg": { type: "color", value: "#fff" } }, "light")).not.toContain("----bg");
+  expect(() => exportTokensCSS({ bg: { type: "color", value: "#fff" }, "--bg": { type: "color", value: "#000" } }, "light"))
+    .toThrow("TOKEN_CSS_COLLISION");
+  expect(() => exportTokensCSS({ font: { type: "fontFamily", value: 'system-ui; } body { display:none } /*' } }, "light"))
+    .toThrow("UNSAFE_TOKEN_CSS");
+});
