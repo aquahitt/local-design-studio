@@ -40,13 +40,24 @@ export async function captureDesktopSnapshot(
       desktopLibrary,
     });
     const deadline = Date.now() + 15000;
-    // Retry delivery until React installs its message listener. Input remains an immutable snapshot.
+    // Wait for React's listener, then deliver once. Repeated delivery creates a
+    // new input object and cancels PreviewApp's pending frame readiness signal.
+    let delivered = false;
     while (true) {
-      const ready = await window.webContents.executeJavaScript(
-        `(() => { window.dispatchEvent(new MessageEvent('message', { origin: 'studio://app', source: window, data: ${payload} })); return document.documentElement.dataset.studioPreviewRevision === ${JSON.stringify(String(project.revision))}; })()`,
-      );
-      if (ready) break;
-      if (Date.now() > deadline) throw new Error("RENDER_TIMEOUT");
+      const state = (await window.webContents.executeJavaScript(
+        `(() => { const listening = document.documentElement.dataset.studioPreviewListening === 'true'; if (listening && !${JSON.stringify(delivered)}) window.dispatchEvent(new MessageEvent('message', { origin: 'studio://app', source: window, data: ${payload} })); return { listening, revision: document.documentElement.dataset.studioPreviewRevision }; })()`,
+      )) as { listening: boolean; revision?: string };
+      delivered ||= state.listening;
+      if (delivered && state.revision === String(project.revision)) break;
+      if (Date.now() > deadline) {
+        // No project text, props, paths or credentials enter the diagnostic.
+        console.error("Desktop snapshot readiness timed out", {
+          stage: delivered ? "preview-render" : "preview-listener",
+          receivedRevision: state.revision ?? null,
+          expectedRevision: project.revision,
+        });
+        throw new Error("RENDER_TIMEOUT");
+      }
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
     const result = await window.webContents.executeJavaScript(`(async () => {

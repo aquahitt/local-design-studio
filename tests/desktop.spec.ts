@@ -354,12 +354,45 @@ test("desktop installed MCP survives owner replacement, trusted library restart 
     await page.getByRole("button", { name: "Применить свойства", exact: true }).click();
     await expect(preview.locator(".smoke-root")).toHaveAttribute("data-size", "md");
     const current = await call("project_read");
+    // Reproduce a busy/hidden compositor deterministically: the previous 100ms
+    // snapshot resend cancelled both readiness frames forever at this cadence.
+    await app.evaluate(({ app }) => {
+      (globalThis as any).__slowSnapshotFramesInstalled = 0;
+      app.on("web-contents-created", (_event, contents) => {
+        contents.once("dom-ready", () => {
+          if (contents.getURL() !== "studio://preview/preview") return;
+          void contents.executeJavaScript(`(() => {
+            const request = window.requestAnimationFrame.bind(window);
+            const cancel = window.cancelAnimationFrame.bind(window);
+            const pending = new Map();
+            let nextId = 0;
+            window.requestAnimationFrame = callback => {
+              const id = ++nextId;
+              const timer = setTimeout(() => {
+                const nativeId = request(time => { pending.delete(id); callback(time); });
+                pending.set(id, { nativeId });
+              }, 220);
+              pending.set(id, { timer });
+              return id;
+            };
+            window.cancelAnimationFrame = id => {
+              const entry = pending.get(id);
+              if (!entry) return;
+              if (entry.timer !== undefined) clearTimeout(entry.timer);
+              if (entry.nativeId !== undefined) cancel(entry.nativeId);
+              pending.delete(id);
+            };
+          })()`).then(() => { (globalThis as any).__slowSnapshotFramesInstalled++; });
+        });
+      });
+    });
     const rendered = await raw("document_render", { pageId: initial.pages[0].screenId, revision: current.revision, viewport: { width: 390, height: 600 } });
     expect(rendered.isError, JSON.stringify((rendered.content as { type: string; text?: string }[]).filter((item) => item.type === "text"))).not.toBe(true);
     const image = (rendered.content as { type: string; mimeType: string; data: string }[]).find((item) => item.type === "image")!;
     expect(image.mimeType).toBe("image/png");
     const png = Buffer.from(image.data, "base64");
     const renderMetadata = JSON.parse((rendered.content as { type: string; text: string }[]).find((item) => item.type === "text")!.text);
+    expect(await app.evaluate(() => (globalThis as any).__slowSnapshotFramesInstalled)).toBe(1);
     expect(renderMetadata.viewport).toEqual({ width: 390, height: 600 });
     expect(renderMetadata.text).toContain("Installed MCP approved");
     expect(renderMetadata.warnings).toEqual([]);
