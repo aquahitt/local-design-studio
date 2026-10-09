@@ -67,7 +67,12 @@ jobs:
         run: node scripts/desktop/test-packaged.mjs
       - name: Test packaged application (Linux)
         if: runner.os == 'Linux'
-        run: xvfb-run -a node scripts/desktop/test-packaged.mjs
+        run: |
+          # Match the root-owned SUID helper installed by the DEB package.
+          # The raw packaging directory belongs to the runner before installation.
+          sudo chown root:root out/LocalDesignStudio-linux-x64/chrome-sandbox
+          sudo chmod 4755 out/LocalDesignStudio-linux-x64/chrome-sandbox
+          xvfb-run -a node scripts/desktop/test-packaged.mjs
       - name: Stage standalone helper, licenses and build metadata
         run: node scripts/release/stage.mjs
       - name: Clean standalone helper lifecycle

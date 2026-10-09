@@ -68,8 +68,12 @@ export function PreviewApp() {
       if (event.data?.type === "studio-preview-render") setInput(event.data);
     }
     window.addEventListener("message", receive);
+    document.documentElement.dataset.studioPreviewListening = "true";
     ready();
-    return () => window.removeEventListener("message", receive);
+    return () => {
+      window.removeEventListener("message", receive);
+      delete document.documentElement.dataset.studioPreviewListening;
+    };
   }, []);
   const library = [...libraries, ...(external ? [external] : [])].find(
     (l) => l.id === input?.library.id && l.version === input?.library.version,
@@ -95,10 +99,14 @@ export function PreviewApp() {
     const mode = library.themes.find((t) => t.id === input.theme);
     document.documentElement.className = mode?.className ?? "";
     for (const a of Array.from(document.documentElement.attributes))
-      if (a.name.startsWith("data-"))
+      if (
+        a.name.startsWith("data-") &&
+        !a.name.startsWith("data-studio-preview-")
+      )
         document.documentElement.removeAttribute(a.name);
     for (const [key, value] of Object.entries(mode?.attributes ?? {}))
-      document.documentElement.setAttribute(key, value);
+      if (!key.toLowerCase().startsWith("data-studio-preview-"))
+        document.documentElement.setAttribute(key, value);
     document.body.style.cssText =
       "margin:0;padding:20px;min-height:100vh;box-sizing:border-box;background:var(--bg,#fff);color:var(--text-primary,#17202c);font-family:system-ui,sans-serif";
     for (const t of library.tokens)

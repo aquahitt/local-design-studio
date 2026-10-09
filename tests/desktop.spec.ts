@@ -19,10 +19,12 @@ test("desktop creates, saves, reopens disk project and isolates preview", async 
       process.env.STUDIO_PACKAGED_EXECUTABLE
         ? {
             executablePath: process.env.STUDIO_PACKAGED_EXECUTABLE,
+            chromiumSandbox: process.platform === "linux",
             env: { ...process.env, STUDIO_USER_DATA: join(temp, "settings") },
           }
         : {
             args: ["."],
+            chromiumSandbox: process.platform === "linux",
             env: { ...process.env, STUDIO_USER_DATA: join(temp, "settings") },
           },
     );
@@ -214,6 +216,7 @@ test("desktop installed MCP survives owner replacement, trusted library restart 
   const env = desktopRuntimeEnv(settings, emptyPath);
   const launch = () => electron.launch({
     ...(packaged ? { executablePath: packaged } : { args: [resolve(".")] }),
+    chromiumSandbox: process.platform === "linux",
     cwd,
     env,
   });
@@ -254,7 +257,8 @@ test("desktop installed MCP survives owner replacement, trusted library restart 
       args: [...(packaged ? [] : [resolve(".")]), "--studio-mcp", "--project", projectRoot],
       cwd,
       env,
-      stderr: "pipe",
+      // Keep native bootstrap failures visible in cross-platform CI logs.
+      stderr: "inherit",
     });
     await client.connect(helper());
     connected = true;
@@ -350,12 +354,45 @@ test("desktop installed MCP survives owner replacement, trusted library restart 
     await page.getByRole("button", { name: "Применить свойства", exact: true }).click();
     await expect(preview.locator(".smoke-root")).toHaveAttribute("data-size", "md");
     const current = await call("project_read");
+    // Reproduce a busy/hidden compositor deterministically: the previous 100ms
+    // snapshot resend cancelled both readiness frames forever at this cadence.
+    await app.evaluate(({ app }) => {
+      (globalThis as any).__slowSnapshotFramesInstalled = 0;
+      app.on("web-contents-created", (_event, contents) => {
+        contents.once("dom-ready", () => {
+          if (contents.getURL() !== "studio://preview/preview") return;
+          void contents.executeJavaScript(`(() => {
+            const request = window.requestAnimationFrame.bind(window);
+            const cancel = window.cancelAnimationFrame.bind(window);
+            const pending = new Map();
+            let nextId = 0;
+            window.requestAnimationFrame = callback => {
+              const id = ++nextId;
+              const timer = setTimeout(() => {
+                const nativeId = request(time => { pending.delete(id); callback(time); });
+                pending.set(id, { nativeId });
+              }, 220);
+              pending.set(id, { timer });
+              return id;
+            };
+            window.cancelAnimationFrame = id => {
+              const entry = pending.get(id);
+              if (!entry) return;
+              if (entry.timer !== undefined) clearTimeout(entry.timer);
+              if (entry.nativeId !== undefined) cancel(entry.nativeId);
+              pending.delete(id);
+            };
+          })()`).then(() => { (globalThis as any).__slowSnapshotFramesInstalled++; });
+        });
+      });
+    });
     const rendered = await raw("document_render", { pageId: initial.pages[0].screenId, revision: current.revision, viewport: { width: 390, height: 600 } });
-    expect(rendered.isError).not.toBe(true);
+    expect(rendered.isError, JSON.stringify((rendered.content as { type: string; text?: string }[]).filter((item) => item.type === "text"))).not.toBe(true);
     const image = (rendered.content as { type: string; mimeType: string; data: string }[]).find((item) => item.type === "image")!;
     expect(image.mimeType).toBe("image/png");
     const png = Buffer.from(image.data, "base64");
     const renderMetadata = JSON.parse((rendered.content as { type: string; text: string }[]).find((item) => item.type === "text")!.text);
+    expect(await app.evaluate(() => (globalThis as any).__slowSnapshotFramesInstalled)).toBe(1);
     expect(renderMetadata.viewport).toEqual({ width: 390, height: 600 });
     expect(renderMetadata.text).toContain("Installed MCP approved");
     expect(renderMetadata.warnings).toEqual([]);
@@ -363,7 +400,7 @@ test("desktop installed MCP survives owner replacement, trusted library restart 
     expect(png.readUInt32BE(16)).toBe(390);
     expect(png.readUInt32BE(20)).toBe(600);
     const cropped = await raw("document_render", { pageId: initial.pages[0].screenId, revision: current.revision, nodeId: "smoke-tabs", viewport: { width: 390, height: 600 } });
-    expect(cropped.isError).not.toBe(true);
+    expect(cropped.isError, JSON.stringify((cropped.content as { type: string; text?: string }[]).filter((item) => item.type === "text"))).not.toBe(true);
     const croppedContent = cropped.content as { type: string; text: string; data: string }[];
     const croppedMetadata = JSON.parse(croppedContent.find((item) => item.type === "text")!.text);
     const croppedBound = croppedMetadata.bounds.find((bound: { id: string }) => bound.id === "smoke-tabs");
