@@ -61,6 +61,14 @@ node scripts/desktop/checksums.mjs
 
 Workflow Desktop builds проверяет исходную логику и упакованное приложение на macOS arm64/x64, Windows x64 и Linux x64. Артефакты PR временные. Push matching alpha тега desktop-v<package.version> публикует GitHub prerelease только после успеха всей матрицы. Повтор запуска обновляет assets того же alpha тега.
 
+Linux smoke запускает Chromium sandbox: перед тестом raw packaging-каталог получает
+root-owned `chrome-sandbox` с mode 4755, как при установке DEB. Это нужно и для
+нативного bootstrap установленного MCP-helper. Ранее Playwright автоматически
+добавлял `--no-sandbox` GUI-процессу и скрывал недостающую настройку. Теперь тест
+явно включает sandbox. DEB устанавливает helper через пакетный менеджер; распакованный
+ZIP на Ubuntu 24.04 требует отдельной настройки sandbox и системных библиотек.
+Этот CI smoke не заменяет ручную установку DEB на чистую машину (#27).
+
 Сборка локально может использовать APPLE_SIGN_IDENTITY и установленный в Keychain сертификат; APPLE_ID/APPLE_APP_PASSWORD/APPLE_TEAM_ID задают notarization. Windows maker принимает WINDOWS_CERTIFICATE_FILE и WINDOWS_CERTIFICATE_PASSWORD. Эти настройки не включены в unsigned CI: публикация подписанного релиза требует отдельной конфигурации секретов и проверки подписи.
 
 ## Автоматическая desktop-приёмка

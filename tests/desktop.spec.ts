@@ -19,10 +19,12 @@ test("desktop creates, saves, reopens disk project and isolates preview", async 
       process.env.STUDIO_PACKAGED_EXECUTABLE
         ? {
             executablePath: process.env.STUDIO_PACKAGED_EXECUTABLE,
+            chromiumSandbox: process.platform === "linux",
             env: { ...process.env, STUDIO_USER_DATA: join(temp, "settings") },
           }
         : {
             args: ["."],
+            chromiumSandbox: process.platform === "linux",
             env: { ...process.env, STUDIO_USER_DATA: join(temp, "settings") },
           },
     );
@@ -214,6 +216,7 @@ test("desktop installed MCP survives owner replacement, trusted library restart 
   const env = desktopRuntimeEnv(settings, emptyPath);
   const launch = () => electron.launch({
     ...(packaged ? { executablePath: packaged } : { args: [resolve(".")] }),
+    chromiumSandbox: process.platform === "linux",
     cwd,
     env,
   });
