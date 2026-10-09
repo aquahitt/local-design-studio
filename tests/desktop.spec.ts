@@ -1,5 +1,5 @@
 import { test, expect, _electron as electron } from "@playwright/test";
-import { mkdtemp, readFile, rm, mkdir } from "node:fs/promises";
+import { mkdtemp, readFile, rm, mkdir, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -397,8 +397,11 @@ test("desktop installed MCP survives owner replacement, trusted library restart 
     await expect(page.frameLocator(".page-stage iframe").locator(".smoke-root")).toHaveAttribute("data-size", "md");
     expect(await app.evaluate(() => (globalThis as any).__desktopExternalRequests)).toEqual([]);
     const document = await readFile(join(projectRoot, "project.json"), "utf8");
-    expect(document).not.toContain(libraryRoot);
-    expect(await readFile(join(settings, "libraries.json"), "utf8")).toContain(libraryRoot);
+    const canonicalLibrary = await realpath(libraryRoot);
+    expect(document).not.toContain(JSON.stringify(libraryRoot));
+    expect(document).not.toContain(JSON.stringify(canonicalLibrary));
+    const preferences = JSON.parse(await readFile(join(settings, "libraries.json"), "utf8"));
+    expect(preferences[await realpath(projectRoot)]).toBe(canonicalLibrary);
   } finally {
     await standalone?.close();
     if (connected) await client.close();
