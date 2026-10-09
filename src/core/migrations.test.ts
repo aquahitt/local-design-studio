@@ -133,8 +133,9 @@ it("preserves the legacy file when the backup directory cannot be created", asyn
   await writeFile(join(directory, "project.json"), original);
   await mkdir(join(directory, ".studio"));
   await writeFile(join(directory, ".studio", "backups"), "not a directory");
+  // Windows reports ENOENT for traversal through a file; POSIX reports ENOTDIR.
   await expect(ProjectStore.open(directory)).rejects.toMatchObject({
-    code: "ENOTDIR",
+    code: expect.stringMatching(/^(ENOTDIR|ENOENT)$/),
   });
   expect(await readFile(join(directory, "project.json"))).toEqual(original);
 });

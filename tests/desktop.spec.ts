@@ -272,6 +272,7 @@ test("desktop installed MCP survives owner replacement, trusted library restart 
     }, libraryRoot);
     const beforeTrust = await readFile(join(projectRoot, "project.json"), "utf8");
     await page.getByRole("button", { name: "Подключить библиотеку", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Подключить библиотеку", exact: true })).toBeEnabled();
     expect(await readFile(join(projectRoot, "project.json"), "utf8")).toBe(beforeTrust);
     expect((await call("components_list", { libraryId: "stroi-ui" })).components).toHaveLength(0);
     await app.evaluate(({ dialog }) => {

@@ -5,6 +5,7 @@ import {
   symlink,
   mkdir,
   writeFile,
+  realpath,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -41,9 +42,8 @@ it("requires explicit operator trust and persists roots separately from projects
   expect(bundle.metadata.id).toBe("external-example");
   const restored = await new DesktopLibraries(settings).load(project);
   expect(restored?.metadata).toEqual(bundle.metadata);
-  expect(await readFile(join(settings, "libraries.json"), "utf8")).toContain(
-    root,
-  );
+  const preferences = JSON.parse(await readFile(join(settings, "libraries.json"), "utf8"));
+  expect(preferences[await realpath(project)]).toBe(await realpath(root));
   await libraries.clear(project);
   expect(await new DesktopLibraries(settings).load(project)).toBeUndefined();
 });
