@@ -12,6 +12,7 @@ import {
 } from "../core/layer-commands";
 import { useStudioShortcuts } from "./shortcuts";
 import { StudioSelect } from "./StudioSelect";
+import { GeometryActions } from "./GeometryActions";
 
 const CLIPBOARD = "studio-layer-clipboard-v1";
 export function LayerActions({
@@ -240,6 +241,15 @@ export function LayerActions({
   }
   return (
     <section className="panel layer-actions" aria-label={t("Команды слоёв")}>
+      {selectedIds.length > 1 && <GeometryActions
+        project={project}
+        selectedIds={selectedIds}
+        disabled={blocked}
+        onCommand={(generate, description) => void run(async () => {
+          const operations = generate();
+          if (operations.length) await mutate(operations, description, project.revision);
+        })}
+      />}
       <div className="layer-toolbar">
         <button disabled={blocked} onClick={() => void add("frame")}>
           {t("Фрейм +")}

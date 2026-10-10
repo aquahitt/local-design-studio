@@ -238,13 +238,15 @@ export function StudioApp({
     let poll: ReturnType<typeof setInterval> | undefined;
     void (async () => {
       try {
-        api = await StudioClient.connect();
+        api = await StudioClient.connect(controller.signal);
+        controller.signal.throwIfAborted();
         const initial = await api.read({
           signal: controller.signal,
           onProgress: (received, total) => {
             if (active) setLoadProgress({ received, total });
           },
         });
+        controller.signal.throwIfAborted();
         if (!active) return;
         setClient(api);
         accept(initial);

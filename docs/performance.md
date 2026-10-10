@@ -96,6 +96,26 @@ Node v24.2.0, Chromium 153.0.8010.12, 1280×900, deviceScaleFactor 1.
 метрика может быть больше короткой core операции. Таблица не обещает 60 FPS при
 непрерывном drag; для этого нужен отдельный trace реального editor input stream.
 
+## Hosted CI baseline
+
+Постоянный снимок успешного [прогона 2026-10-09](https://github.com/aquahitt/local-design-studio/actions/runs/37890231637):
+[`baseline-ubuntu-24.04-x64.json`](../scripts/benchmarks/baseline-ubuntu-24.04-x64.json).
+[Provenance](../scripts/benchmarks/baseline-ubuntu-24.04-x64.provenance.json)
+фиксирует исходный commit, проверенный PR merge commit, runner и viewport.
+JSON сохранён без изменения samples. Это GitHub-hosted Ubuntu 24.04 x64,
+AMD EPYC 9V74, 4 logical CPUs, 15.6 GiB RAM, Node 24.2.0 и Chromium 153.0.8010.12.
+Hardware конкретного hosted runner может отличаться между прогонами.
+
+| Метрика p95 | 1k | 10k |
+| --- | ---: | ---: |
+| Chromium полный remount | 35.7 ms | 360.6 ms |
+| Durable save | 63.1 ms | 762.3 ms |
+
+Все действующие ceilings прошли. 50k безопасно отклоняется с PROJECT_TOO_LARGE;
+это не поддерживаемый размер документа. Снимок измеряет прежний interaction harness,
+а не непрерывный pointer drag или IME в редакторе. Новые инструменты alpha.4
+требуют собственных end-to-end traces; существующие ceilings не означают 60 FPS.
+
 ## Численные ceilings и CI
 
 Авторитетный набор:
@@ -120,9 +140,9 @@ Node v24.2.0, Chromium 153.0.8010.12, 1280×900, deviceScaleFactor 1.
 
 Эти ceilings — защитные границы для нового alpha.3, с запасом для Ubuntu hosted
 runners, не целевые UX latency. Превышение — regression; отсутствие измерения
-тоже failure. Локальный baseline проходит ceilings. Первый hosted CI результат
-нужно сохранить как baseline этой runner class; сами workflow артефакты содержат
-CPU, память, OS, Node, browser version, samples и failures.
+тоже failure. Локальный и сохранённый hosted baseline проходят ceilings. Workflow артефакты
+содержат CPU, память, OS, Node, browser version, samples и failures; постоянный
+снимок выше сохраняет их после истечения retention.
 
 [`benchmark.yml`](../.github/workflows/benchmark.yml) запускается вручную,
 на relevant pull requests и pushes main. Workflow устанавливает Chromium,
@@ -151,3 +171,16 @@ incremental operations/render, а не ослабление validation.
 Payload budgets здесь применимы к plain scene fixtures; большие component
 registries/definitions и annotations требуют собственных summary/detail
 contracts, а не включения всего документа в selection response.
+
+## Отмена загрузки в редакторе
+
+Отмена охватывает HTTP-запрос session и получение project; Retry начинает новую
+попытку. Запоздавший результат отменённого запроса не заменяет принятый проект.
+Регрессии проверяют обе стадии на временном существующем проекте: bytes
+project.json/assets/fixtures и revision сохраняются, операции не отправляются.
+
+Это граница клиента редактора. Она не останавливает уже начатую инициализацию
+файлового владельца, recovery/migration, upstream buffering или первое открытие
+проекта в native launcher. В demo ожидание Web Lock также не прерывается немедленно.
+Полная приёмка больших документов #28 остаётся открытой до проверки этих стадий,
+отзывчивости parsing/render и настоящих gestures/text новых инструментов.
