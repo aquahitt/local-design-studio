@@ -1,0 +1,59 @@
+{
+  "formatVersion": 1,
+  "cases": {
+    "1000": {
+      "parseMs": 100,
+      "canonicalMs": 50,
+      "loadMs": 500,
+      "saveMs": 500,
+      "transformMs": 16,
+      "hitTestMs": 8,
+      "editBatchMs": 100,
+      "mcpSelectionMs": 50,
+      "renderSsrMs": 300,
+      "rssMB": 512,
+      "heapMB": 256,
+      "selectionBytes": 2500,
+      "pageBytes": 25000
+    },
+    "10000": {
+      "parseMs": 600,
+      "canonicalMs": 250,
+      "loadMs": 1800,
+      "saveMs": 1800,
+      "transformMs": 50,
+      "hitTestMs": 16,
+      "editBatchMs": 600,
+      "mcpSelectionMs": 200,
+      "renderSsrMs": 1400,
+      "rssMB": 768,
+      "heapMB": 512,
+      "selectionBytes": 2500,
+      "pageBytes": 25000
+    },
+    "50000": {
+      "rejectionMs": 2000,
+      "rssMB": 1024,
+      "heapMB": 768
+    }
+  },
+  "browserCases": {
+    "1000": {
+      "browserRenderMs": 800,
+      "browserPanZoomMs": 200,
+      "browserDragMs": 400,
+      "browserTextInputMs": 400,
+      "browserHeapMB": 128
+    },
+    "10000": {
+      "browserRenderMs": 3000,
+      "browserPanZoomMs": 600,
+      "browserDragMs": 1500,
+      "browserTextInputMs": 1500,
+      "browserHeapMB": 512
+    }
+  },
+  "expectedRejections": {
+    "50000": ["PROJECT_TOO_LARGE", "MAX_NODES"]
+  }
+}

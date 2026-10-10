@@ -1,0 +1,144 @@
+{
+  "designComponents": [
+    {
+      "id": "button",
+      "name": "Button",
+      "nodes": [
+        {
+          "id": "button-label",
+          "props": {
+            "text": "Default"
+          },
+          "scene": {
+            "height": 40,
+            "kind": "text",
+            "width": 180,
+            "x": 10,
+            "y": 15
+          },
+          "slots": {},
+          "type": "SceneText"
+        }
+      ],
+      "properties": {
+        "label": {
+          "default": "Property default",
+          "nodeId": "button-label",
+          "prop": "text"
+        }
+      },
+      "variants": {
+        "primary": {
+          "button-label": {
+            "text": "Primary"
+          }
+        }
+      },
+      "version": 1
+    }
+  ],
+  "groups": [
+    {
+      "components": [],
+      "id": "screens",
+      "name": "Screens",
+      "pages": ["home"],
+      "tokens": []
+    }
+  ],
+  "library": {
+    "id": "external",
+    "version": "1"
+  },
+  "name": "Scene example",
+  "pages": [
+    {
+      "screenId": "home",
+      "name": "Home",
+      "viewport": {
+        "width": 800,
+        "height": 600
+      },
+      "nodes": [
+        {
+          "hidden": false,
+          "id": "frame",
+          "locked": false,
+          "name": "Frame",
+          "props": {},
+          "scene": {
+            "clip": true,
+            "fill": "#fff",
+            "height": 200,
+            "kind": "frame",
+            "width": 300,
+            "x": 40,
+            "y": 30
+          },
+          "slots": {
+            "content": [
+              {
+                "id": "label",
+                "props": {
+                  "text": "Hello"
+                },
+                "scene": {
+                  "fontSize": 16,
+                  "height": 40,
+                  "kind": "text",
+                  "width": 120,
+                  "x": 10,
+                  "y": 20
+                },
+                "slots": {},
+                "type": "SceneText"
+              },
+              {
+                "id": "shape",
+                "props": {},
+                "scene": {
+                  "height": 50,
+                  "kind": "vector",
+                  "path": "M0 0 L50 0 L25 50 Z",
+                  "width": 50,
+                  "x": 150,
+                  "y": 40
+                },
+                "slots": {},
+                "type": "SceneVector"
+              },
+              {
+                "id": "instance",
+                "instance": {
+                  "definitionId": "button",
+                  "overrides": {
+                    "button-label": {
+                      "text": "Override"
+                    }
+                  },
+                  "variant": "primary"
+                },
+                "props": {},
+                "scene": {
+                  "height": 80,
+                  "kind": "component",
+                  "width": 200,
+                  "x": 100,
+                  "y": 50
+                },
+                "slots": {},
+                "type": "SceneComponent"
+              }
+            ]
+          },
+          "type": "SceneFrame"
+        }
+      ]
+    }
+  ],
+  "projectId": "scene-example",
+  "revision": 0,
+  "schemaVersion": 2,
+  "theme": "light",
+  "tokens": {}
+}

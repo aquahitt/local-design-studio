@@ -1,0 +1,67 @@
+{
+  "sdkVersion": 1,
+  "capabilities": { "jsonProps": true, "tokenRefs": true, "slots": false },
+  "entry": "src/library.tsx",
+  "exportName": "library",
+  "id": "external-example",
+  "version": "1.0.0",
+  "name": "External example library",
+  "components": {
+    "Notice": {
+      "name": "Notice",
+      "category": "Content",
+      "fields": {
+        "message": { "type": "string" },
+        "tone": { "type": "select", "options": ["info", "warning"] }
+      },
+      "defaultProps": {
+        "message": "A component from an explicitly enabled library",
+        "tone": "info"
+      },
+      "fixtures": [
+        { "name": "Default", "props": {} },
+        {
+          "name": "Warning",
+          "props": { "tone": "warning", "message": "Synthetic warning" }
+        }
+      ],
+      "states": ["default", "warning"],
+      "support": "rendered"
+    }
+  },
+  "themes": [
+    { "id": "light", "name": "Light" },
+    { "id": "dark", "name": "Dark", "className": "dark" }
+  ],
+  "tokens": [
+    {
+      "name": "--bg",
+      "value": "#f6f8fc",
+      "source": "external-example",
+      "category": "color",
+      "themes": { "dark": "#151d2c" }
+    },
+    {
+      "name": "--text-primary",
+      "value": "#20304d",
+      "source": "external-example",
+      "category": "color",
+      "themes": { "dark": "#e1eaff" }
+    },
+    {
+      "name": "--external-accent",
+      "value": "#315ad8",
+      "source": "external-example",
+      "category": "color",
+      "themes": { "dark": "#8caaff" }
+    }
+  ],
+  "migrations": [
+    {
+      "fromVersion": "0.9.0",
+      "toVersion": "1.0.0",
+      "renameTypes": { "OldNotice": "Notice" },
+      "renameProps": { "Notice": { "text": "message" } }
+    }
+  ]
+}

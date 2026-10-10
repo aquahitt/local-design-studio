@@ -1,6 +1,6 @@
 {
   "name": "local-design-studio",
-  "version": "0.0.1",
+  "version": "0.1.0-alpha.3",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,19 +8,46 @@
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:browser": "playwright test"
+    "test:browser": "playwright test",
+    "service": "tsx src/service/cli.ts",
+    "mcp": "node scripts/mcp.mjs",
+    "build:mcp": "node scripts/mcp-build.mjs",
+    "studio": "vite --host 127.0.0.1 --port 5178 --strictPort",
+    "build:demo": "tsc --noEmit && vite build --mode demo && node scripts/demo-notices.mjs",
+    "preview:demo": "vite preview --mode demo --host 127.0.0.1",
+    "test:demo": "playwright test --config playwright.demo.config.ts",
+    "build:desktop": "tsc --noEmit && node scripts/desktop/build.mjs",
+    "desktop": "npm run build:desktop && electron .",
+    "package:desktop": "npm run build:desktop && electron-forge package",
+    "make:desktop": "npm run build:desktop && electron-forge make",
+    "test:desktop": "playwright test --config playwright.desktop.config.ts",
+    "test:desktop:packaged": "node scripts/desktop/test-packaged.mjs",
+    "test:accessibility": "playwright test --config playwright.accessibility.config.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.0",
     "@puckeditor/core": "0.23.0",
+    "fflate": "0.8.2",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "zod": "4.6.5"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@electron-forge/cli": "8.0.1",
+    "@electron-forge/maker-deb": "8.0.1",
+    "@electron-forge/maker-squirrel": "8.0.1",
+    "@electron-forge/maker-zip": "8.0.1",
     "@playwright/test": "1.63.0",
+    "@tailwindcss/vite": "4.3.3",
     "@types/node": "26.6.4",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.1.1",
+    "electron": "44.5.1",
+    "esbuild": "0.28.2",
+    "tailwindcss": "4.3.3",
+    "tsx": "4.23.15",
     "typescript": "7.0.2",
     "vite": "8.3.2",
     "vitest": "5.0.3"
@@ -37,5 +64,13 @@
   "bugs": {
     "url": "https://github.com/aquahitt/local-design-studio/issues"
   },
-  "homepage": "https://github.com/aquahitt/local-design-studio#readme"
+  "homepage": "https://github.com/aquahitt/local-design-studio#readme",
+  "main": "desktop-dist/main.cjs",
+  "productName": "Local Design Studio",
+  "author": {
+    "name": "Local Design Studio contributors"
+  },
+  "config": {
+    "forge": "./forge.config.cjs"
+  }
 }
