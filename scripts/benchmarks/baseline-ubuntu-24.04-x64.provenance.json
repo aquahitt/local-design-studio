@@ -1,0 +1,13 @@
+{
+  "report": "baseline-ubuntu-24.04-x64.json",
+  "sourceCommit": "8cf1a7781006f21494d2a0cdc8b7e73971d161e4",
+  "testedCommit": "e4abae32c33604e6c53b07435ee142cc305014f3",
+  "run": "https://github.com/aquahitt/local-design-studio/actions/runs/37890231637",
+  "runner": "GitHub-hosted ubuntu-24.04",
+  "viewport": {
+    "width": 1280,
+    "height": 900,
+    "deviceScaleFactor": 1
+  },
+  "scope": "Existing production Preview.Nodes harness; not sustained editor pointer or IME input."
+}

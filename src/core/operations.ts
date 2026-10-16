@@ -256,6 +256,13 @@ export function applyBatch(project: Project, batch: Batch): Project {
           if (lockedInTree(op.nodeId))
             throw new CoreError("NODE_LOCKED", op.nodeId);
         } else if (unlockingOnly) editable(op.nodeId);
+        // Moving/resizing a parent must not indirectly edit a locked descendant.
+        // Name/paint changes and unchanged geometry remain allowed.
+        if (op.scene && hasLockedDescendant(n) &&
+          (["kind", "x", "y", "width", "height", "rotation"] as const).some((key) =>
+            op.scene![key] !== undefined &&
+            op.scene![key] !== (key === "rotation" ? n.scene?.rotation ?? 0 : n.scene?.[key]),
+          )) throw new CoreError("NODE_LOCKED", op.nodeId);
         if (op.name !== undefined) n.name = op.name;
         if (op.hidden !== undefined) n.hidden = op.hidden;
         if (op.locked !== undefined) n.locked = op.locked;

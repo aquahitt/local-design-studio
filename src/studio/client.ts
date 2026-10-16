@@ -15,12 +15,13 @@ export class StudioClient {
     private token: string,
     private uiToken: string,
   ) {}
-  static async connect() {
+  static async connect(signal?: AbortSignal) {
+    signal?.throwIfAborted();
     if (__STUDIO_DEMO__) {
       const { BrowserDemoClient } = await import("../demo/client");
       return new BrowserDemoClient(window.localStorage);
     }
-    const response = await fetch("/api/session");
+    const response = await fetch("/api/session", { signal });
     if (!response.ok)
       throw new Error(
         translate(readStudioLocale(), "Локальный сервис недоступен"),

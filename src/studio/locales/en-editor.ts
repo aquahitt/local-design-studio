@@ -1,4 +1,18 @@
 export const editorEnglish: Record<string, string> = {
+  "Выравнивание и промежутки": "Alignment and spacing",
+  "Выровнять по левому краю": "Align left",
+  "Выровнять по центру горизонтально": "Align horizontal centers",
+  "Выровнять по правому краю": "Align right",
+  "Выровнять по верхнему краю": "Align top",
+  "Выровнять по центру вертикально": "Align vertical centers",
+  "Выровнять по нижнему краю": "Align bottom",
+  "Равные промежутки по горизонтали": "Equal horizontal gaps",
+  "Равные промежутки по вертикали": "Equal vertical gaps",
+  "Недостаточно места для равных промежутков. Раздвинь крайние объекты.": "There is not enough room for equal gaps. Move the outer objects farther apart.",
+  "Выбранный слой или его потомок заблокирован.": "A selected layer or its descendant is locked.",
+  "Выбери слои свободной сцены с заданной геометрией.": "Select free-scene layers with defined geometry.",
+  "Выбери независимые слои: два для выравнивания, три для промежутков.": "Select independent layers: two for alignment, three for equal gaps.",
+  "Выбери слои одной страницы.": "Select layers on the same page.",
   "Группы:": "Groups:",
   "{0} ({1} экранов, {2} компонентов, {3} токенов)":
     "{0} ({1} pages, {2} components, {3} tokens)",
