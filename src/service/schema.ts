@@ -1,6 +1,7 @@
 import type { Project, ProjectNode } from "../core/project";
 import type { LibraryMetadata } from "../library/sdk";
 import { resolveTokens } from "../core/tokens";
+import { BLEND_MODES } from "../core/paint";
 const str = { type: "string", minLength: 1 };
 const number = { type: "number" };
 const integer = { type: "integer", minimum: 0 };
@@ -8,9 +9,92 @@ const json = {};
 const object = (
   properties: Record<string, unknown>,
   required = Object.keys(properties),
-) => ({ type: "object", properties, required, additionalProperties: false });
+) => ({
+  type: "object",
+  properties,
+  required,
+  additionalProperties: false,
+});
 const coordinate = { type: "number", minimum: -1_000_000, maximum: 1_000_000 };
 const dimension = { type: "number", exclusiveMinimum: 0, maximum: 1_000_000 };
+const unit = { type: "number", minimum: 0, maximum: 1 };
+const channel = { type: "integer", minimum: 0, maximum: 255 };
+const rgba = object({ r: channel, g: channel, b: channel, a: unit });
+const paintBase = {
+  id: str,
+  enabled: { type: "boolean" },
+  opacity: unit,
+  blendMode: { enum: [...BLEND_MODES] },
+};
+const stops = {
+  type: "array",
+  minItems: 2,
+  maxItems: 64,
+  description:
+    "Offsets must be nondecreasing (checked by the document parser).",
+  items: object({ offset: unit, color: rgba }),
+};
+const paints = {
+  type: "array",
+  maxItems: 16,
+  description:
+    "Top paint first; IDs must be unique within the list (checked by the document parser). Frame surfaces only.",
+  items: {
+    oneOf: [
+      object({ ...paintBase, kind: { const: "solid" }, color: rgba }, [
+        "id",
+        "kind",
+        "color",
+      ]),
+      object(
+        { ...paintBase, kind: { const: "linear" }, angle: number, stops },
+        ["id", "kind", "angle", "stops"],
+      ),
+      object(
+        {
+          ...paintBase,
+          kind: { const: "radial" },
+          center: object({ x: unit, y: unit }),
+          radius: object({
+            x: { type: "number", exclusiveMinimum: 0, maximum: 4 },
+            y: { type: "number", exclusiveMinimum: 0, maximum: 4 },
+          }),
+          stops,
+        },
+        ["id", "kind", "center", "radius", "stops"],
+      ),
+    ],
+  },
+};
+const shadowOffset = { type: "number", minimum: -4096, maximum: 4096 };
+const shadows = {
+  type: "array",
+  maxItems: 8,
+  description:
+    "IDs must be unique within the list (checked by the document parser). Frame surfaces only.",
+  items: object(
+    {
+      id: str,
+      enabled: { type: "boolean" },
+      kind: { enum: ["inner", "outer"] },
+      x: shadowOffset,
+      y: shadowOffset,
+      spread: shadowOffset,
+      blur: { type: "number", minimum: 0, maximum: 4096 },
+      color: rgba,
+    },
+    ["id", "kind", "x", "y", "spread", "blur", "color"],
+  ),
+};
+const framePaintConstraint = {
+  if: {
+    properties: { kind: { enum: ["text", "vector", "component", "image"] } },
+    required: ["kind"],
+  },
+  then: {
+    not: { anyOf: [{ required: ["fills"] }, { required: ["shadows"] }] },
+  },
+};
 const sceneFields = {
   kind: { enum: ["frame", "text", "vector", "component", "image"] },
   x: coordinate,
@@ -20,6 +104,8 @@ const sceneFields = {
   rotation: coordinate,
   opacity: { type: "number", minimum: 0, maximum: 1 },
   fill: { type: "string" },
+  fills: paints,
+  shadows,
   stroke: { type: "string" },
   strokeWidth: { type: "number", minimum: 0, maximum: 1_000_000 },
   radius: { type: "number", minimum: 0, maximum: 1_000_000 },
@@ -27,7 +113,10 @@ const sceneFields = {
   path: { type: "string", maxLength: 100_000 },
   fontSize: { type: "number", minimum: 0, maximum: 1_000_000 },
 };
-const scene = object(sceneFields, ["kind", "x", "y", "width", "height"]);
+const scene = {
+  ...object(sceneFields, ["kind", "x", "y", "width", "height"]),
+  allOf: [framePaintConstraint],
+};
 const overrides = {
   type: "object",
   additionalProperties: { type: "object", additionalProperties: json },
@@ -197,7 +286,10 @@ export const batchSchema = {
                 name: str,
                 hidden: { type: "boolean" },
                 locked: { type: "boolean" },
-                scene: object(sceneFields, []),
+                scene: {
+                  ...object(sceneFields, []),
+                  allOf: [framePaintConstraint],
+                },
               },
               ["nodeId"],
             ),

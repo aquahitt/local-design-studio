@@ -1,0 +1,100 @@
+.paint-fields {
+  margin-block: 20px;
+  min-width: 0;
+}
+.paint-fields h4 {
+  margin: 18px 0 8px;
+  text-wrap: balance;
+}
+.paint-fields .paint-hint,
+.paint-fields .paint-legacy p {
+  font-size: 11px;
+  color: var(--studio-secondary);
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+.paint-fields .paint-row {
+  min-width: 0;
+  margin: 12px 0;
+  padding: 10px;
+  border: 1px solid var(--studio-border);
+  border-radius: 14px;
+  background: var(--studio-surface);
+}
+.paint-fields legend {
+  font-size: 12px;
+  padding-inline: 4px;
+}
+.paint-fields .paint-list-actions {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+.paint-fields button {
+  min-height: 40px;
+}
+.paint-fields button.paint-action {
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  padding: 8px;
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.paint-fields .paint-numbers,
+.paint-fields .paint-color {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-block: 8px;
+}
+.paint-fields input {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.paint-fields input[type="color"] {
+  padding: 4px;
+  cursor: pointer;
+}
+.paint-fields .studio-select-trigger {
+  min-height: 40px;
+  margin-top: 4px;
+}
+.paint-fields .studio-select-popup button {
+  margin: 0;
+  text-align: start;
+}
+.paint-fields .paint-stop {
+  margin-top: 12px;
+  padding: 8px;
+  border-radius: 10px;
+  box-shadow: 0 0 0 1px var(--studio-border);
+}
+.paint-fields .paint-stop > .paint-action {
+  display: flex;
+  margin-left: auto;
+}
+
+.paint-fields input[type="text"],
+.paint-fields input[type="color"] {
+  background: var(--studio-surface);
+  color: var(--studio-text);
+  border: 1px solid var(--studio-border);
+  border-radius: 8px;
+  padding: 8px;
+  font: inherit;
+  font-size: 12px;
+}
+.paint-fields input[type="color"] {
+  padding: 4px;
+}
+.paint-fields input:focus-visible {
+  outline: 2px solid var(--studio-accent);
+  outline-offset: 2px;
+}
