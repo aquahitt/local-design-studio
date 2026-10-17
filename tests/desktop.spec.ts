@@ -314,6 +314,18 @@ test("desktop installed MCP survives owner replacement, trusted library restart 
           { type: "updateProps", nodeId: "demo-title", props: { children: "Installed MCP approved", variant: "body", tone: "primary" } },
           { type: "insertNode", pageId: initial.pages[0].screenId, index: 1, node: { id: "smoke-tabs", type: "Tabs", props: tabsProps, slots: {} } },
           { type: "insertNode", pageId: initial.pages[0].screenId, index: 2, node: { id: "smoke-options", type: "SegmentedControl", props: fixture.defaultProps, slots: {} } },
+          { type: "insertNode", pageId: initial.pages[0].screenId, index: 3, node: {
+            id: "smoke-painted-frame", type: "SceneFrame", props: {}, slots: {},
+            scene: { kind: "frame", x: 230, y: 380, width: 100, height: 100,
+              fill: "#00ff00", stroke: "#123456", strokeWidth: 4,
+              fills: [{ id: "desktop-gradient", kind: "linear", angle: 90, stops: [
+                { offset: 0, color: { r: 255, g: 0, b: 0, a: 1 } },
+                { offset: 1, color: { r: 0, g: 0, b: 255, a: 1 } },
+              ] }],
+              shadows: [{ id: "desktop-shadow", kind: "outer", x: 0, y: 4,
+                blur: 0, spread: 0, color: { r: 0, g: 0, b: 0, a: 0.5 } }],
+            },
+          } },
           { type: "setTokens", tokens },
         ],
       },
@@ -399,6 +411,29 @@ test("desktop installed MCP survives owner replacement, trusted library restart 
     expect(renderMetadata.bounds.map((bound: { id: string }) => bound.id)).toContain("smoke-tabs");
     expect(png.readUInt32BE(16)).toBe(390);
     expect(png.readUInt32BE(20)).toBe(600);
+    const paintStyles = renderMetadata.computedStyles.find((row: { id: string }) => row.id === "smoke-painted-frame").layout;
+    expect(paintStyles["background-image"]).toContain("linear-gradient(90deg");
+    expect(paintStyles["box-shadow"]).toContain("inset");
+    expect(paintStyles["box-shadow"]).toContain("0px 4px");
+    // Decode the actual native screenshot in the renderer. The center must be
+    // purple from red/blue paint, rather than the old green legacy fill.
+    const paintPixel = await page.evaluate(async (data) => {
+      const image = new Image();
+      image.src = "data:image/png;base64," + data;
+      await image.decode();
+      const canvas = globalThis.document.createElement("canvas");
+      canvas.width = image.naturalWidth; canvas.height = image.naturalHeight;
+      const context = canvas.getContext("2d")!;
+      context.drawImage(image, 0, 0);
+      return Array.from(context.getImageData(300, 450, 1, 1).data);
+    }, image.data);
+    expect(paintPixel[0]).toBeGreaterThanOrEqual(124);
+    expect(paintPixel[0]).toBeLessThanOrEqual(130);
+    expect(paintPixel[1]).toBe(0);
+    expect(paintPixel[2]).toBeGreaterThanOrEqual(124);
+    expect(paintPixel[2]).toBeLessThanOrEqual(130);
+    expect(paintPixel[3]).toBe(255);
+
     const cropped = await raw("document_render", { pageId: initial.pages[0].screenId, revision: current.revision, nodeId: "smoke-tabs", viewport: { width: 390, height: 600 } });
     expect(cropped.isError, JSON.stringify((cropped.content as { type: string; text?: string }[]).filter((item) => item.type === "text"))).not.toBe(true);
     const croppedContent = cropped.content as { type: string; text: string; data: string }[];

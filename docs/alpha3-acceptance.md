@@ -1,12 +1,12 @@
 # Alpha.3: интеграция и приёмка
 
-Дата: 2026-10-09. Консолидирующий PR: [#73](https://github.com/aquahitt/local-design-studio/pull/73).
+Обновлено: 2026-10-16. Консолидирующий PR: [#73](https://github.com/aquahitt/local-design-studio/pull/73).
 
 Проверена опубликованная реализация задач #1–#6, #8, #14–#20, #25, #30,
 #57–#62. При независимом review исправлены порядок переноса нескольких слоёв,
 смещение потомков обводкой, сериализация CSS и координаты React handoff.
 Дополнительно исправлены stale locale в долгоживущем соединении, размеры Retina
-PNG, физическая упаковка SDK для esbuild и канонизация Windows TEMP.
+PNG, физическая упаковка SDK для esbuild и канонизация Windows TEMP и повторная доставка snapshot, отменявшая готовность медленных кадров desktop preview.
 
 ## Фактические локальные результаты
 
@@ -14,7 +14,7 @@ PNG, физическая упаковка SDK для esbuild и канониз�
 
 | Проверка | Результат |
 | --- | --- |
-| Unit/integration Vitest | 241 passed, 5 skipped; 46 файлов прошли, 1 skipped |
+| Unit/integration Vitest | 242 passed, 5 skipped; 47 файлов прошли, 1 skipped |
 | TypeScript и production build | прошли |
 | Общие browser сценарии | 24 passed, 8 skipped; external suite проверена отдельно |
 | Внешний standalone SDK | 1 passed |
@@ -33,8 +33,13 @@ fixtures; внешние Chromium-запросы блокировались. Э�
 
 ## Условия интеграции и выпуска
 
-Локальная приёмка не заменяет CI на том же commit и включение в main. Windows TEMP
-fix и остальные платформы требуют собственного CI. Ручная чистая установка
+PR #73 интегрирован в main commit `feec6b94077686caf945230ba501f6c25c657bb5`.
+На проверенном head `2fd67f26be33703e91613d75b4c11152ec34b93e` прошли все семь CI
+jobs: verify, budgets, release-verify и packaged Windows/Linux/macOS arm64/macOS x64.
+[Desktop matrix](https://github.com/aquahitt/local-design-studio/actions/runs/37970334945)
+включает реальную регрессию замедленных кадров Electron. Все 22 проверенные
+integration-задачи закрыты после merge. Вложенные PR, полностью включённые в main,
+закрыты; их ветки и локальные пользовательские изменения сохранены. Ручная чистая установка
 macOS/Windows/Linux и VoiceOver/NVDA ещё не подтверждены. #27, #29 и #72 остаются
 открытыми до выполнения своих исходных критериев.
 
