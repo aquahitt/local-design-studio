@@ -624,6 +624,8 @@ export function StudioApp({
               ).map(([id, name]) => (
                 <StudioButton
                   key={id}
+                  aria-label={name}
+                  aria-describedby={id === "proposals" && pendingProposals.length > 0 ? "studio-proposal-count" : undefined}
                   aria-pressed={view === id}
                   onClick={() => {
                     if ((dirty || tokenDraft !== null) && id !== view) {
@@ -639,7 +641,7 @@ export function StudioApp({
                 >
                   {name}
                   {id === "proposals" && pendingProposals.length > 0 && (
-                    <b>{pendingProposals.length}</b>
+                    <b id="studio-proposal-count">{pendingProposals.length}</b>
                   )}
                 </StudioButton>
               ))}
