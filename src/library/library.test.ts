@@ -241,6 +241,7 @@ it.skipIf(!process.env.STUDIO_LIBRARY_ROOT)(
   },
 );
 
+// Includes a cold Vite SSR transform and React runtime startup on hosted runners.
 it("loads a runnable external manifest without the product checkout", async () => {
   const { resolve } = await import("node:path");
   const root = resolve("examples/library/external");
@@ -277,7 +278,7 @@ it("loads a runnable external manifest without the product checkout", async () =
   } finally {
     await server.close();
   }
-});
+}, 20000);
 it("rejects an incompatible SDK before importing operator library code", async () => {
   const { mkdtempSync, writeFileSync, rmSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");

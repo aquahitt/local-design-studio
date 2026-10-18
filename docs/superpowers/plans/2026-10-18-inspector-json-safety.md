@@ -34,3 +34,9 @@ name, базовые scene strings/numbers/clip и instance definition/variant. 
 ## Проверка — 2026-10-18
 
 Два новых browser regression воспроизвели RED на прежнем коде, после guard — GREEN 2/2. Полный `npm run test:browser`: 38 passed, 8 skipped (внешние SDK/local fixtures по существующему условию). `npm run build` (включая TypeScript) и `git diff --check` прошли. Независимое read-only ревью не выявило дефектов; instance/partial patch проверены чтением контракта, отдельный новый browser case для них не добавлялся.
+
+## Устойчивость проверок — 2026-10-19
+
+Hosted mac x64 выявил существующие короткие readiness/cold-start ожидания и transient hdiutil Resource busy. Ограничены параллельные тяжёлые test workers (max2), crash-recovery тест воспроизводит реальный старт owner с задержкой2500ms и ждёт connection до10s с early-exit и обязательным cleanup; только cold Vite SSR тест получил20s. Product MCP и его timeout не менялись. DMG допускает максимум3 попытки только для точного create/Resource busy, остальные ошибки сохраняются. Node:test проверяет retry/success/bounds/unrelatedfailures; шаги добавлены в CI.
+
+Проверено:327 unit passed/5 skipped;3 DMG node tests; typecheck; git diff check; YAML обоих workflows разобран. Независимое ревью замечаний не выявило. actionlint в окружении отсутствует; подтверждение hosted mac packaging ожидается в CI.
