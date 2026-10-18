@@ -1,5 +1,6 @@
 import { CoreError } from "./tokens";
 import type { ProjectNode } from "./project";
+import { validateFramePaint, type Paint, type Shadow } from "./paint";
 
 /** Scene coordinates are CSS pixels in the parent's local coordinate system. */
 export type SceneMetadata = {
@@ -11,6 +12,8 @@ export type SceneMetadata = {
   rotation?: number;
   opacity?: number;
   fill?: string;
+  fills?: Paint[];
+  shadows?: Shadow[];
   stroke?: string;
   strokeWidth?: number;
   radius?: number;
@@ -44,6 +47,8 @@ export function validateScene(value: unknown, path: string): SceneMetadata {
     "rotation",
     "opacity",
     "fill",
+    "fills",
+    "shadows",
     "stroke",
     "strokeWidth",
     "radius",
@@ -106,6 +111,7 @@ export function validateScene(value: unknown, path: string): SceneMetadata {
       !/^[MmZzLlHhVvCcSsQqTtAa\d\s.,+eE-]+$/.test(scene.path))
   )
     fail();
+  validateFramePaint(scene, path);
   return scene as SceneMetadata;
 }
 

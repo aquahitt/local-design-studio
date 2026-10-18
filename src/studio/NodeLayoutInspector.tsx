@@ -4,6 +4,8 @@ import type { Project, ProjectNode } from "../core/project";
 import type { Operation } from "../core/operations";
 import { beginDraft, editDraft, receiveDraft, rebaseDraft } from "./draft";
 import { StudioSelect } from "./StudioSelect";
+import { PaintFields, isRenderableFramePaintDraft } from "./PaintFields";
+import { validateFramePaint } from "../core/paint";
 export function NodeLayoutInspector({
   node,
   project,
@@ -29,28 +31,61 @@ export function NodeLayoutInspector({
     ...(node.instance ? { instance: node.instance } : {}),
   };
   const [draft, setDraft] = useState(() => beginDraft(data, project.revision)),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [pendingPaint, setPendingPaint] = useState(false);
   useEffect(
-    () => setDraft((current) => receiveDraft(current, data, project.revision)),
-    [node, project.revision],
+    () =>
+      setDraft((current) => {
+        // An unfinished numeric token is still user input. Preserve its source
+        // revision even when the canonical JSON has not changed yet.
+        if (pendingPaint || current.conflict)
+          return {
+            ...current,
+            conflict:
+              current.conflict || project.revision !== current.baseRevision,
+          };
+        return receiveDraft(current, data, project.revision);
+      }),
+    [node, project.revision, pendingPaint],
   );
   useEffect(() => {
-    onDirty(draft.dirty);
+    onDirty(draft.dirty || draft.conflict || pendingPaint);
     return () => onDirty(false);
-  }, [draft.dirty, onDirty]);
+  }, [draft.dirty, draft.conflict, pendingPaint, onDirty]);
   let value: typeof data;
+  let validationError = "";
   try {
     value = JSON.parse(draft.value);
+    if (!value || typeof value !== "object" || Array.isArray(value))
+      throw new Error("Invalid layer object");
   } catch {
     value = data;
+    validationError = t("Исправьте параметры слоя в JSON.");
+  }
+  if (value.scene) {
+    try {
+      validateFramePaint(value.scene, "scene");
+      if (
+        value.scene.kind === "frame" &&
+        !isRenderableFramePaintDraft(value.scene)
+      )
+        throw new Error("Invalid frame paint draft");
+    } catch (e) {
+      validationError =
+        t("Исправьте заливки или тени в JSON либо в полях ниже.") +
+        " " +
+        (e as Error).message;
+    }
   }
   function change(field: string, next: unknown) {
+    setError("");
     setDraft((current) =>
       editDraft(current, JSON.stringify({ ...value, [field]: next }, null, 2)),
     );
   }
   async function apply() {
     try {
+      if (validationError || pendingPaint) return;
       const next = JSON.parse(draft.value),
         operations: Operation[] = [
           {
@@ -139,6 +174,15 @@ export function NodeLayoutInspector({
           ))}
         </div>
       )}
+      {value.scene?.kind === "frame" &&
+        isRenderableFramePaintDraft(value.scene) && (
+          <PaintFields
+            scene={value.scene}
+            disabled={disabled || !!node.locked}
+            onChange={(scene) => change("scene", scene)}
+            onPendingChange={setPendingPaint}
+          />
+        )}
       <label>
         {t("Параметры слоя JSON")}
         <textarea
@@ -198,10 +242,18 @@ export function NodeLayoutInspector({
           </button>
         </p>
       )}
-      {error && <p role="alert">{error}</p>}
+      {(validationError || error) && (
+        <p role="alert">{validationError || error}</p>
+      )}
       <button
         disabled={
-          disabled || node.locked || !draft.dirty || draft.conflict || !!error
+          disabled ||
+          node.locked ||
+          !draft.dirty ||
+          draft.conflict ||
+          !!error ||
+          !!validationError ||
+          pendingPaint
         }
         onClick={() => void apply()}
       >

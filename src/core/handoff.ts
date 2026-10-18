@@ -9,6 +9,7 @@ import { resolveTokens, serializeCSSValue, type TokenType } from "./tokens";
 import { resolveSceneNodes, definitionNodes } from "./design-components";
 import type { LibraryMetadata } from "../library/sdk";
 import { handoffRuntime } from "./handoff-runtime";
+import { compileFramePaint } from "./paint";
 export type HandoffOptions = { pageId: string; revision: number };
 export type HandoffDiagnostic = {
   code: string;
@@ -27,6 +28,11 @@ export function layerStyle(node: ProjectNode): Record<string, string | number> {
       borderRadius: 6,
       marginBottom: 12,
     };
+  const paintStyle = compileFramePaint(s);
+  const strokeShadow =
+    s.stroke && s.kind !== "vector"
+      ? `inset 0 0 0 ${s.strokeWidth ?? 1}px ${s.stroke}`
+      : undefined;
   return Object.fromEntries(
     Object.entries({
       position: "absolute",
@@ -39,12 +45,13 @@ export function layerStyle(node: ProjectNode): Record<string, string | number> {
       transformOrigin: "0 0",
       opacity: s.opacity ?? 1,
       overflow: s.clip ? "hidden" : "visible",
-      background: s.kind === "text" ? undefined : s.fill,
+      background:
+        s.kind === "text" || s.fills !== undefined ? undefined : s.fill,
       color: s.kind === "text" ? s.fill : undefined,
+      ...paintStyle,
       boxShadow:
-        s.stroke && s.kind !== "vector"
-          ? `inset 0 0 0 ${s.strokeWidth ?? 1}px ${s.stroke}`
-          : undefined,
+        [strokeShadow, paintStyle.boxShadow].filter(Boolean).join(", ") ||
+        undefined,
       borderRadius: s.radius ?? 0,
       boxSizing: "border-box",
     }).filter(([, value]) => value !== undefined),

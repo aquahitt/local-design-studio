@@ -11,7 +11,10 @@ Inspect выбранного узла объединяет модель доку
 - реальные DOM `bounds` и `computedStyles.layout` / `computedStyles.content`;
 - warnings и диагностику отсутствующего renderer, скрытого слоя или недоступных computed styles.
 
-Computed styles используют фиксированный список свойств `getComputedStyle`, включая размеры, padding/margin, шрифт, цвет, border, transform, opacity, gap и SVG paint. Ключи соответствуют CSS (`font-size`, `padding-left` и т. п.). `layout` относится к обёртке слоя, `content` — к отрендеренному компоненту/примитиву. Inspector не выдаёт значения модели за computed styles. Development Chromium и desktop Chromium собирают одинаковый набор свойств.
+Computed styles используют фиксированный список свойств `getComputedStyle`, включая размеры, padding/margin, шрифт, цвет, background-image/background-blend-mode, box-shadow, border, transform, opacity, gap и SVG paint. Ключи соответствуют CSS (`font-size`, `padding-left` и т. п.). `layout` относится к обёртке слоя, `content` — к отрендеренному компоненту/примитиву. Inspector не выдаёт значения модели за computed styles. Если `background-image`
+доверенного runtime содержит resource URL или image-set, inspect возвращает явный
+маркер `[resource URL omitted]`, сохраняя градиенты без изменений. URL ресурсов и
+их query-параметры не включаются в этот набор computed styles. Development Chromium и desktop Chromium собирают одинаковый набор свойств.
 
 ## Экспорт зарегистрированного экрана
 
@@ -34,10 +37,17 @@ CSS-экспорт использует общую `serializeCSSValue` из `src
 
 Handoff сохраняет имена CSS variables preview с одним префиксом `--`; `surface` и `--surface` вместе дают `TOKEN_CSS_COLLISION`. Отдельный `exportTokensCSS` сохраняет прежнюю нормализацию точек/подчёркиваний в дефисы и проверяет её коллизии. Корень сцены позиционируется относительно контейнера с теми же отступами body 20 px, что preview; минимальная высота scene-контейнера равна `viewport.height` или 850 px по умолчанию. Вложенная обводка рисуется внутри рамки, не смещая координаты потомков.
 
+Для фреймов `layerStyle` использует общий `compileFramePaint`: solid/linear/radial
+fill stack, per-fill opacity, background blending и inner/outer shadows компилируются
+из структурированных sRGB данных. Handoff и preview получают один и тот же набор
+CSS declarations; stroke остаётся inset и не смещает потомков. Пустой `fills` —
+прозрачный фон. Неподдерживаемый paint других видов примитивов отвергается parser,
+а не заменяется прямоугольной заливкой при экспорте.
+
 Поддержаны существующие семантики зарегистрированного компонентного дерева и объявленные CSS-pixel примитивы сцены: frame, text, vector, image, geometry, rotation, paint, opacity, radius, clip и локальные image fill/crop props. Локальные instances материализуются со своими variants, bindings и overrides. Скрытые слои не рендерятся. Неизвестный компонент, отсутствующая библиотека/тема и компонент `requires-context` обозначаются диагностикой, а не обещанием готового production-кода. Маршрутизация, данные приложения, действия, редакторское выделение, locks и обсуждения не становятся поведением приложения.
 
 ## Проверка чистым fixture
 
-`npm test -- src/service/handoff-fixture.test.ts` создаёт отдельный temp-проект только из экспортированных файлов. В него как dependency отдельно устанавливается тестовый provider реальной зарегистрированной builtin-библиотеки; её код не находится в экспортируемом артефакте. Компонентный и scene fixtures собираются Vite, запускаются в Chromium, отображают настоящий Text/Button, затем сравнивают token value, DOM bounds, font-size и padding с browser inspect владельца. Scene fixture дополнительно проверяет координаты вложенного слоя при обводке 10 px и высоту контейнера; CSS fixture проверяет реальный перенос строки в `content: var(...)`.
+`npm test -- src/service/handoff-fixture.test.ts` создаёт отдельный temp-проект только из экспортированных файлов. В него как dependency отдельно устанавливается тестовый provider реальной зарегистрированной builtin-библиотеки; её код не находится в экспортируемом артефакте. Компонентный и scene fixtures собираются Vite, запускаются в Chromium, отображают настоящий Text/Button, затем сравнивают token value, DOM bounds, font-size и padding с browser inspect владельца. Paint fixture дополнительно сравнивает независимые ожидаемые RGB-пиксели и PNG владельца с отдельно собранным handoff: порядок/alpha, градиенты, background blend, тени, stroke и clipping. Scene fixture дополнительно проверяет координаты вложенного слоя при обводке 10 px и высоту контейнера; CSS fixture проверяет реальный перенос строки в `content: var(...)`.
 
 Ресурсы других проектов и приватный product checkout не используются. Проверка офлайн использует установленные development-зависимости студии. Ограничения: системные шрифты зависят от ОС; export — snapshot интеграции поддержанных семантик, а не генератор production-приложения. При смене runtime библиотеки требуется повторная проверка соответствия metadata и fixtures.
