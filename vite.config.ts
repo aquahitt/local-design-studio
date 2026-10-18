@@ -3,6 +3,7 @@ import tailwind from "@tailwindcss/vite";
 import { defineConfig } from "vitest/config";
 import { loadEnv } from "vite";
 import { resolve } from "node:path";
+import { availableParallelism } from "node:os";
 import {
   studioLibraryPlugin,
   getConfiguredLibraryMetadata,
@@ -38,6 +39,12 @@ export default defineConfig(({ mode }) => {
         : []),
     ],
     server: { host: "127.0.0.1", port: 5178, strictPort: true },
-    test: { environment: "node", include: ["src/**/*.test.{ts,tsx}"] },
+    test: {
+      environment: "node",
+      include: ["src/**/*.test.{ts,tsx}"],
+      // These tests start real Vite, Chromium and MCP processes. Unbounded file
+      // workers oversubscribe hosted desktop runners and starve readiness checks.
+      maxWorkers: Math.min(2, availableParallelism()),
+    },
   };
 });

@@ -21,6 +21,7 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm test
       - run: node --test scripts/release/integrity.test.mjs
+      - run: node --test scripts/desktop/dmg.test.mjs
       - run: npm run build:mcp
       - run: node scripts/release/clean-smoke.mjs
       - run: npm run typecheck
