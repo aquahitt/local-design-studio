@@ -6,6 +6,49 @@ import { beginDraft, editDraft, receiveDraft, rebaseDraft } from "./draft";
 import { StudioSelect } from "./StudioSelect";
 import { PaintFields, isRenderableFramePaintDraft } from "./PaintFields";
 import { validateFramePaint } from "../core/paint";
+/** Guard only values consumed by controls; canonical validation still owns writes. */
+function isRenderableLayerDraft(value: unknown): boolean {
+  const object = (input: unknown): input is Record<string, unknown> =>
+    !!input && typeof input === "object" && !Array.isArray(input);
+  if (!object(value)) return false;
+  if (value.name !== undefined && typeof value.name !== "string") return false;
+  if (value.scene !== undefined) {
+    if (!object(value.scene)) return false;
+    const scene = value.scene;
+    for (const key of ["kind", "fill", "stroke", "path"])
+      if (scene[key] !== undefined && typeof scene[key] !== "string")
+        return false;
+    for (const key of [
+      "x",
+      "y",
+      "width",
+      "height",
+      "rotation",
+      "opacity",
+      "fontSize",
+      "radius",
+      "strokeWidth",
+    ])
+      if (
+        scene[key] !== undefined &&
+        (typeof scene[key] !== "number" || !Number.isFinite(scene[key]))
+      )
+        return false;
+    if (scene.clip !== undefined && typeof scene.clip !== "boolean")
+      return false;
+  }
+  if (value.instance !== undefined) {
+    if (!object(value.instance)) return false;
+    for (const key of ["definitionId", "variant"])
+      if (
+        value.instance[key] !== undefined &&
+        typeof value.instance[key] !== "string"
+      )
+        return false;
+  }
+  return true;
+}
+
 export function NodeLayoutInspector({
   node,
   project,
@@ -56,8 +99,7 @@ export function NodeLayoutInspector({
   let validationError = "";
   try {
     value = JSON.parse(draft.value);
-    if (!value || typeof value !== "object" || Array.isArray(value))
-      throw new Error("Invalid layer object");
+    if (!isRenderableLayerDraft(value)) throw new Error("Invalid layer fields");
   } catch {
     value = data;
     validationError = t("Исправьте параметры слоя в JSON.");
@@ -116,7 +158,7 @@ export function NodeLayoutInspector({
         <input
           aria-label={t("Название слоя")}
           disabled={disabled || node.locked}
-          value={value.name}
+          value={value.name ?? data.name}
           onChange={(e) => change("name", e.target.value)}
         />
       </label>
