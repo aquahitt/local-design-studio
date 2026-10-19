@@ -40,3 +40,7 @@ name, базовые scene strings/numbers/clip и instance definition/variant. 
 Hosted mac x64 выявил существующие короткие readiness/cold-start ожидания и transient hdiutil Resource busy. Ограничены параллельные тяжёлые test workers (max2), crash-recovery тест воспроизводит реальный старт owner с задержкой2500ms и ждёт connection до10s с early-exit и обязательным cleanup; только cold Vite SSR тест получил20s. Product MCP и его timeout не менялись. DMG допускает максимум3 попытки только для точного create/Resource busy, остальные ошибки сохраняются. Node:test проверяет retry/success/bounds/unrelatedfailures; шаги добавлены в CI.
 
 Проверено:327 unit passed/5 skipped;3 DMG node tests; typecheck; git diff check; YAML обоих workflows разобран. Независимое ревью замечаний не выявило. actionlint в окружении отсутствует; подтверждение hosted mac packaging ожидается в CI.
+
+## Стабильное имя навигации — 2026-10-19
+
+Release-verify обнаружил гонку: после асинхронного появления badge имя кнопки «Предложения агента» менялось на имя с числом, а Tab-only locator терял элемент между проверками фокуса. Имя кнопок закреплено aria-label, количество связано aria-describedby. Keyboard flow теперь обязательно дожидается badge до навигации, поэтому прежний код воспроизводит RED, исправление — GREEN в RU/EN. Cleanup fixture выполняется и при закрытой странице. Полный accessibility профиль:9 passed.
