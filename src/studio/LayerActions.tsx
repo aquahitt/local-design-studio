@@ -23,6 +23,7 @@ export function LayerActions({
   mutate,
   onSelection,
   onDirty,
+  insertionPoint,
 }: {
   project: Project;
   page: ProjectPage;
@@ -35,6 +36,7 @@ export function LayerActions({
   ) => Promise<void>;
   onSelection: (ids: string[]) => void;
   onDirty?: (dirty: boolean) => void;
+  insertionPoint?: () => { x: number; y: number } | undefined;
 }) {
   const { t } = useI18n();
 
@@ -146,6 +148,7 @@ export function LayerActions({
   function add(kind: "frame" | "text" | "vector") {
     return run(async () => {
       const id = crypto.randomUUID();
+      const origin = insertionPoint?.();
       const node: ProjectNode = {
         id,
         type:
@@ -159,8 +162,8 @@ export function LayerActions({
         slots: kind === "frame" ? { content: [] } : {},
         scene: {
           kind,
-          x: 24,
-          y: 24,
+          x: origin ? origin.x - (kind === "frame" ? 150 : 80) : 24,
+          y: origin ? origin.y - (kind === "frame" ? 120 : 30) : 24,
           width: kind === "frame" ? 300 : 160,
           height: kind === "frame" ? 240 : 60,
           ...(kind === "frame"
@@ -241,15 +244,20 @@ export function LayerActions({
   }
   return (
     <section className="panel layer-actions" aria-label={t("Команды слоёв")}>
-      {selectedIds.length > 1 && <GeometryActions
-        project={project}
-        selectedIds={selectedIds}
-        disabled={blocked}
-        onCommand={(generate, description) => void run(async () => {
-          const operations = generate();
-          if (operations.length) await mutate(operations, description, project.revision);
-        })}
-      />}
+      {selectedIds.length > 1 && (
+        <GeometryActions
+          project={project}
+          selectedIds={selectedIds}
+          disabled={blocked}
+          onCommand={(generate, description) =>
+            void run(async () => {
+              const operations = generate();
+              if (operations.length)
+                await mutate(operations, description, project.revision);
+            })
+          }
+        />
+      )}
       <div className="layer-toolbar">
         <button disabled={blocked} onClick={() => void add("frame")}>
           {t("Фрейм +")}

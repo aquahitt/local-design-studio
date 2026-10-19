@@ -60,6 +60,7 @@ it("delivers a snapshot once after listener installation, allowing slow preview 
           document: {
             documentElement: { dataset },
             fonts: { ready: Promise.resolve() },
+            getAnimations: () => [],
             body: { innerText: "Slow preview" },
             querySelectorAll: () => [],
           },
@@ -72,6 +73,7 @@ it("delivers a snapshot once after listener installation, allowing slow preview 
             }
           },
           window: {
+            devicePixelRatio: 2,
             dispatchEvent: (event: { data: { project: Project } }) => {
               if (!dataset.studioPreviewListening) return;
               delivered.push(event.data);

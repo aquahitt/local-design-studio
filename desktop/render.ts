@@ -1,3 +1,10 @@
+import {
+  captureRectangle,
+  validatePhysicalCapture,
+  translateCaptureExpression,
+  settleCaptureExpression,
+  withCaptureTimeout,
+} from "../src/service/capture";
 import { computedStylesExpression } from "../src/service/computed-styles";
 import { BrowserWindow, nativeImage } from "electron";
 import type { Project } from "../src/core/project";
@@ -60,6 +67,9 @@ export async function captureDesktopSnapshot(
       }
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
+    await withCaptureTimeout(
+      window.webContents.executeJavaScript(settleCaptureExpression),
+    );
     const result = await window.webContents.executeJavaScript(`(async () => {
       await document.fonts.ready;
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -74,25 +84,57 @@ export async function captureDesktopSnapshot(
       : undefined;
     if (input.nodeId && (!bound || bound.width <= 0 || bound.height <= 0))
       throw new Error("NODE_NOT_VISIBLE");
-    const rectangle = bound
-      ? {
-          x: Math.max(0, Math.floor(bound.x)),
-          y: Math.max(0, Math.floor(bound.y)),
-          width: Math.ceil(bound.width),
-          height: Math.ceil(bound.height),
-        }
-      : undefined;
-    const image = await window.webContents.capturePage(rectangle);
-    // capturePage follows the display scale (for example, Retina 2x). Recreate a
-    // single 1x representation before resizing so PNG pixels match CSS coordinates.
-    const png = nativeImage
-      .createFromBuffer(image.toPNG(), { scaleFactor: 1 })
-      .resize({
-        width: rectangle?.width ?? input.viewport.width,
-        height: rectangle?.height ?? input.viewport.height,
-        quality: "best",
-      })
-      .toPNG({ scaleFactor: 1 });
+    let png: Buffer;
+    if (bound) {
+      const rectangle = captureRectangle(bound);
+      const pixelRatio = await withCaptureTimeout(
+        window.webContents.executeJavaScript(translateCaptureExpression(bound)),
+      );
+      validatePhysicalCapture(rectangle, pixelRatio);
+      window.webContents.debugger.attach("1.3");
+      try {
+        const capture = await withCaptureTimeout(
+          window.webContents.debugger.sendCommand("Page.captureScreenshot", {
+            format: "png",
+            fromSurface: true,
+            captureBeyondViewport: true,
+            clip: rectangle,
+          }),
+        );
+        // Keep native DPR during CDP capture: fractional CDP scaling can drop ICC metadata.
+        // Normalize the native PNG to the documented CSS-pixel dimensions afterwards.
+        png = nativeImage
+          .createFromBuffer(Buffer.from(capture.data, "base64"), {
+            scaleFactor: 1,
+          })
+          .resize({
+            width: rectangle.width,
+            height: rectangle.height,
+            quality: "best",
+          })
+          .toPNG({ scaleFactor: 1 });
+      } finally {
+        window.webContents.debugger.detach();
+      }
+    } else {
+      captureRectangle({ x: 0, y: 0, ...input.viewport });
+      validatePhysicalCapture(
+        input.viewport,
+        await withCaptureTimeout(
+          window.webContents.executeJavaScript("window.devicePixelRatio"),
+        ),
+      );
+      const image = await window.webContents.capturePage();
+      // Page capture follows display scale. Normalize its single representation to CSS pixels.
+      png = nativeImage
+        .createFromBuffer(image.toPNG(), { scaleFactor: 1 })
+        .resize({
+          width: input.viewport.width,
+          height: input.viewport.height,
+          quality: "best",
+        })
+        .toPNG({ scaleFactor: 1 });
+    }
     return {
       mimeType: "image/png",
       data: png.toString("base64"),

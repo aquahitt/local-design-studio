@@ -66,7 +66,7 @@ async function startFixture(projectRoot: string) {
     return { child, url };
   } catch (error) {
     await stopFixture(child);
-    throw error;
+    throw new Error("Owned accessibility fixture did not become ready: " + output, {cause:error});
   }
 }
 
@@ -180,6 +180,8 @@ for (const locale of ["ru", "en"] as const) {
         });
         if (!response.ok) throw new Error(`Proposal creation failed: ${response.status}`);
       }, { nodeId: node.id, revision: saved.revision, proposalText });
+      // Wait for the asynchronous badge: it must not change the control name.
+      await expect(button("Предложения агента").locator("b")).toHaveText("1");
       await activate(page, button("Предложения агента"));
       await expect(page.getByRole("heading", { name: proposalText, exact: true })).toBeVisible();
       await audit(page, `${locale} pending proposal/light`);
@@ -225,9 +227,9 @@ for (const locale of ["ru", "en"] as const) {
       await audit(page, `${locale} reopened persisted layer/light`);
       await testInfo.attach("keyboard-audit", { body: JSON.stringify({ locale, browser: page.context().browser()?.version(), projectRevision: persisted.revision, processRestart: true, screenReader: "not run" }, null, 2), contentType: "application/json" });
     } finally {
-      await page.goto("about:blank");
-      await stopFixture(server.child);
-      await rm(projectRoot, { recursive: true, force: true });
+      await page.goto("about:blank").catch(() => {});
+      try { await stopFixture(server.child); }
+      finally { await rm(projectRoot, { recursive: true, force: true }); }
     }
   });
 }
