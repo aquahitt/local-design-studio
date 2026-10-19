@@ -225,38 +225,62 @@ it("real MCP pages past500 nodes and publishes schema/capabilities", async () =>
   }
 }, 20000);
 
-it("real MCP reclaims a crashed owner without deleting live-owner credentials", async () => {
+it("real MCP waits for a slow owner and reclaims its crash without deleting live-owner credentials", async () => {
   const { spawn } = await import("node:child_process");
-  const { once } = await import("node:events");
   const { readFile } = await import("node:fs/promises");
   const root = await mkdtemp(join(tmpdir(), "studio-mcp-crash-"));
   const child = spawn(
     process.execPath,
-    ["--import", "tsx", "src/service/cli.ts", "--project", root, "--port", "0"],
+    [
+      "--import",
+      "tsx",
+      "--input-type=module",
+      "--eval",
+      // A valid owner may take longer than the old two-second readiness window.
+      `await new Promise(resolve => setTimeout(resolve, 2500));
+       process.argv = [process.execPath, "src/service/cli.ts", "--project", ${JSON.stringify(root)}, "--port", "0"];
+       await import("./src/service/cli.ts");`,
+    ],
     { cwd: process.cwd(), stdio: ["ignore", "ignore", "pipe"] },
   );
-  let ready = false;
-  for (let i = 0; i < 100; i++) {
-    try {
-      await readFile(join(root, ".studio/connection.json"));
-      ready = true;
-      break;
-    } catch {
+  // Register before waiting so early failures cannot escape cleanup.
+  let spawnError: Error | undefined;
+  const exited = new Promise<void>((resolve) => {
+    child.once("exit", () => resolve());
+    child.once("error", (error) => {
+      spawnError = error;
+      resolve();
+    });
+  });
+  // Drain diagnostics without exposing credentials or allowing a full pipe to block.
+  child.stderr.resume();
+  const client = new Client({ name: "recover-test", version: "1" });
+  try {
+    const deadline = Date.now() + 10000;
+    for (;;) {
+      if (spawnError) throw spawnError;
+      if (child.exitCode !== null || child.signalCode !== null)
+        throw new Error(
+          `Owner exited before readiness (${child.exitCode ?? child.signalCode})`,
+        );
+      try {
+        await readFile(join(root, ".studio/connection.json"));
+        break;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+      if (Date.now() >= deadline)
+        throw new Error("Owner connection file was not ready within 10000ms");
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
-  }
-  expect(ready).toBe(true);
-  const exited = once(child, "exit");
-  child.kill("SIGKILL");
-  await exited;
-  const client = new Client({ name: "recover-test", version: "1" });
-  const transport = new StdioClientTransport({
-    command: process.execPath,
-    args: ["--import", "tsx", "src/service/mcp.ts", "--project", root],
-    cwd: process.cwd(),
-    stderr: "pipe",
-  });
-  try {
+    child.kill("SIGKILL");
+    await exited;
+    const transport = new StdioClientTransport({
+      command: process.execPath,
+      args: ["--import", "tsx", "src/service/mcp.ts", "--project", root],
+      cwd: process.cwd(),
+      stderr: "pipe",
+    });
     await client.connect(transport);
     const response: any = await client.callTool({
       name: "project_read",
@@ -264,8 +288,14 @@ it("real MCP reclaims a crashed owner without deleting live-owner credentials", 
     });
     expect(JSON.parse(response.content[0].text).schemaVersion).toBe(2);
   } finally {
-    await client.close();
-    await rm(root, { recursive: true, force: true });
+    try {
+      await client.close();
+    } finally {
+      if (child.exitCode === null && child.signalCode === null && !spawnError)
+        child.kill("SIGKILL");
+      await exited;
+      await rm(root, { recursive: true, force: true });
+    }
   }
 }, 20000);
 
