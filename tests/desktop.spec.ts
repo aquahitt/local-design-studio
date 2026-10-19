@@ -221,7 +221,7 @@ test("desktop creates, saves, reopens disk project and isolates preview", async 
 });
 
 
-test("desktop installed MCP survives owner replacement, trusted library restart and offline review", async () => {
+test("desktop installed MCP survives owner replacement, trusted library restart and offline review", async ({}, testInfo) => {
   test.setTimeout(150000);
   const temp = await mkdtemp(join(tmpdir(), "studio-installed-acceptance-"));
   const projectRoot = join(temp, "project");
@@ -236,12 +236,19 @@ test("desktop installed MCP survives owner replacement, trusted library restart 
   if (!packaged)
     execFileSync(process.execPath, ["scripts/desktop/build.mjs"], { stdio: "pipe" });
   const env = desktopRuntimeEnv(settings, emptyPath);
-  const launch = () => electron.launch({
+  let captureDiagnostics = "";
+  const launch = async () => {
+    const launched = await electron.launch({
     ...(packaged ? { executablePath: packaged } : { args: [resolve(".")] }),
     chromiumSandbox: process.platform === "linux",
     cwd,
-    env,
+    env: {...env, STUDIO_CAPTURE_DIAGNOSTICS: "1"},
   });
+    launched.process().stderr?.on("data", chunk => {
+      captureDiagnostics = (captureDiagnostics + String(chunk)).slice(-12000);
+    });
+    return launched;
+  };
   let app = await launch();
   const client = new Client({ name: "installed-acceptance", version: "1" });
   let standalone: Client | undefined;
@@ -566,6 +573,9 @@ test("desktop installed MCP survives owner replacement, trusted library restart 
     const preferences = JSON.parse(await readFile(join(settings, "libraries.json"), "utf8"));
     expect(preferences[await realpath(projectRoot)]).toBe(canonicalLibrary);
   } finally {
+    await testInfo.attach("desktop-capture-diagnostics", {body: captureDiagnostics,contentType:"text/plain"});
+    if (testInfo.status !== testInfo.expectedStatus) console.error(captureDiagnostics);
+
     await standalone?.close();
     if (connected) await client.close();
     await app.close().catch(() => {});

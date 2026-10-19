@@ -22,6 +22,13 @@ export async function captureDesktopSnapshot(
   desktopLibrary?: DesktopLibrary,
 ): Promise<RenderResult> {
   const input = prepareRenderSnapshot(project, options);
+  const started = Date.now();
+  let stage = "create-window";
+  const mark = (next: string) => {
+    stage = next;
+    if (process.env.STUDIO_CAPTURE_DIAGNOSTICS === "1")
+      console.error("Studio capture stage", {stage, elapsedMs: Date.now() - started});
+  };
   const window = new BrowserWindow({
     show: false,
     width: input.viewport.width,
@@ -37,6 +44,7 @@ export async function captureDesktopSnapshot(
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (event) => event.preventDefault());
   try {
+    mark("load-preview");
     await window.loadURL("studio://preview/preview");
     const payload = JSON.stringify({
       type: "studio-preview-render",
@@ -49,6 +57,7 @@ export async function captureDesktopSnapshot(
     const deadline = Date.now() + 15000;
     // Wait for React's listener, then deliver once. Repeated delivery creates a
     // new input object and cancels PreviewApp's pending frame readiness signal.
+    mark("preview-readiness");
     let delivered = false;
     while (true) {
       const state = (await window.webContents.executeJavaScript(
@@ -67,14 +76,17 @@ export async function captureDesktopSnapshot(
       }
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
+    mark("settle-animation");
     await withCaptureTimeout(
       window.webContents.executeJavaScript(settleCaptureExpression),
     );
+    mark("measure-bounds");
     const result = await window.webContents.executeJavaScript(`(async () => {
       await document.fonts.ready;
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       return { bounds: [...document.querySelectorAll('[data-node-id]')].map(node => { const box = node.getBoundingClientRect(); return {id: node.getAttribute('data-node-id'), x: box.x, y: box.y, width: box.width, height: box.height}; }), text: document.body.innerText.slice(0, 10000), warnings: [...document.querySelectorAll('.render-error')].map(node => node.textContent) };
     })()`);
+    mark("computed-styles");
     const computedStyles = await window.webContents.executeJavaScript(
       computedStylesExpression,
     );
@@ -87,12 +99,14 @@ export async function captureDesktopSnapshot(
     let png: Buffer;
     if (bound) {
       const rectangle = captureRectangle(bound);
+      mark("translate-node");
       const pixelRatio = await withCaptureTimeout(
         window.webContents.executeJavaScript(translateCaptureExpression(bound)),
       );
       validatePhysicalCapture(rectangle, pixelRatio);
       window.webContents.debugger.attach("1.3");
       try {
+        mark("cdp-screenshot");
         const capture = await withCaptureTimeout(
           window.webContents.debugger.sendCommand("Page.captureScreenshot", {
             format: "png",
@@ -124,6 +138,7 @@ export async function captureDesktopSnapshot(
           window.webContents.executeJavaScript("window.devicePixelRatio"),
         ),
       );
+      mark("native-page-screenshot");
       const image = await window.webContents.capturePage();
       // Page capture follows display scale. Normalize its single representation to CSS pixels.
       png = nativeImage
@@ -135,6 +150,7 @@ export async function captureDesktopSnapshot(
         })
         .toPNG({ scaleFactor: 1 });
     }
+    mark("complete");
     return {
       mimeType: "image/png",
       data: png.toString("base64"),
@@ -148,6 +164,10 @@ export async function captureDesktopSnapshot(
       text: result.text,
       warnings: result.warnings,
     };
+  } catch (error) {
+    console.error("Studio capture failed", {stage, elapsedMs: Date.now() - started,
+      code: error instanceof Error && "code" in error ? String(error.code) : "RENDER_FAILED"});
+    throw error;
   } finally {
     window.destroy();
   }
