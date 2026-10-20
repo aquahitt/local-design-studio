@@ -1,3 +1,9 @@
+import {
+  captureRectangle,
+  translateCaptureExpression,
+  settleCaptureExpression,
+  withCaptureTimeout,
+} from "./capture";
 import { computedStylesExpression } from "./computed-styles";
 import { createServer } from "node:http";
 import { once } from "node:events";
@@ -139,7 +145,9 @@ export async function renderSnapshot(
     throw new CoreError("INVALID_THEME");
   // Windows TEMP can contain an 8.3 alias (RUNNER~1). Vite/Rolldown resolve
   // entries to long paths; root and input must use the same canonical spelling.
-  const temporary = await realpath(await mkdtemp(join(tmpdir(), "studio-render-")));
+  const temporary = await realpath(
+    await mkdtemp(join(tmpdir(), "studio-render-")),
+  );
   let browser: import("@playwright/test").Browser | undefined;
   let server: ReturnType<typeof createServer> | undefined;
   try {
@@ -154,7 +162,11 @@ export async function renderSnapshot(
       configFile: false,
       logLevel: "silent",
       define: { __STUDIO_DESKTOP__: "false", __STUDIO_DEMO__: "false" },
-      plugins: [studioLibraryPlugin(config, sourceRoot), tailwind.default(), react.default()],
+      plugins: [
+        studioLibraryPlugin(config, sourceRoot),
+        tailwind.default(),
+        react.default(),
+      ],
       build: {
         outDir: output,
         emptyOutDir: true,
@@ -269,12 +281,7 @@ export async function renderSnapshot(
       input.project.revision,
       { timeout: 15000 },
     );
-    await page.evaluate(async () => {
-      await document.fonts.ready;
-      await new Promise<void>((resolve) =>
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-      );
-    });
+    await withCaptureTimeout(page.evaluate(settleCaptureExpression));
     const bounds = await page.locator("[data-node-id]").evaluateAll((nodes) =>
       nodes.map((node) => {
         const box = node.getBoundingClientRect();
@@ -297,16 +304,32 @@ export async function renderSnapshot(
       const index = bounds.findIndex((bound) => bound.id === input.nodeId);
       if (index < 0 || bounds[index].width <= 0 || bounds[index].height <= 0)
         throw new CoreError("NODE_NOT_VISIBLE");
-      bytes = await page
-        .locator("[data-node-id]")
-        .nth(index)
-        .screenshot({ type: "png", animations: "disabled", timeout: 15000 });
-    } else
+      const clip = captureRectangle(bounds[index]);
+      await withCaptureTimeout(
+        page.evaluate(translateCaptureExpression(bounds[index])),
+      );
+      const session = await page.context().newCDPSession(page);
+      try {
+        const capture = await withCaptureTimeout(
+          session.send("Page.captureScreenshot", {
+            format: "png",
+            clip,
+            captureBeyondViewport: true,
+            fromSurface: true,
+          }),
+        );
+        bytes = Buffer.from(capture.data, "base64");
+      } finally {
+        await session.detach();
+      }
+    } else {
+      captureRectangle({ x: 0, y: 0, ...input.viewport });
       bytes = await page.screenshot({
         type: "png",
         animations: "disabled",
         timeout: 15000,
       });
+    }
     return {
       mimeType: "image/png",
       data: bytes.toString("base64"),

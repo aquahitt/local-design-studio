@@ -66,7 +66,7 @@ async function startFixture(projectRoot: string) {
     return { child, url };
   } catch (error) {
     await stopFixture(child);
-    throw error;
+    throw new Error("Owned accessibility fixture did not become ready: " + output, {cause:error});
   }
 }
 

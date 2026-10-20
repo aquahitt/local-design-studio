@@ -1,3 +1,5 @@
+import { validCanvasBounds, type CanvasBounds } from "./canvasCamera";
+import type { SceneView } from "../core/scene";
 import { layerStyle } from "../core/handoff";
 import { useI18n, type StudioLocale } from "./i18n";
 import {
@@ -47,7 +49,21 @@ function RenderError({ message }: { message: string }) {
     </div>
   );
 }
+export type CanvasPreview = {
+  epoch: number;
+  surfaceId: string;
+  view: SceneView;
+  positions?: Record<string, { x: number; y: number }>;
+  pick?: { requestId: number; x: number; y: number };
+};
 export interface PreviewInput {
+  canvas?: CanvasPreview;
+  onGeometry?: (
+    bounds: CanvasBounds[],
+    revision: number,
+    epoch: number,
+  ) => void;
+  onPick?: (id: string | null, requestId: number) => void;
   locale?: StudioLocale;
   project: Project;
   library: ComponentLibrary;
@@ -73,10 +89,27 @@ export function Preview({
   selected,
   selectedIds,
   onSelect,
+  canvas,
+  onGeometry,
+  onPick,
 }: PreviewInput) {
   const { locale } = useI18n();
   const desktopLibrary = useContext(DesktopLibraryContext);
   const ref = useRef<HTMLIFrameElement>(null);
+  const live = useRef({
+    canvas,
+    revision: project.revision,
+    nodes,
+    onGeometry,
+    onPick,
+  });
+  live.current = {
+    canvas,
+    revision: project.revision,
+    nodes,
+    onGeometry,
+    onPick,
+  };
   const container = useRef<HTMLDivElement>(null);
   const [availableWidth, setAvailableWidth] = useState(0);
   const [contentWidth, setContentWidth] = useState(0);
@@ -100,6 +133,35 @@ export function Preview({
       )
         return;
       if (event.data?.type === "studio-preview-ready") setReady(true);
+      if (
+        live.current.canvas &&
+        event.data?.surfaceId === live.current.canvas.surfaceId &&
+        event.data?.epoch === live.current.canvas.epoch &&
+        event.data?.revision === live.current.revision
+      ) {
+        const allowed = new Set<string>();
+        const walk = (rows: ProjectNode[]) =>
+          rows.forEach((n) => {
+            allowed.add(n.id);
+            Object.values(n.slots).forEach(walk);
+          });
+        walk(live.current.nodes ?? []);
+        if (
+          event.data.type === "studio-preview-geometry" &&
+          validCanvasBounds(event.data.bounds, allowed)
+        )
+          live.current.onGeometry?.(
+            event.data.bounds,
+            event.data.revision,
+            event.data.epoch,
+          );
+        if (
+          event.data.type === "studio-preview-picked" &&
+          Number.isSafeInteger(event.data.requestId) &&
+          (event.data.id === null || allowed.has(event.data.id))
+        )
+          live.current.onPick?.(event.data.id, event.data.requestId);
+      }
       if (
         autoHeight &&
         event.data?.type === "studio-preview-size" &&
@@ -126,7 +188,15 @@ export function Preview({
     }
     window.addEventListener("message", receive);
     return () => window.removeEventListener("message", receive);
-  }, [onSelect, autoHeight]);
+  }, [
+    onSelect,
+    autoHeight,
+    canvas?.surfaceId,
+    project.revision,
+    nodes,
+    onGeometry,
+    onPick,
+  ]);
   useEffect(() => {
     if (ready)
       ref.current?.contentWindow?.postMessage(
@@ -142,6 +212,14 @@ export function Preview({
           selected,
           selectedIds,
           desktopLibrary,
+          canvas: canvas
+            ? {
+                surfaceId: canvas.surfaceId,
+                epoch: canvas.epoch,
+                view: canvas.view,
+                positions: canvas.positions,
+              }
+            : undefined,
         },
         __STUDIO_DESKTOP__ ? "studio://preview" : location.origin,
       );
@@ -157,7 +235,24 @@ export function Preview({
     selectedIds,
     desktopLibrary,
     locale,
+    canvas?.surfaceId,
+    canvas?.view,
+    canvas?.positions,
+    canvas?.epoch,
   ]);
+  useEffect(() => {
+    if (ready && canvas?.pick)
+      ref.current?.contentWindow?.postMessage(
+        {
+          type: "studio-preview-pick",
+          surfaceId: canvas.surfaceId,
+          epoch: canvas.epoch,
+          revision: project.revision,
+          ...canvas.pick,
+        },
+        __STUDIO_DESKTOP__ ? "studio://preview" : location.origin,
+      );
+  }, [ready, canvas?.pick, canvas?.surfaceId, project.revision]);
   const renderWidth = Math.max(availableWidth, contentWidth);
   const scale =
     autoHeight && availableWidth && renderWidth
@@ -167,6 +262,7 @@ export function Preview({
     <iframe
       ref={ref}
       title={title}
+      tabIndex={canvas ? -1 : undefined}
       src={
         __STUDIO_DESKTOP__
           ? "studio://preview/preview"
@@ -190,7 +286,7 @@ export function Preview({
         transformOrigin: "top left",
         border: 0,
         display: "block",
-        background: "#fff",
+        background: canvas ? "transparent" : "#fff",
       }}
     />
   );
@@ -249,6 +345,7 @@ export function Nodes({
   onSelect,
   inheritedLocked = false,
   materializedNodes = false,
+  positions = {},
 }: {
   nodes: ProjectNode[];
   library: ComponentLibrary;
@@ -258,12 +355,17 @@ export function Nodes({
   onSelect: (id: string, additive?: boolean) => void;
   inheritedLocked?: boolean;
   materializedNodes?: boolean;
+  positions?: Record<string, { x: number; y: number }>;
 }) {
   const { t } = useI18n();
-  const hasInstance = (rows: ProjectNode[]): boolean => rows.some((node) => node.instance || Object.values(node.slots).some(hasInstance));
-  const materialized = !materializedNodes && hasInstance(nodes)
-    ? resolveSceneNodes(project, nodes)
-    : nodes;
+  const hasInstance = (rows: ProjectNode[]): boolean =>
+    rows.some(
+      (node) => node.instance || Object.values(node.slots).some(hasInstance),
+    );
+  const materialized =
+    !materializedNodes && hasInstance(nodes)
+      ? resolveSceneNodes(project, nodes)
+      : nodes;
   return (
     <>
       {materialized
@@ -274,11 +376,15 @@ export function Nodes({
             library.version === project.library.version
               ? library.components[node.type]
               : undefined;
-          const resolved = node.type === "StudioImage" || node.scene?.kind === "image" ? resolveProps(node.props as Props, project) : node.props;
+          const resolved =
+            node.type === "StudioImage" || node.scene?.kind === "image"
+              ? resolveProps(node.props as Props, project)
+              : node.props;
           return (
             <div
               key={node.id}
               data-node-id={node.id}
+              data-selection-id={sceneSelectionId(node)}
               onClick={(e) => {
                 e.stopPropagation();
                 if (!node.locked && !inheritedLocked)
@@ -292,6 +398,9 @@ export function Nodes({
                   position: node.scene ? "absolute" : "relative",
                   padding: node.scene ? 0 : 8,
                   ...(node.scene ? layerStyle(node) : {}),
+                  ...(positions[node.id]
+                    ? { left: positions[node.id].x, top: positions[node.id].y }
+                    : {}),
                   outline:
                     node.id === selected || selectedIds.includes(node.id)
                       ? "2px solid #4673e8"
@@ -351,6 +460,7 @@ export function Nodes({
                       nodes: children,
                       inheritedLocked: inheritedLocked || !!node.locked,
                       materializedNodes: true,
+                      positions,
                       library,
                       project,
                       selected,
@@ -374,8 +484,10 @@ export function Nodes({
                             <Nodes
                               {...{
                                 nodes: children,
-                                inheritedLocked: inheritedLocked || !!node.locked,
+                                inheritedLocked:
+                                  inheritedLocked || !!node.locked,
                                 materializedNodes: true,
+                                positions,
                                 library,
                                 project,
                                 selected,
