@@ -26,8 +26,12 @@ export async function captureDesktopSnapshot(
   let stage = "create-window";
   const mark = (next: string) => {
     stage = next;
-    if (process.env.STUDIO_CAPTURE_DIAGNOSTICS === "1")
-      console.error("Studio capture stage", {stage, elapsedMs: Date.now() - started});
+    if (process.env.STUDIO_CAPTURE_DIAGNOSTICS === "1") {
+      const diagnostic = {stage, elapsedMs: Date.now() - started};
+      const state = globalThis as typeof globalThis & {__studioCaptureDiagnostics?: typeof diagnostic[]};
+      state.__studioCaptureDiagnostics = [...(state.__studioCaptureDiagnostics ?? []), diagnostic].slice(-64);
+      console.error("Studio capture stage", diagnostic);
+    }
   };
   const window = new BrowserWindow({
     show: false,

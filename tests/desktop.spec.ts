@@ -461,6 +461,7 @@ test("desktop installed MCP survives owner replacement, trusted library restart 
     const png = Buffer.from(image.data, "base64");
     const renderMetadata = JSON.parse((rendered.content as { type: string; text: string }[]).find((item) => item.type === "text")!.text);
     expect(await app.evaluate(() => (globalThis as any).__slowSnapshotFramesInstalled)).toBe(1);
+    expect(await app.evaluate(() => (globalThis as any).__studioCaptureDiagnostics?.some((row: {stage:string}) => row.stage === "complete"))).toBe(true);
     expect(renderMetadata.viewport).toEqual({ width: 390, height: 600 });
     expect(renderMetadata.text).toContain("Installed MCP approved");
     expect(renderMetadata.warnings).toEqual([]);
@@ -578,6 +579,8 @@ test("desktop installed MCP survives owner replacement, trusted library restart 
     const preferences = JSON.parse(await readFile(join(settings, "libraries.json"), "utf8"));
     expect(preferences[await realpath(projectRoot)]).toBe(canonicalLibrary);
   } finally {
+    const stages = await app.evaluate(() => (globalThis as any).__studioCaptureDiagnostics ?? []).catch(() => []);
+    if (stages.length) console.error("Studio capture stages:", JSON.stringify(stages));
     await testInfo.attach("desktop-capture-diagnostics", {body: captureDiagnostics,contentType:"text/plain"});
     if (testInfo.status !== testInfo.expectedStatus) console.error(captureDiagnostics);
 
