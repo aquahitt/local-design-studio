@@ -698,3 +698,31 @@ test("nested drag uses world delta at changed zoom and pan under a rotated paren
   expect(scene.y).toBeCloseTo(30 - sn * dx + c * dy, 3);
   expect(parent.scene.rotation).toBe(30);
 });
+
+test("click-only selection keeps the render epoch stable for the following Shift click", async ({
+  page,
+}) => {
+  const s = await setup(page);
+  const p = await s.center("-b");
+  const epoch = () =>
+    s.frame
+      .locator("body")
+      .evaluate(() => (window as any).__canvasInput.canvas.epoch);
+  // Wait for the current complete snapshot, then an ordinary click must only
+  // change selection. It has no transient position to reset or re-render.
+  const before = await epoch();
+  await page.mouse.click(p.x, p.y);
+  await expect(page.getByTestId("selection")).toContainText(s.screenId + "-b");
+  await page.evaluate(
+    () =>
+      new Promise<void>((ok) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => ok())),
+      ),
+  );
+  expect(await epoch()).toBe(before);
+  await page.keyboard.down("Shift");
+  await page.mouse.click(p.x, p.y);
+  await page.keyboard.up("Shift");
+  await expect(page.getByTestId("selection")).toContainText("—");
+  expect(await epoch()).toBe(before);
+});

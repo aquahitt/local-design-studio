@@ -244,6 +244,11 @@ test("desktop installed MCP survives owner replacement, trusted library restart 
     cwd,
     env: {...env, STUDIO_CAPTURE_DIAGNOSTICS: "1"},
   });
+    launched.on("console", async message => {
+      if (!message.text().startsWith("Studio capture")) return;
+      const values = await Promise.all(message.args().map(argument => argument.jsonValue().catch(() => "[closed]")));
+      captureDiagnostics = (captureDiagnostics + values.map(value => typeof value === "string" ? value : JSON.stringify(value)).join(" ") + "\n").slice(-12000);
+    });
     launched.process().stderr?.on("data", chunk => {
       captureDiagnostics = (captureDiagnostics + String(chunk)).slice(-12000);
     });

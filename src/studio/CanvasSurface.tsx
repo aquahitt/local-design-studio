@@ -281,7 +281,7 @@ export function CanvasSurface({
   ]);
   const cancel = useCallback(() => {
     gesture.current = null;
-    setPositions({});
+    setPositions((current) => (Object.keys(current).length ? {} : current));
     setSpace(false);
   }, []);
   useEffect(() => {
@@ -346,7 +346,7 @@ export function CanvasSurface({
     if (g !== gesture.current) return;
     if (!g.pan && !g.ids) return; // Pick may still be in flight.
     gesture.current = null;
-    setPositions({});
+    setPositions((current) => (Object.keys(current).length ? {} : current));
     if (
       g.pan ||
       Math.hypot(g.last.x - g.from.x, g.last.y - g.from.y) < 3 ||
