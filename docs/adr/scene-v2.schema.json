@@ -264,6 +264,68 @@
           ]
         }
       }
+    },
+    "fonts": {
+      "type": "array",
+      "maxItems": 128,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160,
+            "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$",
+            "description": "Trimmed, non-empty display metadata; never interpreted as CSS or a path."
+          },
+          "assetHash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "format": {
+            "enum": [
+              "ttf",
+              "otf",
+              "woff",
+              "woff2"
+            ]
+          },
+          "family": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160,
+            "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$",
+            "description": "Trimmed, non-empty display metadata; never interpreted as CSS or a path."
+          },
+          "weight": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "style": {
+            "enum": [
+              "normal",
+              "italic",
+              "oblique"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "assetHash",
+          "format",
+          "family",
+          "weight",
+          "style"
+        ],
+        "additionalProperties": false
+      },
+      "description": "Exact project faces with unique IDs. References and descriptor bytes are validated separately."
     }
   },
   "required": [
@@ -798,6 +860,43 @@
               "type": "number",
               "minimum": 0,
               "maximum": 1000000
+            },
+            "textStyle": {
+              "type": "object",
+              "properties": {
+                "fontId": {
+                  "type": "string",
+                  "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$"
+                },
+                "lineHeight": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "maximum": 1000000,
+                  "description": "Explicit CSS pixels, not a unitless multiplier."
+                },
+                "letterSpacing": {
+                  "type": "number",
+                  "minimum": -1000000,
+                  "maximum": 1000000
+                },
+                "align": {
+                  "enum": [
+                    "start",
+                    "center",
+                    "end",
+                    "justify"
+                  ]
+                },
+                "direction": {
+                  "enum": [
+                    "ltr",
+                    "rtl",
+                    "auto"
+                  ]
+                }
+              },
+              "required": [],
+              "additionalProperties": false
             }
           },
           "required": [
@@ -838,6 +937,30 @@
                         "shadows"
                       ]
                     }
+                  ]
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "frame",
+                      "vector",
+                      "component",
+                      "image"
+                    ]
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              },
+              "then": {
+                "not": {
+                  "required": [
+                    "textStyle"
                   ]
                 }
               }
@@ -1492,6 +1615,43 @@
           "type": "number",
           "minimum": 0,
           "maximum": 1000000
+        },
+        "textStyle": {
+          "type": "object",
+          "properties": {
+            "fontId": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$"
+            },
+            "lineHeight": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
+              "description": "Explicit CSS pixels, not a unitless multiplier."
+            },
+            "letterSpacing": {
+              "type": "number",
+              "minimum": -1000000,
+              "maximum": 1000000
+            },
+            "align": {
+              "enum": [
+                "start",
+                "center",
+                "end",
+                "justify"
+              ]
+            },
+            "direction": {
+              "enum": [
+                "ltr",
+                "rtl",
+                "auto"
+              ]
+            }
+          },
+          "required": [],
+          "additionalProperties": false
         }
       },
       "required": [
@@ -1532,6 +1692,30 @@
                     "shadows"
                   ]
                 }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "frame",
+                  "vector",
+                  "component",
+                  "image"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "not": {
+              "required": [
+                "textStyle"
               ]
             }
           }

@@ -1,3 +1,4 @@
+import { isProjectAssetPath, projectAssetMediaType } from "./project-assets";
 import { computedStylesExpression } from "./computed-styles";
 import { createServer } from "node:http";
 import { once } from "node:events";
@@ -182,10 +183,10 @@ export async function renderSnapshot(
             new URL(req.url ?? "/", "http://127.0.0.1").pathname,
           );
           let bytes: Uint8Array, type: string;
-          if (/^\/assets\/[a-f0-9]{64}\.(png|svg)$/.test(path)) {
+          if (isProjectAssetPath(path)) {
             if (!runtime.readAsset) throw new Error("ASSET_UNAVAILABLE");
             bytes = await runtime.readAsset(path.slice(8));
-            type = mime[extname(path)];
+            type = projectAssetMediaType(path.slice(8))!;
           } else {
             const file = resolve(
                 output,
@@ -292,6 +293,10 @@ export async function renderSnapshot(
     )) as RenderComputedStyles[];
     const text = (await page.locator("body").innerText()).slice(0, 10000);
     warnings.push(...(await page.locator(".render-error").allTextContents()));
+    warnings.push(...await page.evaluate(() => {
+      const fontWarnings = JSON.parse(document.documentElement.dataset.studioPreviewFontWarnings ?? "[]") as {code:string;fontId:string}[];
+      return fontWarnings.map(warning => `${warning.code}:${warning.fontId}`);
+    }));
     let bytes: Buffer;
     if (input.nodeId) {
       const index = bounds.findIndex((bound) => bound.id === input.nodeId);

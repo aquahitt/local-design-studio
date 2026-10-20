@@ -1,6 +1,7 @@
 import { useI18n } from "./i18n";
 import { StudioSelect } from "./StudioSelect";
 import { Assets } from "./Assets";
+import { FontLibrary } from "./FontLibrary";
 import { LayerActions } from "./LayerActions";
 import { NodeLayoutInspector } from "./NodeLayoutInspector";
 import { Annotations } from "./Annotations";
@@ -78,7 +79,11 @@ function download(name: string, content: string, type = "application/json") {
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-function proposalChanges(project: Project, operation: Operation): string[] {
+function proposalChanges(project: Project, operation: Operation, t: (source: string, values?: Record<string, string | number>) => string): string[] {
+  if (operation.type === "addProjectFont" || operation.type === "updateProjectFont")
+    return [t(operation.type === "addProjectFont" ? "Добавить шрифт {0} ({1}, {2})" : "Обновить шрифт {0} ({1}, {2})", {0: operation.font.name, 1: operation.font.weight, 2: operation.font.style})];
+  if (operation.type === "removeProjectFont")
+    return [t("Удалить шрифт {0}", {0: project.fonts?.find(font => font.id === operation.fontId)?.name ?? operation.fontId})];
   if (operation.type === "updateProps") {
     const before = project.pages
       .map((p) => locate(p.nodes, operation.nodeId))
@@ -912,6 +917,7 @@ export function StudioApp({
                         </article>
                       ))}
                   </div>
+                  {client && <FontLibrary client={client} project={project} onApply={mutate} disabled={dirty || tokenDraft !== null} />}
                 </section>
               )}
               {view === "editor" &&
@@ -1346,7 +1352,7 @@ export function StudioApp({
                       {proposalList === "pending" && (
                         <ul>
                           {p.batch.operations
-                            .flatMap((op) => proposalChanges(project, op))
+                            .flatMap((op) => proposalChanges(project, op, t))
                             .map((change, i) => (
                               <li key={i}>{change}</li>
                             ))}

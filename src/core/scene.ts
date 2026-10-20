@@ -1,3 +1,4 @@
+import { validateTextStyle, type TextStyle } from "./text-style";
 import { CoreError } from "./tokens";
 import type { ProjectNode } from "./project";
 import { validateFramePaint, type Paint, type Shadow } from "./paint";
@@ -20,6 +21,7 @@ export type SceneMetadata = {
   clip?: boolean;
   path?: string;
   fontSize?: number;
+  textStyle?: TextStyle;
 };
 export type Point = { x: number; y: number };
 export type SceneView = { zoom: number; panX: number; panY: number };
@@ -55,6 +57,7 @@ export function validateScene(value: unknown, path: string): SceneMetadata {
     "clip",
     "path",
     "fontSize",
+    "textStyle",
   ];
   if (Object.keys(scene).some((key) => !fields.includes(key))) fail();
   if (
@@ -111,6 +114,15 @@ export function validateScene(value: unknown, path: string): SceneMetadata {
       !/^[MmZzLlHhVvCcSsQqTtAa\d\s.,+eE-]+$/.test(scene.path))
   )
     fail();
+  if (scene.textStyle !== undefined) {
+    if (scene.kind !== "text")
+      throw new CoreError(
+        "INVALID_TEXT_STYLE",
+        `${path}.textStyle`,
+        `${path}.textStyle`,
+      );
+    validateTextStyle(scene.textStyle, `${path}.textStyle`);
+  }
   validateFramePaint(scene, path);
   return scene as SceneMetadata;
 }

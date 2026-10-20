@@ -117,6 +117,47 @@ export function ProposalPreview({
           ))}
         </div>
       )}
+      {!!result.fontChanges.length && (
+        <div className="proposal-token-changes proposal-font-changes">
+          <h3>{t("Шрифты проекта")}</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>{t("Шрифт текста")}</th>
+                <th>{t("Сейчас")}</th>
+                <th>{t("После принятия")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {result.fontChanges.map((change) => (
+                <tr key={change.fontId}>
+                  <th>
+                    <code>{change.fontId}</code>
+                  </th>
+                  {[change.before, change.after].map((font, index) => (
+                    <td key={index}>
+                      {font ? (
+                        <>
+                          <strong>{font.name}</strong>
+                          <div>
+                            {font.family} · {font.weight} {font.style} ·{" "}
+                            {font.format.toUpperCase()}
+                          </div>
+                          <code style={{ overflowWrap: "anywhere" }}>
+                            {font.assetHash}
+                          </code>
+                        </>
+                      ) : (
+                        t("Удалён / отсутствует")
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
       {!!tokenNames.length && (
         <div className="proposal-token-changes">
           <h3>{t("Изменения токенов")}</h3>

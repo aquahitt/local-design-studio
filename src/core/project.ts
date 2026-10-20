@@ -1,3 +1,4 @@
+import { validateProjectFonts, type ProjectFont } from "./fonts";
 import {
   parseAnnotations,
   parsePageProvenance,
@@ -57,6 +58,7 @@ export type Project = {
   groups?: ProjectGroup[];
   designComponents?: DesignComponentDefinition[];
   annotations?: ProjectAnnotation[];
+  fonts?: ProjectFont[];
 };
 export const PROJECT_LIMITS = {
   bytes: 5_000_000,
@@ -140,6 +142,7 @@ export function parseProject(input: unknown): Project {
     "groups",
     "designComponents",
     "annotations",
+    "fonts",
   ]);
   if (p.schemaVersion !== 2) throw new CoreError("UNSUPPORTED_VERSION");
   if (!Number.isSafeInteger(p.revision) || (p.revision as number) < 0)
@@ -162,6 +165,10 @@ export function parseProject(input: unknown): Project {
     resolveTokens(tokens),
     ...Array.from(modes, (theme) => resolveTokens(tokens, theme)),
   ];
+  if (p.fonts !== undefined) p.fonts = validateProjectFonts(p.fonts);
+  const fontIds = new Set(
+    ((p.fonts ?? []) as ProjectFont[]).map((font) => font.id),
+  );
   const ids = new Set<string>();
   let count = 0;
   function json(v: JSONValue, path: string, key = "", propDepth = 0) {
@@ -230,7 +237,14 @@ export function parseProject(input: unknown): Project {
             `${nodePath}.${field}`,
             `${nodePath}.${field}`,
           );
-      if (n.scene !== undefined) validateScene(n.scene, `${nodePath}.scene`);
+      if (n.scene !== undefined) {
+        const scene = validateScene(n.scene, `${nodePath}.scene`);
+        const fontId = scene.textStyle?.fontId;
+        if (fontId !== undefined && !fontIds.has(fontId)) {
+          const path = `${nodePath}.scene.textStyle.fontId`;
+          throw new CoreError("MISSING_FONT", path, path);
+        }
+      }
       if (n.instance !== undefined) {
         const instance = object(n.instance);
         exact(instance, ["definitionId", "variant", "overrides"]);

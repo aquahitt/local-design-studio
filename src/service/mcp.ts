@@ -9,7 +9,7 @@ import { createStudioServer } from "./server";
 import { batchSchema, projectSchema } from "./schema";
 import { renderSnapshot } from "./render";
 import { readAnnotations } from "../core/annotations";
-import { readImageAsset } from "./image-assets";
+import { readProjectAsset } from "./project-assets";
 import {
   readProjectPage,
   readComponents,
@@ -41,7 +41,7 @@ try {
     renderSnapshot: (project, options) =>
       renderSnapshot(project, options, {
         externalRoot: process.env.STUDIO_LIBRARY_ROOT,
-        readAsset: (name) => readImageAsset(root, name),
+        readAsset: (name) => readProjectAsset(root, name, project.fonts),
       }),
     libraryMetadata: getConfiguredLibraryMetadata({
       externalRoot: process.env.STUDIO_LIBRARY_ROOT,

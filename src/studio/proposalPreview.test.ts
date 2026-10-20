@@ -1,3 +1,7 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { ProposalPreview } from "./ProposalPreview";
+import { builtinLibrary } from "../library/builtin";
 import { it, expect } from "vitest";
 import { parseProject } from "../core/project";
 import { buildProposalPreview } from "./proposalSimulation";
@@ -76,4 +80,210 @@ it("compares added and removed screens without losing either side", () => {
   expect(result.pageIds).toEqual(["home", "new"]);
   expect(project.pages[0].screenId).toBe("home");
   expect(result.after?.pages.map((p) => p.screenId)).toEqual(["new"]);
+});
+
+const face = {
+  id: "review-font",
+  name: "Original face",
+  assetHash: "a".repeat(64),
+  format: "ttf" as const,
+  family: "Test Family",
+  weight: 400,
+  style: "normal" as const,
+};
+function fontProject() {
+  const p = structuredClone(project);
+  p.fonts = [face];
+  p.pages[0].nodes[0].scene = {
+    kind: "text",
+    x: 0,
+    y: 0,
+    width: 100,
+    height: 40,
+    textStyle: { fontId: face.id },
+  };
+  p.pages.push({
+    screenId: "unrelated",
+    name: "Unrelated",
+    viewport: { width: 390 },
+    nodes: [],
+  });
+  p.designComponents = [
+    {
+      id: "review-definition",
+      name: "Definition",
+      version: 1,
+      nodes: [
+        {
+          id: "definition-text",
+          type: "Text",
+          props: { text: "Defined font" },
+          slots: {},
+          scene: {
+            kind: "text",
+            x: 0,
+            y: 0,
+            width: 100,
+            height: 40,
+            textStyle: { fontId: face.id },
+          },
+        },
+      ],
+      variants: { alternate: { "definition-text": { text: "Variant font" } } },
+    },
+  ];
+  p.pages.push({
+    screenId: "instance-page",
+    name: "Instance",
+    viewport: { width: 390 },
+    nodes: [
+      {
+        id: "review-instance",
+        type: "LocalInstance",
+        props: {},
+        slots: {},
+        instance: { definitionId: "review-definition", variant: "alternate" },
+      },
+    ],
+  });
+  p.pages.push({
+    screenId: "hidden-page",
+    name: "Hidden",
+    viewport: { width: 390 },
+    nodes: [
+      {
+        id: "hidden-font",
+        type: "Text",
+        props: { text: "Hidden" },
+        slots: {},
+        hidden: true,
+        scene: {
+          kind: "text",
+          x: 0,
+          y: 0,
+          width: 100,
+          height: 40,
+          textStyle: { fontId: face.id },
+        },
+      },
+    ],
+  });
+  return parseProject(p);
+}
+it("previews exact font byte changes on referenced pages and materialized instances only", () => {
+  const before = fontProject(),
+    snapshot = structuredClone(before),
+    replacement = { ...face, assetHash: "b".repeat(64) };
+  const result = buildProposalPreview(before, {
+    requestId: "replace-font",
+    baseRevision: 0,
+    operations: [
+      { type: "updateProjectFont", fontId: face.id, font: replacement },
+    ],
+  });
+  expect(result.pageIds).toEqual(["home", "instance-page"]);
+  expect(result.fontChanges).toEqual([
+    { fontId: face.id, before: face, after: replacement },
+  ]);
+  expect(before).toEqual(snapshot);
+  expect(result.after?.fonts).toEqual([replacement]);
+});
+it("describes font metadata-only edits without claiming visual page changes", () => {
+  const p = fontProject(),
+    replacement = { ...face, name: "Renamed face" };
+  const result = buildProposalPreview(p, {
+    requestId: "rename-font",
+    baseRevision: 0,
+    operations: [
+      { type: "updateProjectFont", fontId: face.id, font: replacement },
+    ],
+  });
+  expect(result.pageIds).toEqual([]);
+  expect(result.fontChanges).toEqual([
+    { fontId: face.id, before: face, after: replacement },
+  ]);
+});
+it("describes unused font registration and removal without rendering unrelated pages", () => {
+  const p = fontProject(),
+    extra = { ...face, id: "unused-font", assetHash: "c".repeat(64) };
+  const added = buildProposalPreview(p, {
+    requestId: "add-font",
+    baseRevision: 0,
+    operations: [{ type: "addProjectFont", font: extra }],
+  });
+  expect(added.pageIds).toEqual([]);
+  expect(added.fontChanges).toEqual([{ fontId: extra.id, after: extra }]);
+  const removed = buildProposalPreview(added.after!, {
+    requestId: "remove-font",
+    baseRevision: 1,
+    operations: [{ type: "removeProjectFont", fontId: extra.id }],
+  });
+  expect(removed.pageIds).toEqual([]);
+  expect(removed.fontChanges).toEqual([{ fontId: extra.id, before: extra }]);
+});
+
+it("renders the old and proposed font names for metadata-only changes", () => {
+  const p = fontProject();
+  const markup = renderToStaticMarkup(
+    createElement(ProposalPreview, {
+      project: p,
+      library: builtinLibrary,
+      proposal: {
+        id: "font-description",
+        description: "Rename font",
+        createdAt: "2026-10-20T00:00:00Z",
+        status: "pending",
+        batch: {
+          requestId: "rename-font-ui",
+          baseRevision: 0,
+          operations: [
+            {
+              type: "updateProjectFont",
+              fontId: face.id,
+              font: { ...face, name: "Proposed new face name" },
+            },
+          ],
+        },
+      },
+    }),
+  );
+  expect(markup).toContain("Original face");
+  expect(markup).toContain("Proposed new face name");
+  expect(markup).toContain("Шрифты проекта");
+  expect(markup).toContain("Визуальных изменений нет");
+  expect(markup).not.toContain("<iframe");
+});
+it("keeps an exact used-face replacement visible alongside directly edited text", () => {
+  const p = fontProject();
+  const result = buildProposalPreview(p, {
+    requestId: "font-and-text",
+    baseRevision: 0,
+    operations: [
+      {
+        type: "updateProjectFont",
+        fontId: face.id,
+        font: { ...face, weight: 700 },
+      },
+      { type: "updateProps", nodeId: "t", props: { text: "Reviewed text" } },
+    ],
+  });
+  expect(result.pageIds).toEqual(["home", "instance-page"]);
+  expect(result.after?.pages[0].nodes[0].props.text).toBe("Reviewed text");
+  expect(result.fontChanges[0].after?.weight).toBe(700);
+});
+it("includes family metadata changes so preview can display exact-byte validation warnings", () => {
+  const p = fontProject();
+  const result = buildProposalPreview(p, {
+    requestId: "family-mismatch",
+    baseRevision: 0,
+    operations: [
+      {
+        type: "updateProjectFont",
+        fontId: face.id,
+        font: { ...face, family: "Different claimed family" },
+      },
+    ],
+  });
+  expect(result.pageIds).toEqual(["home", "instance-page"]);
+  expect(result.fontChanges[0].after?.family).toBe("Different claimed family");
 });

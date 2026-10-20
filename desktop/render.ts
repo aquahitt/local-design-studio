@@ -63,7 +63,7 @@ export async function captureDesktopSnapshot(
     const result = await window.webContents.executeJavaScript(`(async () => {
       await document.fonts.ready;
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      return { bounds: [...document.querySelectorAll('[data-node-id]')].map(node => { const box = node.getBoundingClientRect(); return {id: node.getAttribute('data-node-id'), x: box.x, y: box.y, width: box.width, height: box.height}; }), text: document.body.innerText.slice(0, 10000), warnings: [...document.querySelectorAll('.render-error')].map(node => node.textContent) };
+      return { bounds: [...document.querySelectorAll('[data-node-id]')].map(node => { const box = node.getBoundingClientRect(); return {id: node.getAttribute('data-node-id'), x: box.x, y: box.y, width: box.width, height: box.height}; }), text: document.body.innerText.slice(0, 10000), warnings: [...document.querySelectorAll('.render-error')].map(node => node.textContent).concat(JSON.parse(document.documentElement.dataset.studioPreviewFontWarnings ?? '[]').map(warning => warning.code + ':' + warning.fontId)) };
     })()`);
     const computedStyles = await window.webContents.executeJavaScript(
       computedStylesExpression,

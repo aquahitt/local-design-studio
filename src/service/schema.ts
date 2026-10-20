@@ -95,6 +95,51 @@ const framePaintConstraint = {
     not: { anyOf: [{ required: ["fills"] }, { required: ["shadows"] }] },
   },
 };
+const fontId = { type: "string", pattern: "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$" };
+const fontLabel = {
+  type: "string",
+  minLength: 1,
+  maxLength: 160,
+  pattern: "^[^\\u0000-\\u001f\\u007f-\\u009f]+$",
+  description:
+    "Trimmed, non-empty display metadata; never interpreted as CSS or a path.",
+};
+const projectFont = object({
+  id: fontId,
+  name: fontLabel,
+  assetHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
+  format: { enum: ["ttf", "otf", "woff", "woff2"] },
+  family: fontLabel,
+  weight: { type: "integer", minimum: 1, maximum: 1000 },
+  style: { enum: ["normal", "italic", "oblique"] },
+});
+const fonts = {
+  type: "array",
+  maxItems: 128,
+  items: projectFont,
+  description:
+    "Exact project faces with unique IDs. References and descriptor bytes are validated separately.",
+};
+const textStyle = object(
+  {
+    fontId,
+    lineHeight: {
+      ...dimension,
+      description: "Explicit CSS pixels, not a unitless multiplier.",
+    },
+    letterSpacing: coordinate,
+    align: { enum: ["start", "center", "end", "justify"] },
+    direction: { enum: ["ltr", "rtl", "auto"] },
+  },
+  [],
+);
+const textStyleConstraint = {
+  if: {
+    properties: { kind: { enum: ["frame", "vector", "component", "image"] } },
+    required: ["kind"],
+  },
+  then: { not: { required: ["textStyle"] } },
+};
 const sceneFields = {
   kind: { enum: ["frame", "text", "vector", "component", "image"] },
   x: coordinate,
@@ -112,10 +157,11 @@ const sceneFields = {
   clip: { type: "boolean" },
   path: { type: "string", maxLength: 100_000 },
   fontSize: { type: "number", minimum: 0, maximum: 1_000_000 },
+  textStyle,
 };
 const scene = {
   ...object(sceneFields, ["kind", "x", "y", "width", "height"]),
-  allOf: [framePaintConstraint],
+  allOf: [framePaintConstraint, textStyleConstraint],
 };
 const overrides = {
   type: "object",
@@ -245,6 +291,7 @@ export const projectSchema = {
       groups,
       designComponents,
       annotations,
+      fonts,
     },
     [
       "schemaVersion",
@@ -288,11 +335,14 @@ export const batchSchema = {
                 locked: { type: "boolean" },
                 scene: {
                   ...object(sceneFields, []),
-                  allOf: [framePaintConstraint],
+                  allOf: [framePaintConstraint, textStyleConstraint],
                 },
               },
               ["nodeId"],
             ),
+            op("addProjectFont", { font: projectFont }),
+            op("updateProjectFont", { fontId, font: projectFont }),
+            op("removeProjectFont", { fontId }),
             op("setDesignComponents", { definitions: designComponents }),
             op("setInstance", { nodeId: str, instance }),
             op("detachInstance", { nodeId: str }),

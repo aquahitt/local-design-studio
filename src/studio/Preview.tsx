@@ -1,3 +1,4 @@
+import { compileTextStyle } from "../core/text-style";
 import { layerStyle } from "../core/handoff";
 import { useI18n, type StudioLocale } from "./i18n";
 import {
@@ -74,7 +75,7 @@ export function Preview({
   selectedIds,
   onSelect,
 }: PreviewInput) {
-  const { locale } = useI18n();
+  const { locale, t } = useI18n();
   const desktopLibrary = useContext(DesktopLibraryContext);
   const ref = useRef<HTMLIFrameElement>(null);
   const container = useRef<HTMLDivElement>(null);
@@ -90,6 +91,11 @@ export function Preview({
   }, [autoHeight]);
   useEffect(() => setContentWidth(0), [component?.type, theme]);
   const [ready, setReady] = useState(false);
+  const [fontWarnings, setFontWarnings] = useState<string[]>([]);
+  useEffect(
+    () => setFontWarnings([]),
+    [project.projectId, project.revision, nodes],
+  );
   const [measuredHeight, setMeasuredHeight] = useState(height);
   useEffect(() => {
     function receive(event: MessageEvent) {
@@ -100,6 +106,24 @@ export function Preview({
       )
         return;
       if (event.data?.type === "studio-preview-ready") setReady(true);
+      if (
+        event.data?.type === "studio-preview-font-status" &&
+        event.data.projectId === project.projectId &&
+        event.data.revision === project.revision &&
+        Array.isArray(event.data.warnings) &&
+        event.data.warnings.length <= 128 &&
+        event.data.warnings.every(
+          (warning: { code?: unknown; fontId?: unknown }) =>
+            warning?.code === "PROJECT_FONT_UNAVAILABLE" &&
+            typeof warning.fontId === "string" &&
+            project.fonts?.some((font) => font.id === warning.fontId),
+        )
+      )
+        setFontWarnings(
+          event.data.warnings.map(
+            (warning: { fontId: string }) => warning.fontId,
+          ),
+        );
       if (
         autoHeight &&
         event.data?.type === "studio-preview-size" &&
@@ -194,19 +218,35 @@ export function Preview({
       }}
     />
   );
-  return autoHeight ? (
-    <div
-      ref={container}
-      style={{
-        width: "100%",
-        height: measuredHeight * scale,
-        overflow: "hidden",
-      }}
-    >
-      {frame}
-    </div>
-  ) : (
-    frame
+  const warning = fontWarnings.length ? (
+    <p role="status">
+      {t("Не удалось загрузить шрифт проекта. Текст может отличаться:")}{" "}
+      {fontWarnings
+        .map((id) => {
+          const font = project.fonts?.find((font) => font.id === id);
+          return font ? `${font.name} · ${font.weight} ${font.style}` : id;
+        })
+        .join(", ")}
+    </p>
+  ) : null;
+  return (
+    <>
+      {warning}
+      {autoHeight ? (
+        <div
+          ref={container}
+          style={{
+            width: "100%",
+            height: measuredHeight * scale,
+            overflow: "hidden",
+          }}
+        >
+          {frame}
+        </div>
+      ) : (
+        frame
+      )}
+    </>
   );
 }
 export function resolveProps(props: Props, project: Project): Props {
@@ -260,10 +300,14 @@ export function Nodes({
   materializedNodes?: boolean;
 }) {
   const { t } = useI18n();
-  const hasInstance = (rows: ProjectNode[]): boolean => rows.some((node) => node.instance || Object.values(node.slots).some(hasInstance));
-  const materialized = !materializedNodes && hasInstance(nodes)
-    ? resolveSceneNodes(project, nodes)
-    : nodes;
+  const hasInstance = (rows: ProjectNode[]): boolean =>
+    rows.some(
+      (node) => node.instance || Object.values(node.slots).some(hasInstance),
+    );
+  const materialized =
+    !materializedNodes && hasInstance(nodes)
+      ? resolveSceneNodes(project, nodes)
+      : nodes;
   return (
     <>
       {materialized
@@ -274,7 +318,10 @@ export function Nodes({
             library.version === project.library.version
               ? library.components[node.type]
               : undefined;
-          const resolved = node.type === "StudioImage" || node.scene?.kind === "image" ? resolveProps(node.props as Props, project) : node.props;
+          const resolved =
+            node.type === "StudioImage" || node.scene?.kind === "image"
+              ? resolveProps(node.props as Props, project)
+              : node.props;
           return (
             <div
               key={node.id}
@@ -304,12 +351,8 @@ export function Nodes({
             >
               {node.scene?.kind === "text" ? (
                 <div
-                  style={{
-                    fontSize: node.scene.fontSize ?? 16,
-                    whiteSpace: "pre-wrap",
-                    overflowWrap: "anywhere",
-                    lineHeight: 1.4,
-                  }}
+                  style={compileTextStyle(node.scene, project) as CSSProperties}
+                  dir={node.scene.textStyle?.direction}
                 >
                   {String(
                     resolveProps(node.props as Props, project).text ?? "",
@@ -374,7 +417,8 @@ export function Nodes({
                             <Nodes
                               {...{
                                 nodes: children,
-                                inheritedLocked: inheritedLocked || !!node.locked,
+                                inheritedLocked:
+                                  inheritedLocked || !!node.locked,
                                 materializedNodes: true,
                                 library,
                                 project,

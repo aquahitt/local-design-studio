@@ -1,3 +1,4 @@
+import { validateProjectFont, type ProjectFont } from "./fonts";
 import {
   createPageVariant,
   parseAnnotations,
@@ -22,6 +23,9 @@ import {
   type Tokens,
 } from "./project";
 export type Operation =
+  | { type: "addProjectFont"; font: ProjectFont }
+  | { type: "updateProjectFont"; fontId: string; font: ProjectFont }
+  | { type: "removeProjectFont"; fontId: string }
   | { type: "setAnnotations"; annotations: ProjectAnnotation[] }
   | { type: "duplicatePage"; pageId: string; newPageId: string; name: string }
   | { type: "detachInstance"; nodeId: string }
@@ -105,6 +109,9 @@ export function applyBatch(project: Project, batch: Batch): Project {
   )
     throw new CoreError("INVALID_BATCH");
   const operationFields: Record<Operation["type"], string[]> = {
+    addProjectFont: ["font"],
+    updateProjectFont: ["fontId", "font"],
+    removeProjectFont: ["fontId"],
     detachInstance: ["nodeId"],
     setDesignComponents: ["definitions"],
     setInstance: ["nodeId", "instance"],
@@ -231,6 +238,27 @@ export function applyBatch(project: Project, batch: Batch): Project {
   }
   for (const op of batch.operations) {
     switch (op.type) {
+      case "addProjectFont": {
+        const font = validateProjectFont(op.font, "operation.font");
+        if (next.fonts?.some((f) => f.id === font.id))
+          throw new CoreError("DUPLICATE_FONT", font.id);
+        (next.fonts ??= []).push(structuredClone(font));
+        break;
+      }
+      case "updateProjectFont": {
+        const font = validateProjectFont(op.font, "operation.font");
+        if (font.id !== op.fontId) throw new CoreError("FONT_ID_MISMATCH");
+        const index = next.fonts?.findIndex((f) => f.id === op.fontId) ?? -1;
+        if (index < 0) throw new CoreError("FONT_NOT_FOUND");
+        next.fonts![index] = structuredClone(font);
+        break;
+      }
+      case "removeProjectFont": {
+        const index = next.fonts?.findIndex((f) => f.id === op.fontId) ?? -1;
+        if (index < 0) throw new CoreError("FONT_NOT_FOUND");
+        next.fonts!.splice(index, 1);
+        break;
+      }
       case "detachInstance": {
         const target = editable(op.nodeId);
         target.list[target.index] = detachDesignInstance(next, target.node);

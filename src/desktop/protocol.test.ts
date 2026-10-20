@@ -176,3 +176,25 @@ it("serves only the active library bundle on the isolated preview origin", async
     await rm(root, { recursive: true, force: true });
   }
 });
+
+it("serves immutable project fonts only through the active owner and keeps import UI-only", async () => {
+  const calls: { url: string; init: RequestInit | undefined }[] = [];
+  const session = {url:"http://127.0.0.1:54321",token:"font-agent",uiToken:"font-ui"};
+  const handle = createDesktopHandler("/unused",()=>session,async(url,init)=>{
+    calls.push({url:String(url),init});
+    return new Response(new Uint8Array([0,1,0,0]),{headers:{"Content-Type":"font/ttf"}});
+  });
+  const filename = "a".repeat(64)+".ttf";
+  const font = await handle(new Request("studio://preview/assets/"+filename));
+  expect(font.status).toBe(200);
+  expect(font.headers.get("content-type")).toBe("font/ttf");
+  expect(calls[0].url).toBe(session.url+"/api/assets/"+filename);
+  expect((calls[0].init?.headers as Record<string,string>).Authorization).toBe("Bearer font-agent");
+  const imported = await handle(new Request("studio://app/api/fonts",{method:"POST",headers:{authorization:"Bearer font-agent","x-studio-ui-token":"font-ui"},body:'{"data":"AA==","name":"Face"}'}));
+  expect(imported.status).toBe(200);
+  expect((calls[1].init?.headers as Record<string,string>)["x-studio-ui-token"]).toBe("font-ui");
+  expect((await handle(new Request("studio://preview/api/fonts",{method:"POST",body:"{}"}))).status).toBe(403);
+  expect(calls).toHaveLength(2);
+  const closed=createDesktopHandler("/unused",()=>undefined);
+  expect((await closed(new Request("studio://preview/assets/"+filename))).status).toBe(503);
+});

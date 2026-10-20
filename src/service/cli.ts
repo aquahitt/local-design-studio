@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 import { createStudioServer } from "./server";
 import { getConfiguredLibraryMetadata } from "../../scripts/library/plugin";
 import { renderSnapshot } from "./render";
-import { readImageAsset } from "./image-assets";
+import { readProjectAsset } from "./project-assets";
 const args = process.argv.slice(2);
 const value = (name: string) => {
   const i = args.indexOf(name);
@@ -21,7 +21,7 @@ const studio = await createStudioServer({
   autoApply: process.env.STUDIO_AUTO_APPLY === "1",
   renderSnapshot: (project, options) => renderSnapshot(project, options, {
     externalRoot: process.env.STUDIO_LIBRARY_ROOT,
-    readAsset: (name) => readImageAsset(resolve(value("--project")!), name),
+    readAsset: (name) => readProjectAsset(resolve(value("--project")!), name, project.fonts),
   }),
 });
 process.stdout.write(`Studio service: ${studio.url}\n`);

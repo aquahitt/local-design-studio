@@ -1,3 +1,4 @@
+import { isProjectAssetPath } from "../src/service/project-assets";
 import { readFile, realpath, lstat } from "node:fs/promises";
 import { resolve, extname, relative, isAbsolute } from "node:path";
 export const STUDIO_ORIGIN = "studio://app";
@@ -14,6 +15,9 @@ const mime: Record<string, string> = {
   ".svg": "image/svg+xml",
   ".png": "image/png",
   ".woff2": "font/woff2",
+  ".woff": "font/woff",
+  ".ttf": "font/ttf",
+  ".otf": "font/otf",
   ".txt": "text/plain; charset=utf-8",
 };
 const json = (status: number, error: string) =>
@@ -43,7 +47,7 @@ export function createDesktopHandler(
         return json(403, "INVALID_PATH");
       if (
         path.startsWith("/api/") ||
-        /^\/assets\/[a-f0-9]{64}\.(?:svg|png)$/.test(path)
+        isProjectAssetPath(path)
       ) {
         const session = active();
         if (!session) return json(503, "NO_PROJECT_OPEN");
@@ -54,10 +58,10 @@ export function createDesktopHandler(
                 { headers: { "Cache-Control": "no-store" } },
               )
             : json(405, "METHOD_NOT_ALLOWED");
-        const asset = /^\/assets\/[a-f0-9]{64}\.(?:svg|png)$/.test(path);
+        const asset = isProjectAssetPath(path);
         if (
           !asset &&
-          !/^\/api\/(project|components|tokens|context|proposals(?:\/[^/]+(?:\/(approve|apply|reject))?)?|operations|undo|redo|assets|assets-list|assets-delete|render|inspect|handoff|schema|capabilities)$/.test(
+          !/^\/api\/(project|components|tokens|context|proposals(?:\/[^/]+(?:\/(approve|apply|reject))?)?|operations|undo|redo|assets|assets-list|assets-delete|fonts|render|inspect|handoff|schema|capabilities)$/.test(
             path,
           )
         )
@@ -80,11 +84,11 @@ export function createDesktopHandler(
           req.method === "POST" ? await req.arrayBuffer() : undefined;
         if (
           body &&
-          body.byteLength > (path === "/api/assets" ? 12 : 1) * 1024 * 1024
+          body.byteLength > (["/api/assets", "/api/fonts"].includes(path) ? 12 : 1) * 1024 * 1024
         )
           return json(413, "PAYLOAD_TOO_LARGE");
         const response = await request(
-          session.url + (asset ? "/api" + path : path),
+          session.url + (asset ? "/api" + path + url.search : path),
           {
             method: req.method,
             headers,

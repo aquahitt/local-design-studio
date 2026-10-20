@@ -1,10 +1,13 @@
 import { useI18n } from "./i18n";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { Project, ProjectNode } from "../core/project";
 import type { Operation } from "../core/operations";
 import { beginDraft, editDraft, receiveDraft, rebaseDraft } from "./draft";
 import { StudioSelect } from "./StudioSelect";
 import { PaintFields, isRenderableFramePaintDraft } from "./PaintFields";
+import { validateTextStyle, type TextStyle } from "../core/text-style";
+import type { SceneMetadata } from "../core/scene";
+import "./FontLibrary.css";
 import { validateFramePaint } from "../core/paint";
 /** Guard only values consumed by controls; canonical validation still owns writes. */
 function isRenderableLayerDraft(value: unknown): boolean {
@@ -34,6 +37,13 @@ function isRenderableLayerDraft(value: unknown): boolean {
         (typeof scene[key] !== "number" || !Number.isFinite(scene[key]))
       )
         return false;
+    if (scene.textStyle !== undefined) {
+      try {
+        validateTextStyle(scene.textStyle);
+      } catch {
+        return false;
+      }
+    }
     if (scene.clip !== undefined && typeof scene.clip !== "boolean")
       return false;
   }
@@ -47,6 +57,197 @@ function isRenderableLayerDraft(value: unknown): boolean {
         return false;
   }
   return true;
+}
+
+function TextNumber({
+  field,
+  label,
+  value,
+  onChange,
+  onPending,
+  disabled,
+}: {
+  field: "lineHeight" | "letterSpacing";
+  label: string;
+  value: number | undefined;
+  onChange: (value: number | undefined) => void;
+  onPending: (field: "lineHeight" | "letterSpacing", pending: boolean) => void;
+  disabled: boolean;
+}) {
+  const { t } = useI18n();
+  const [raw, setRaw] = useState(value === undefined ? "" : String(value));
+  const [pending, setPending] = useState(false);
+  useEffect(() => {
+    setRaw(value === undefined ? "" : String(value));
+    setPending(false);
+  }, [value]);
+  useEffect(() => {
+    onPending(field, pending);
+    return () => onPending(field, false);
+  }, [field, pending, onPending]);
+  return (
+    <label>
+      {label}
+      <input
+        type="text"
+        inputMode="decimal"
+        aria-label={label}
+        placeholder={t("Авто")}
+        aria-invalid={pending || undefined}
+        disabled={disabled}
+        value={raw}
+        onChange={(e) => {
+          const text = e.target.value;
+          setRaw(text);
+          if (text === "") {
+            setPending(false);
+            onChange(undefined);
+            return;
+          }
+          const number = Number(text);
+          const complete =
+            /^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/.test(text) &&
+            Number.isFinite(number) &&
+            Math.abs(number) <= 1_000_000 &&
+            (field !== "lineHeight" || number > 0);
+          setPending(!complete);
+          if (complete) onChange(number);
+        }}
+      />
+    </label>
+  );
+}
+function TypographyFields({
+  scene,
+  project,
+  onChange,
+  onPendingChange,
+  disabled,
+}: {
+  scene: SceneMetadata;
+  project: Project;
+  onChange: (scene: SceneMetadata) => void;
+  onPendingChange: (pending: boolean) => void;
+  disabled: boolean;
+}) {
+  const { t } = useI18n();
+  const style = scene.textStyle ?? {};
+  const [pending, setPending] = useState({
+    lineHeight: false,
+    letterSpacing: false,
+  });
+  const report = useCallback(
+    (field: "lineHeight" | "letterSpacing", next: boolean) =>
+      setPending((current) =>
+        current[field] === next ? current : { ...current, [field]: next },
+      ),
+    [],
+  );
+  const hasPending = pending.lineHeight || pending.letterSpacing;
+  useEffect(() => {
+    onPendingChange(hasPending);
+    return () => onPendingChange(false);
+  }, [hasPending, onPendingChange]);
+  function change<K extends keyof TextStyle>(
+    key: K,
+    value: TextStyle[K] | undefined,
+  ) {
+    const next = { ...style };
+    if (value === undefined) delete next[key];
+    else next[key] = value;
+    onChange({ ...scene, textStyle: next });
+  }
+  return (
+    <fieldset className="text-style-fields" disabled={disabled}>
+      <legend>{t("Типографика")}</legend>
+      <StudioSelect
+        label={t("Шрифт текста")}
+        disabled={disabled}
+        value={style.fontId ?? ""}
+        onChange={(id) => change("fontId", id || undefined)}
+        sections={[
+          {
+            label: "",
+            options: [{ value: "", label: t("Системный по умолчанию") }],
+          },
+          ...Array.from(
+            new Set(project.fonts?.map((font) => font.family) ?? []),
+          ).map((family) => ({
+            label: family,
+            options: (project.fonts ?? [])
+              .filter((font) => font.family === family)
+              .map((font) => ({
+                value: font.id,
+                label: `${font.name} · ${font.weight} ${font.style}`,
+              })),
+          })),
+        ]}
+      />
+      <TextNumber
+        field="lineHeight"
+        label={t("Интерлиньяж, px")}
+        value={style.lineHeight}
+        disabled={disabled}
+        onPending={report}
+        onChange={(value) => change("lineHeight", value)}
+      />
+      <TextNumber
+        field="letterSpacing"
+        label={t("Трекинг, px")}
+        value={style.letterSpacing}
+        disabled={disabled}
+        onPending={report}
+        onChange={(value) => change("letterSpacing", value)}
+      />
+      <StudioSelect
+        label={t("Выравнивание текста")}
+        disabled={disabled}
+        value={style.align ?? ""}
+        onChange={(value) =>
+          change("align", value ? (value as TextStyle["align"]) : undefined)
+        }
+        sections={[
+          {
+            label: "",
+            options: [
+              { value: "", label: t("Автоматически") },
+              { value: "start", label: t("По началу строки") },
+              { value: "center", label: t("По центру") },
+              { value: "end", label: t("По концу строки") },
+              { value: "justify", label: t("По ширине") },
+            ],
+          },
+        ]}
+      />
+      <StudioSelect
+        label={t("Направление текста")}
+        disabled={disabled}
+        value={style.direction ?? ""}
+        onChange={(value) =>
+          change(
+            "direction",
+            value ? (value as TextStyle["direction"]) : undefined,
+          )
+        }
+        sections={[
+          {
+            label: "",
+            options: [
+              { value: "", label: t("Системный по умолчанию") },
+              { value: "auto", label: t("Автоматически") },
+              { value: "ltr", label: t("Слева направо") },
+              { value: "rtl", label: t("Справа налево") },
+            ],
+          },
+        ]}
+      />
+      {hasPending && (
+        <p role="status">
+          {t("Завершите числовой ввод, чтобы применить слой.")}
+        </p>
+      )}
+    </fieldset>
+  );
 }
 
 export function NodeLayoutInspector({
@@ -75,13 +276,15 @@ export function NodeLayoutInspector({
   };
   const [draft, setDraft] = useState(() => beginDraft(data, project.revision)),
     [error, setError] = useState(""),
-    [pendingPaint, setPendingPaint] = useState(false);
+    [pendingPaint, setPendingPaint] = useState(false),
+    [pendingText, setPendingText] = useState(false),
+    [textReset, setTextReset] = useState(0);
   useEffect(
     () =>
       setDraft((current) => {
         // An unfinished numeric token is still user input. Preserve its source
         // revision even when the canonical JSON has not changed yet.
-        if (pendingPaint || current.conflict)
+        if (pendingPaint || pendingText || current.conflict)
           return {
             ...current,
             conflict:
@@ -89,12 +292,12 @@ export function NodeLayoutInspector({
           };
         return receiveDraft(current, data, project.revision);
       }),
-    [node, project.revision, pendingPaint],
+    [node, project.revision, pendingPaint, pendingText],
   );
   useEffect(() => {
-    onDirty(draft.dirty || draft.conflict || pendingPaint);
+    onDirty(draft.dirty || draft.conflict || pendingPaint || pendingText);
     return () => onDirty(false);
-  }, [draft.dirty, draft.conflict, pendingPaint, onDirty]);
+  }, [draft.dirty, draft.conflict, pendingPaint, pendingText, onDirty]);
   let value: typeof data;
   let validationError = "";
   try {
@@ -127,7 +330,7 @@ export function NodeLayoutInspector({
   }
   async function apply() {
     try {
-      if (validationError || pendingPaint) return;
+      if (validationError || pendingPaint || pendingText) return;
       const next = JSON.parse(draft.value),
         operations: Operation[] = [
           {
@@ -216,6 +419,16 @@ export function NodeLayoutInspector({
           ))}
         </div>
       )}
+      {value.scene?.kind === "text" && (
+        <TypographyFields
+          key={textReset}
+          scene={value.scene}
+          project={project}
+          disabled={disabled || !!node.locked || !!validationError}
+          onChange={(scene) => change("scene", scene)}
+          onPendingChange={setPendingText}
+        />
+      )}
       {value.scene?.kind === "frame" &&
         isRenderableFramePaintDraft(value.scene) && (
           <PaintFields
@@ -295,7 +508,8 @@ export function NodeLayoutInspector({
           draft.conflict ||
           !!error ||
           !!validationError ||
-          pendingPaint
+          pendingPaint ||
+          pendingText
         }
         onClick={() => void apply()}
       >
@@ -304,6 +518,8 @@ export function NodeLayoutInspector({
       <button
         onClick={() => {
           setDraft(beginDraft(data, project.revision));
+          setTextReset((value) => value + 1);
+          setPendingText(false);
           setError("");
         }}
       >
