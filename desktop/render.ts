@@ -27,9 +27,14 @@ export async function captureDesktopSnapshot(
   const mark = (next: string) => {
     stage = next;
     if (process.env.STUDIO_CAPTURE_DIAGNOSTICS === "1") {
-      const diagnostic = {stage, elapsedMs: Date.now() - started};
-      const state = globalThis as typeof globalThis & {__studioCaptureDiagnostics?: typeof diagnostic[]};
-      state.__studioCaptureDiagnostics = [...(state.__studioCaptureDiagnostics ?? []), diagnostic].slice(-64);
+      const diagnostic = { stage, elapsedMs: Date.now() - started };
+      const state = globalThis as typeof globalThis & {
+        __studioCaptureDiagnostics?: (typeof diagnostic)[];
+      };
+      state.__studioCaptureDiagnostics = [
+        ...(state.__studioCaptureDiagnostics ?? []),
+        diagnostic,
+      ].slice(-64);
       console.error("Studio capture stage", diagnostic);
     }
   };
@@ -111,13 +116,25 @@ export async function captureDesktopSnapshot(
       window.webContents.debugger.attach("1.3");
       try {
         mark("cdp-screenshot");
-        const capture = await withCaptureTimeout(
-          window.webContents.debugger.sendCommand("Page.captureScreenshot", {
-            format: "png",
-            fromSurface: true,
-            captureBeyondViewport: true,
-            clip: rectangle,
-          }),
+        // Electron's native capturer makes a hidden page paint without showing
+        // its BrowserWindow. CDP alone can wait forever for that frame on Linux
+        // and Windows. Prime only one pixel while the CDP request is pending;
+        // keep the original viewport and discard the native warm-up image.
+        const [capture] = await withCaptureTimeout(
+          Promise.all([
+            window.webContents.debugger.sendCommand("Page.captureScreenshot", {
+              format: "png",
+              fromSurface: true,
+              captureBeyondViewport: true,
+              clip: rectangle,
+            }),
+            Promise.resolve().then(async () => {
+              mark("native-prime");
+              const image = await window.webContents.capturePage({x:0,y:0,width:1,height:1});
+              mark("cdp-after-prime");
+              return image;
+            }),
+          ]),
         );
         // Keep native DPR during CDP capture: fractional CDP scaling can drop ICC metadata.
         // Normalize the native PNG to the documented CSS-pixel dimensions afterwards.
@@ -169,8 +186,14 @@ export async function captureDesktopSnapshot(
       warnings: result.warnings,
     };
   } catch (error) {
-    console.error("Studio capture failed", {stage, elapsedMs: Date.now() - started,
-      code: error instanceof Error && "code" in error ? String(error.code) : "RENDER_FAILED"});
+    console.error("Studio capture failed", {
+      stage,
+      elapsedMs: Date.now() - started,
+      code:
+        error instanceof Error && "code" in error
+          ? String(error.code)
+          : "RENDER_FAILED",
+    });
     throw error;
   } finally {
     window.destroy();

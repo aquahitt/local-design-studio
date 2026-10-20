@@ -430,6 +430,9 @@ test("desktop installed MCP survives owner replacement, trusted library restart 
         contents.once("dom-ready", () => {
           if (contents.getURL() !== "studio://preview/preview") return;
           void contents.executeJavaScript(`(() => {
+            const viewportGuard = document.createElement("style");
+            viewportGuard.textContent = '@media (max-width:100px){[data-node-id^="remote-capture-"]{background:rgb(0,255,0)!important}}';
+            document.head.append(viewportGuard);
             const request = window.requestAnimationFrame.bind(window);
             const cancel = window.cancelAnimationFrame.bind(window);
             const pending = new Map();
