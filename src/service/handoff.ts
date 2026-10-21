@@ -17,12 +17,24 @@ export async function exportReactHandoff(
       const bytes = await readAsset(path.slice(7));
       assets.push({
         path,
-        mediaType: path.endsWith(".svg") ? "image/svg+xml" : "image/png",
+        mediaType: path.endsWith(".svg")
+          ? "image/svg+xml"
+          : path.endsWith(".png")
+            ? "image/png"
+            : path.endsWith(".ttf")
+              ? "font/ttf"
+              : path.endsWith(".otf")
+                ? "font/otf"
+                : path.endsWith(".woff2")
+                  ? "font/woff2"
+                  : "font/woff",
         data: Buffer.from(bytes).toString("base64"),
       });
     } catch {
       handoff.diagnostics.push({
-        code: "MISSING_ASSET",
+        code: /\.(?:ttf|otf|woff2?)$/.test(path)
+          ? "MISSING_FONT"
+          : "MISSING_ASSET",
         message: `Asset ${path} could not be read from this project`,
       });
     }

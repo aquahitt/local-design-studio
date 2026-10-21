@@ -680,7 +680,7 @@ export function CanvasSurface({
           if (gesture.current) cancel();
         }}
       >
-        <div className="canvas-frame" aria-hidden="true">
+        <div className="canvas-frame">
           <Preview
             library={library}
             project={project}

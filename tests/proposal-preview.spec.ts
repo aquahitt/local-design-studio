@@ -139,7 +139,11 @@ test("preview is read-only, rejection persists, and accepted changes match previ
     .getByRole("button", { name: "История предложений", exact: true })
     .click();
   await expect(accepted.getByText("applied", { exact: true })).toBeVisible();
-  await expect(page.locator(".proposal-card")).toHaveCount(2);
+  // Other scenarios may also retain their completed proposals in this owner.
+  // Verify this review pair rather than treating the whole history as empty.
+  await expect(page.locator(".proposal-card").filter({
+    has: page.getByRole("heading", {name: /^Preview (rejected|accepted) edit$/}),
+  })).toHaveCount(2);
   await expect(
     page.getByRole("button", { name: "Подтвердить и применить" }),
   ).toHaveCount(0);
@@ -151,6 +155,10 @@ test("preview is read-only, rejection persists, and accepted changes match previ
   await page
     .getByRole("button", { name: "История предложений", exact: true })
     .click();
-  await expect(page.locator(".proposal-card")).toHaveCount(2);
+  // Other scenarios may also retain their completed proposals in this owner.
+  // Verify this review pair rather than treating the whole history as empty.
+  await expect(page.locator(".proposal-card").filter({
+    has: page.getByRole("heading", {name: /^Preview (rejected|accepted) edit$/}),
+  })).toHaveCount(2);
   expect(await revision()).toBe(rejected.revision + 1);
 });

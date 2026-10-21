@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+import { exportReactHandoff } from "./handoff";
+import { projectFontFamily, type ProjectFont } from "../core/fonts";
 import { expect, it } from "vitest";
 import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -9,7 +12,6 @@ import { build as viteBuild } from "vite";
 import react from "@vitejs/plugin-react";
 import { build as bundle } from "esbuild";
 import { chromium } from "@playwright/test";
-import { createReactHandoff } from "../core/handoff";
 import { libraryMetadata } from "../library/sdk";
 import { builtinLibrary } from "../library/builtin";
 import type { Project, ProjectNode } from "../core/project";
@@ -20,9 +22,10 @@ import { computedStylesExpression } from "./computed-styles";
 import type { RenderComputedStyles } from "./render";
 const require = createRequire(import.meta.url);
 
-it.each(["components", "scene", "paint"])(
+it.each(["components", "scene", "paint", "fonts", "fonts-wide"])(
   "exported %s screen builds and renders in an isolated fixture with matching real styles and spacing",
   async (mode) => {
+    const viewportWidth = mode === "fonts-wide" ? 1280 : 390;
     const project: Project = {
       schemaVersion: 2,
       projectId: "fixture",
@@ -38,7 +41,7 @@ it.each(["components", "scene", "paint"])(
         {
           screenId: "home",
           name: "Home",
-          viewport: { width: 390, height: 600 },
+          viewport: { width: viewportWidth, height: 600 },
           nodes: [
             {
               id: "stack",
@@ -193,13 +196,57 @@ it.each(["components", "scene", "paint"])(
         rounded,
       );
     }
+    let fontBytes: Uint8Array | undefined;
+    let fixtureFont: ProjectFont | undefined;
+    if (mode.startsWith("fonts")) {
+      fontBytes = await readFile(
+        new URL(
+          "../../tests/fixtures/fonts/studio-fixture.woff2",
+          import.meta.url,
+        ),
+      );
+      fixtureFont = {
+        id: "fixture-font",
+        name: "Studio Fixture Mono",
+        family: "Studio Fixture Mono",
+        assetHash: createHash("sha256").update(fontBytes).digest("hex"),
+        format: "woff2",
+        weight: 400,
+        style: "normal",
+      };
+      project.fonts = [fixtureFont];
+      project.pages[0].nodes[0].slots.content.push({
+        id: "font-text",
+        type: "Text",
+        props: { text: "Привет World Привет World" },
+        slots: {},
+        scene: {
+          kind: "text",
+          x: 10,
+          y: 135,
+          width: 280,
+          height: 60,
+          fontSize: 20,
+          textStyle: {
+            fontId: fixtureFont.id,
+            lineHeight: 24,
+            letterSpacing: 0.5,
+            align: "start",
+            direction: "ltr",
+          },
+        },
+      });
+    }
     const sourceBefore = JSON.stringify(project);
     const metadata = [libraryMetadata(builtinLibrary)];
-    const exported = createReactHandoff(
+    const exported = await exportReactHandoff(
       project,
       { pageId: "home", revision: 2 },
       metadata,
+      async () => fontBytes!,
     );
+    const ownerRender: typeof renderSnapshot = (project, options) =>
+      renderSnapshot(project, options, { readAsset: async () => fontBytes! });
     expect(exported.diagnostics).toEqual([]);
     const root = await mkdtemp(join(tmpdir(), "studio-react-fixture-"));
     let server: ReturnType<typeof createServer> | undefined;
@@ -207,6 +254,13 @@ it.each(["components", "scene", "paint"])(
     try {
       for (const [name, contents] of Object.entries(exported.files))
         await writeFile(join(root, name), contents);
+      for (const asset of exported.assets) {
+        await mkdir(join(root, "assets"), { recursive: true });
+        await writeFile(
+          join(root, asset.path),
+          Buffer.from(asset.data, "base64"),
+        );
+      }
       const providerRoot = join(
         root,
         "node_modules/@fixture/registered-library",
@@ -271,7 +325,9 @@ it.each(["components", "scene", "paint"])(
                 ? "text/javascript"
                 : extname(file) === ".css"
                   ? "text/css"
-                  : "text/html",
+                  : extname(file) === ".woff2"
+                    ? "font/woff2"
+                    : "text/html",
             );
             res.end(await readFile(file));
           } catch {
@@ -284,7 +340,7 @@ it.each(["components", "scene", "paint"])(
       await once(server, "listening");
       const address = server.address() as { port: number };
       const page = await browser.newPage({
-        viewport: { width: 390, height: 600 },
+        viewport: { width: viewportWidth, height: 600 },
       });
       await page.goto(`http://127.0.0.1:${address.port}`, {
         waitUntil: "networkidle",
@@ -306,7 +362,7 @@ it.each(["components", "scene", "paint"])(
         project,
         { pageId: "home", revision: 2, nodeId: "text" },
         metadata,
-        renderSnapshot,
+        ownerRender,
       );
       expect(inspection.computedStyles?.content?.["font-size"]).toBe(
         styles.fontSize,
@@ -330,6 +386,112 @@ it.each(["components", "scene", "paint"])(
       expect((await page.locator("#css-string").boundingBox())?.height).toBe(
         20,
       );
+      if (mode.startsWith("fonts")) {
+        const family = projectFontFamily(fixtureFont!);
+        await page.evaluate(async (family) => {
+          await document.fonts.load(`400 20px ${family}`);
+          await document.fonts.ready;
+        }, family);
+        const typography = await page
+          .locator('[data-node-id="font-text"]')
+          .evaluate((node) => {
+            const child = node.firstElementChild!,
+              style = getComputedStyle(child),
+              range = document.createRange();
+            range.selectNodeContents(child);
+            return {
+              bounds: node.getBoundingClientRect().toJSON(),
+              lineRects: [...range.getClientRects()].map((r) => ({
+                x: r.x,
+                y: r.y,
+                width: r.width,
+                height: r.height,
+              })),
+              fontFamily: style.fontFamily,
+              lineHeight: style.lineHeight,
+              letterSpacing: style.letterSpacing,
+              fontSynthesis: style.fontSynthesis,
+            };
+          });
+        expect(typography.fontFamily).toBe(family);
+        expect(typography.lineHeight).toBe("24px");
+        expect(typography.letterSpacing).toBe("0.5px");
+        expect(typography.fontSynthesis).toBe("none");
+        expect(typography.lineRects.length).toBeGreaterThan(1);
+        const owned = await ownerRender(project, {
+          pageId: "home",
+          revision: 2,
+          nodeId: "font-text",
+        });
+        expect(owned.warnings).toEqual([]);
+        const computed = owned.computedStyles?.find(
+          (style) => style.id === "font-text",
+        )?.content;
+        expect(computed?.["font-family"]).toBe(family);
+        expect(computed?.["line-height"]).toBe(typography.lineHeight);
+        expect(computed?.["letter-spacing"]).toBe(typography.letterSpacing);
+        expect(owned.bounds.find((bound) => bound.id === "font-text")).toEqual({
+          id: "font-text",
+          x: typography.bounds.x,
+          y: typography.bounds.y,
+          width: typography.bounds.width,
+          height: typography.bounds.height,
+        });
+        const packaged = exported.assets;
+        expect(packaged).toHaveLength(1);
+        expect(Buffer.from(packaged[0].data, "base64")).toEqual(
+          Buffer.from(fontBytes!),
+        );
+        // Node capture translates the disposable body to the crop origin. Give
+        // the independent export the same compositing geometry: comparing a
+        // transformed owner with an untransformed locator crop changes Chromium
+        // glyph edge rasterization even at integer coordinates. Keep exact RGBA
+        // equality, original bounds/style checks, and the original CSS viewport.
+        const viewportBeforeCapture = page.viewportSize();
+        await page.evaluate(async ({ x, y }) => {
+          document.body.style.translate = `${-x}px ${-y}px`;
+          await new Promise((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(resolve)),
+          );
+        }, typography.bounds);
+        expect(
+          await page.locator('[data-node-id="font-text"]').boundingBox(),
+        ).toEqual({
+          x: 0,
+          y: 0,
+          width: typography.bounds.width,
+          height: typography.bounds.height,
+        });
+        expect(page.viewportSize()).toEqual(viewportBeforeCapture);
+        const handoffPNG = await page
+          .locator('[data-node-id="font-text"]')
+          .screenshot({ animations: "disabled" });
+        const pixels = await page.evaluate(
+          async (captures) =>
+            Promise.all(
+              captures.map(async (data) => {
+                const image = new Image();
+                image.src = "data:image/png;base64," + data;
+                await image.decode();
+                const canvas = document.createElement("canvas");
+                canvas.width = image.naturalWidth;
+                canvas.height = image.naturalHeight;
+                const context = canvas.getContext("2d")!;
+                context.drawImage(image, 0, 0);
+                return {
+                  width: canvas.width,
+                  height: canvas.height,
+                  data: [
+                    ...context.getImageData(0, 0, canvas.width, canvas.height)
+                      .data,
+                  ],
+                };
+              }),
+            ),
+          [owned.data, handoffPNG.toString("base64")],
+        );
+        expect(pixels[0]).toEqual(pixels[1]);
+      }
       if (mode === "scene") {
         const rootBounds = await page.locator(".studio-handoff").boundingBox();
         const frameBounds = await page
@@ -351,7 +513,7 @@ it.each(["components", "scene", "paint"])(
           project,
           { pageId: "home", revision: 2, nodeId: "frame" },
           metadata,
-          renderSnapshot,
+          ownerRender,
         );
         expect(frame.bounds).toEqual({ id: "frame", ...frameBounds });
         expect(

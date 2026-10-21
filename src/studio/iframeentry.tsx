@@ -1,3 +1,4 @@
+import { createProjectFontLoader } from "./projectFonts";
 import { I18nProvider, translate } from "./i18n";
 import { observePreviewSize } from "./previewSizing";
 import * as React from "react";
@@ -33,6 +34,10 @@ if (__STUDIO_DESKTOP__)
 export function PreviewApp() {
   const content = useRef<HTMLDivElement>(null);
   const [input, setInput] = useState<Input | null>(null);
+  const fontLoader = useRef<ReturnType<typeof createProjectFontLoader> | null>(
+    null,
+  );
+  useEffect(() => () => fontLoader.current?.dispose(), []);
   const [pickRequest, setPickRequest] = useState<{
     surfaceId: string;
     epoch: number;
@@ -113,16 +118,37 @@ export function PreviewApp() {
   );
   useEffect(() => {
     delete document.documentElement.dataset.studioPreviewRevision;
+    delete document.documentElement.dataset.studioPreviewFontWarnings;
     if (!input || !library) return;
-    let second = 0;
-    const first = requestAnimationFrame(() => {
-      second = requestAnimationFrame(() => {
-        document.documentElement.dataset.studioPreviewRevision = String(
-          input.project.revision,
-        );
+    const loader = (fontLoader.current ??= createProjectFontLoader(document));
+    let active = true,
+      first = 0,
+      second = 0;
+    void loader.load(input.project, input.nodes ?? []).then(({ warnings }) => {
+      if (!active) return;
+      parent.postMessage(
+        {
+          type: "studio-preview-font-status",
+          projectId: input.project.projectId,
+          revision: input.project.revision,
+          warnings,
+        },
+        __STUDIO_DESKTOP__ ? "studio://app" : location.origin,
+      );
+      document.documentElement.dataset.studioPreviewFontWarnings =
+        JSON.stringify(warnings);
+      first = requestAnimationFrame(() => {
+        second = requestAnimationFrame(() => {
+          if (active)
+            document.documentElement.dataset.studioPreviewRevision = String(
+              input.project.revision,
+            );
+        });
       });
     });
     return () => {
+      active = false;
+      loader.cancel();
       cancelAnimationFrame(first);
       cancelAnimationFrame(second);
     };

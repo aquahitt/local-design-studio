@@ -1,3 +1,4 @@
+import { compileTextStyle } from "../core/text-style";
 import { validCanvasBounds, type CanvasBounds } from "./canvasCamera";
 import type { SceneView } from "../core/scene";
 import { layerStyle } from "../core/handoff";
@@ -93,12 +94,14 @@ export function Preview({
   onGeometry,
   onPick,
 }: PreviewInput) {
-  const { locale } = useI18n();
+  const { locale, t } = useI18n();
   const desktopLibrary = useContext(DesktopLibraryContext);
   const ref = useRef<HTMLIFrameElement>(null);
   const live = useRef({
     canvas,
     revision: project.revision,
+    projectId: project.projectId,
+    fonts: project.fonts,
     nodes,
     onGeometry,
     onPick,
@@ -106,6 +109,8 @@ export function Preview({
   live.current = {
     canvas,
     revision: project.revision,
+    projectId: project.projectId,
+    fonts: project.fonts,
     nodes,
     onGeometry,
     onPick,
@@ -123,6 +128,11 @@ export function Preview({
   }, [autoHeight]);
   useEffect(() => setContentWidth(0), [component?.type, theme]);
   const [ready, setReady] = useState(false);
+  const [fontWarnings, setFontWarnings] = useState<string[]>([]);
+  useEffect(
+    () => setFontWarnings([]),
+    [project.projectId, project.revision, nodes],
+  );
   const [measuredHeight, setMeasuredHeight] = useState(height);
   useEffect(() => {
     function receive(event: MessageEvent) {
@@ -133,6 +143,24 @@ export function Preview({
       )
         return;
       if (event.data?.type === "studio-preview-ready") setReady(true);
+      if (
+        event.data?.type === "studio-preview-font-status" &&
+        event.data.projectId === live.current.projectId &&
+        event.data.revision === live.current.revision &&
+        Array.isArray(event.data.warnings) &&
+        event.data.warnings.length <= 128 &&
+        event.data.warnings.every(
+          (warning: { code?: unknown; fontId?: unknown }) =>
+            warning?.code === "PROJECT_FONT_UNAVAILABLE" &&
+            typeof warning.fontId === "string" &&
+            live.current.fonts?.some((font) => font.id === warning.fontId),
+        )
+      )
+        setFontWarnings(
+          event.data.warnings.map(
+            (warning: { fontId: string }) => warning.fontId,
+          ),
+        );
       if (
         live.current.canvas &&
         event.data?.surfaceId === live.current.canvas.surfaceId &&
@@ -263,6 +291,7 @@ export function Preview({
       ref={ref}
       title={title}
       tabIndex={canvas ? -1 : undefined}
+      aria-hidden={canvas ? true : undefined}
       src={
         __STUDIO_DESKTOP__
           ? "studio://preview/preview"
@@ -290,19 +319,35 @@ export function Preview({
       }}
     />
   );
-  return autoHeight ? (
-    <div
-      ref={container}
-      style={{
-        width: "100%",
-        height: measuredHeight * scale,
-        overflow: "hidden",
-      }}
-    >
-      {frame}
+  const warning = fontWarnings.length ? (
+    <p role="status" className="preview-font-warning">
+      {t("Не удалось загрузить шрифт проекта. Текст может отличаться:")}{" "}
+      {fontWarnings
+        .map((id) => {
+          const font = project.fonts?.find((font) => font.id === id);
+          return font ? `${font.name} · ${font.weight} ${font.style}` : id;
+        })
+        .join(", ")}
+    </p>
+  ) : null;
+  return (
+    <div className="studio-preview-ui">
+      {warning}
+      {autoHeight ? (
+        <div
+          ref={container}
+          style={{
+            width: "100%",
+            height: measuredHeight * scale,
+            overflow: "hidden",
+          }}
+        >
+          {frame}
+        </div>
+      ) : (
+        frame
+      )}
     </div>
-  ) : (
-    frame
   );
 }
 export function resolveProps(props: Props, project: Project): Props {
@@ -413,12 +458,8 @@ export function Nodes({
             >
               {node.scene?.kind === "text" ? (
                 <div
-                  style={{
-                    fontSize: node.scene.fontSize ?? 16,
-                    whiteSpace: "pre-wrap",
-                    overflowWrap: "anywhere",
-                    lineHeight: 1.4,
-                  }}
+                  style={compileTextStyle(node.scene, project) as CSSProperties}
+                  dir={node.scene.textStyle?.direction}
                 >
                   {String(
                     resolveProps(node.props as Props, project).text ?? "",

@@ -1,3 +1,5 @@
+import { readProjectAsset, projectAssetMediaType, requestedFontFace } from "./project-assets";
+import { writeFontAsset } from "./font-assets";
 import { inspectDocument } from "./inspect";
 import { exportReactHandoff } from "./handoff";
 import { syncDirectory } from "../core/durability";
@@ -16,7 +18,6 @@ import { batchSchema, projectSchema, validateComponentProps } from "./schema";
 import { applyBatch, type Batch } from "../core/operations";
 import {
   writeImageAsset,
-  readImageAsset,
   listImageAssets,
   deleteImageAsset,
 } from "./image-assets";
@@ -188,11 +189,11 @@ export async function createStudioServer(options: StudioOptions) {
           throw new HttpError(400, "INVALID_PATH");
         if (req.method === "GET") {
           if (path.startsWith("/api/assets/")) {
-            const bytes = await readImageAsset(options.root, path.slice(12));
+            const assetName = path.slice(12);
+            const face = requestedFontFace(assetName, new URL(req.url ?? "", "http://localhost").search);
+            const bytes = await readProjectAsset(options.root, assetName, store.read().fonts, face);
             res.writeHead(200, {
-              "Content-Type": path.endsWith(".png")
-                ? "image/png"
-                : "image/svg+xml",
+              "Content-Type": projectAssetMediaType(path.slice(12))!,
               "Content-Security-Policy": "default-src 'none'; sandbox",
               "X-Content-Type-Options": "nosniff",
               "Cache-Control": "private, max-age=31536000, immutable",
@@ -246,7 +247,7 @@ export async function createStudioServer(options: StudioOptions) {
           throw new HttpError(405, "METHOD_NOT_ALLOWED");
         const data = await body(
           req,
-          path === "/api/assets" ? 12 * 1024 * 1024 : 1024 * 1024,
+          ["/api/assets", "/api/fonts"].includes(path) ? 12 * 1024 * 1024 : 1024 * 1024,
         );
         const task = serial.then(async () => {
           if (path === "/api/inspect") {
@@ -266,7 +267,7 @@ export async function createStudioServer(options: StudioOptions) {
               Array.isArray(options.libraryMetadata)
                 ? (options.libraryMetadata as LibraryMetadata[])
                 : [],
-              (name) => readImageAsset(options.root, name),
+              (name) => readProjectAsset(options.root, name, store.read().fonts),
             );
           }
           if (path === "/api/render") {
@@ -275,6 +276,11 @@ export async function createStudioServer(options: StudioOptions) {
             if (!options.renderSnapshot)
               throw new HttpError(503, "RENDERER_UNAVAILABLE");
             return options.renderSnapshot(snapshot, data);
+          }
+          if (path === "/api/fonts") {
+            if (!origin || !origins.includes(origin) || !equal(String(req.headers["x-studio-ui-token"] ?? ""), uiToken))
+              throw new HttpError(403, "UI_AUTHORIZATION_REQUIRED");
+            return writeFontAsset(options.root, data);
           }
           if (path === "/api/assets") {
             if (
@@ -456,7 +462,7 @@ export async function createStudioServer(options: StudioOptions) {
           e.status ??
             (e.code === "ENOENT"
               ? 404
-              : e.message === "ASSET_TOO_LARGE"
+              : ["ASSET_TOO_LARGE", "FONT_ASSET_TOO_LARGE"].includes(e.message)
                 ? 413
                 : e.code?.includes("REVISION")
                   ? 409

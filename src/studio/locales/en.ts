@@ -1,3 +1,4 @@
+import { fontsEnglish } from "./en-fonts";
 import { editorEnglish } from "./en-editor";
 import { desktopEnglish } from "./en-desktop";
 /** Keys are the existing Russian UI copy; IDs, project names, and props stay untouched. */
@@ -131,6 +132,7 @@ export const english: Record<string, string> = {
   "Язык студии": "Studio language",
   Русский: "Russian",
   Английский: "English",
+  ...fontsEnglish,
   ...editorEnglish,
   ...desktopEnglish,
 };

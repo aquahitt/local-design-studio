@@ -1,3 +1,5 @@
+import { compileTextStyle, usedTextFontIds } from "./text-style";
+import { fontAssetPath, projectFontFamily } from "./fonts";
 import {
   parseProject,
   CoreError,
@@ -224,13 +226,41 @@ export function createReactHandoff(
         ...node,
         props,
         style: layerStyle(node),
+        ...(node.scene?.kind === "text"
+          ? { contentStyle: compileTextStyle(node.scene, snapshot) }
+          : {}),
         slots: Object.fromEntries(
           Object.entries(node.slots).map(([slot, rows]) => [slot, map(rows)]),
         ),
       };
     });
   }
-  const nodes = map(resolveSceneNodes(snapshot, page.nodes));
+  const resolvedNodes = resolveSceneNodes(snapshot, page.nodes);
+  const nodes = map(resolvedNodes);
+  const fonts = usedTextFontIds(resolvedNodes).flatMap((id) => {
+    const font = snapshot.fonts?.find((font) => font.id === id);
+    if (!font) {
+      diagnostics.push({
+        code: "MISSING_FONT",
+        message: `Project font ${id} is not registered`,
+      });
+      return [];
+    }
+    const path = fontAssetPath(font);
+    assetPaths.add(path);
+    return [{ ...font, path, provenance: "project" as const }];
+  });
+  const fontCSS = fonts
+    .map(({ path, provenance, ...font }) => {
+      const format =
+        font.format === "ttf"
+          ? "truetype"
+          : font.format === "otf"
+            ? "opentype"
+            : font.format;
+      return `@font-face{font-family:"${projectFontFamily(font)}";src:url("./${path}") format("${format}");font-weight:${font.weight};font-style:${font.style};font-display:block}`;
+    })
+    .join("\n");
   const variables: Record<string, string> = {};
   for (const token of library?.tokens ?? [])
     variables[token.name] = token.themes?.[snapshot.theme] ?? token.value;
@@ -253,7 +283,7 @@ export function createReactHandoff(
   const requirements = [
     "React 18 or newer and react-dom",
     `Explicit trusted runtime ${snapshot.library.id}@${snapshot.library.version} supplied as Screen.library`,
-    "Required library CSS, local fonts and product providers must be supplied by the integrator",
+    "Required trusted-library CSS/fonts and product providers must be supplied by the integrator; used project fonts are bundled in fonts.css and assets/",
     "Copy manifest assets beneath assets/ using their content hashes",
     "Snapshot of supported geometry and component props only; application routes, data loading, actions and editor state are not generated",
   ];
@@ -268,6 +298,7 @@ export function createReactHandoff(
     components: [...components.values()],
     tokenRefs: refs,
     assets: [...assetPaths].sort(),
+    fonts,
     requirements,
     diagnostics,
   };
@@ -283,13 +314,14 @@ export function createReactHandoff(
     .map(([name, value]) => `  ${name.replaceAll(".", "\\.")}: ${value};`)
     .join("\n");
   const sceneMinHeight = page.nodes.some((node) => node.scene)
-    ? page.viewport.height ?? 850
+    ? (page.viewport.height ?? 850)
     : undefined;
   const files: Record<string, string> = {
-    "Screen.tsx": `import { useEffect } from "react";\nimport { RenderNodes, type HandoffNode, type RegisteredLibrary } from "./Runtime";\nimport "./styles.css";\nimport "./tokens.css";\nconst nodes=${JSON.stringify(nodes)} as HandoffNode[];\nconst expected=${JSON.stringify(snapshot.library)};\nconst variables=${JSON.stringify(cssVariables)};\nconst theme=${JSON.stringify(theme ?? {})} as {className?:string;attributes?:Record<string,string>};\nexport function Screen({library}:{library:RegisteredLibrary}){\n  useEffect(()=>{document.documentElement.className=theme.className??"";for(const [key,value] of Object.entries((theme as {attributes?:Record<string,string>}).attributes??{}))document.documentElement.setAttribute(key,value);for(const [key,value] of Object.entries(variables))document.body.style.setProperty(key,value)},[]);\n  return <main className="studio-handoff"${sceneMinHeight === undefined ? "" : ` style={{minHeight:${sceneMinHeight}}}`}><RenderNodes nodes={nodes} library={library} expected={expected}/></main>;\n}\n`,
+    "Screen.tsx": `import { useEffect } from "react";\nimport { RenderNodes, type HandoffNode, type RegisteredLibrary } from "./Runtime";\nimport "./styles.css";\nimport "./tokens.css";\nimport "./fonts.css";\nconst nodes=${JSON.stringify(nodes)} as HandoffNode[];\nconst expected=${JSON.stringify(snapshot.library)};\nconst variables=${JSON.stringify(cssVariables)};\nconst theme=${JSON.stringify(theme ?? {})} as {className?:string;attributes?:Record<string,string>};\nexport function Screen({library}:{library:RegisteredLibrary}){\n  useEffect(()=>{document.documentElement.className=theme.className??"";for(const [key,value] of Object.entries((theme as {attributes?:Record<string,string>}).attributes??{}))document.documentElement.setAttribute(key,value);for(const [key,value] of Object.entries(variables))document.body.style.setProperty(key,value)},[]);\n  return <main className="studio-handoff"${sceneMinHeight === undefined ? "" : ` style={{minHeight:${sceneMinHeight}}}`}><RenderNodes nodes={nodes} library={library} expected={expected}/></main>;\n}\n`,
     "Runtime.tsx": handoffRuntime,
     "styles.css":
       "html,body{margin:0;min-height:100vh;box-sizing:border-box;background:var(--bg,#fff);color:var(--text-primary,#17202c);font-family:system-ui,sans-serif}body{padding:20px}.studio-handoff{display:flow-root;position:relative}\n",
+    "fonts.css": fontCSS ? fontCSS + "\n" : "",
     "tokens.css": `:root {\n${tokenCSS}\n}\n`,
     "tokens.json": json({
       theme: snapshot.theme,

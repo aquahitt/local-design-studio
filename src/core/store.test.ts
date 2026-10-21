@@ -299,3 +299,67 @@ it("opens and durably migrates a legacy pilot screen while retaining stable IDs"
   await s.close();
   expect((await open(r, false)).read().pages[0].nodes[0].id).toBe("text");
 });
+
+it("keeps font registration and text references atomic, undoable and durable across reopen", async () => {
+  const r = await root(),
+    s = await open(r);
+  const face = {
+    id: "project-face",
+    name: "Test Regular",
+    family: "Test",
+    assetHash: "a".repeat(64),
+    format: "ttf" as const,
+    weight: 400,
+    style: "normal" as const,
+  };
+  const nodeScene = {
+    kind: "text" as const,
+    x: 0,
+    y: 0,
+    width: 100,
+    height: 30,
+    textStyle: { fontId: face.id, lineHeight: 24 },
+  };
+  const register = {
+    requestId: "register-font",
+    baseRevision: 0,
+    operations: [
+      { type: "addProjectFont" as const, font: face },
+      { type: "setNodeMetadata" as const, nodeId: "text", scene: nodeScene },
+    ],
+  };
+  await s.apply(register);
+  expect((await s.apply(register)).revision).toBe(1);
+  const disk = await readFile(join(r, "project.json"), "utf8");
+  await expect(
+    s.apply({
+      requestId: "font-conflict",
+      baseRevision: 0,
+      operations: [{ type: "removeProjectFont", fontId: face.id }],
+    }),
+  ).rejects.toThrow("REVISION_CONFLICT");
+  await expect(
+    s.apply({
+      requestId: "font-invalid",
+      baseRevision: 1,
+      operations: [
+        {
+          type: "updateProjectFont",
+          fontId: face.id,
+          font: { ...face, name: "Changed" },
+        },
+        { type: "removeProjectFont", fontId: face.id },
+      ],
+    }),
+  ).rejects.toThrow("MISSING_FONT");
+  expect(await readFile(join(r, "project.json"), "utf8")).toBe(disk);
+  await s.undo("font-undo", 1);
+  expect(s.read().fonts).toBeUndefined();
+  expect(s.read().pages[0].nodes[0].scene).toBeUndefined();
+  await s.redo("font-redo", 2);
+  expect(s.read().fonts).toEqual([face]);
+  await s.close();
+  const reopened = await open(r, false);
+  expect(reopened.read().pages[0].nodes[0].scene).toEqual(nodeScene);
+  expect(reopened.read().fonts).toEqual([face]);
+});

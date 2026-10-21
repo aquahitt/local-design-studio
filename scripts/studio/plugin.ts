@@ -5,7 +5,7 @@ import { connectStudioOwner } from "../../src/service/attach";
 import { parseProject, type Project } from "../../src/core/project";
 import { toCoreTokens, type LibraryMetadata } from "../../src/library/sdk";
 import { renderSnapshot } from "../../src/service/render";
-import { readImageAsset } from "../../src/service/image-assets";
+import { readProjectAsset, isProjectAssetPath } from "../../src/service/project-assets";
 export function initialProject(library: LibraryMetadata): Project {
   const candidates = ["Text", "Button", "Card"].filter(
     (t) => library.components[t],
@@ -54,7 +54,7 @@ export function studioServicePlugin({
         autoApply: process.env.STUDIO_AUTO_APPLY === "1",
         renderSnapshot: (project, options) => renderSnapshot(project, options, {
           externalRoot: process.env.STUDIO_LIBRARY_ROOT,
-          readAsset: (name) => readImageAsset(resolve(projectRoot), name),
+          readAsset: (name) => readProjectAsset(resolve(projectRoot), name, project.fonts),
         }),
       });
       owner.catch((error) =>
@@ -62,7 +62,7 @@ export function studioServicePlugin({
       );
       vite.middlewares.use(async (req, res, next) => {
         const pathname = (req.url ?? "").split("?")[0];
-        const asset = /^\/assets\/[a-f0-9]{64}\.(svg|png)$/.test(pathname);
+        const asset = isProjectAssetPath(pathname);
         if (!pathname.startsWith("/api/") && !asset) return next();
         if (
           !origins.some(
@@ -110,7 +110,7 @@ export function studioServicePlugin({
           let size = 0;
           for await (const chunk of req) {
             size += chunk.length;
-            if (size > (pathname === "/api/assets" ? 12 * 1024 * 1024 : 1024 * 1024)) {
+            if (size > (["/api/assets", "/api/fonts"].includes(pathname) ? 12 * 1024 * 1024 : 1024 * 1024)) {
               res.statusCode = 413;
               res.end("PAYLOAD_TOO_LARGE");
               return;
@@ -118,7 +118,7 @@ export function studioServicePlugin({
             parts.push(chunk);
           }
           const reply = await fetch(
-            studio.url + (asset ? "/api" + pathname : (req.url ?? "")),
+            studio.url + (asset ? "/api" + (req.url ?? pathname) : (req.url ?? "")),
             {
               method: req.method,
               headers,
