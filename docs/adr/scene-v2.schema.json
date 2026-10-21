@@ -412,6 +412,17 @@
               "minimum": -1000000,
               "maximum": 1000000
             },
+            "linearTransform": {
+              "type": "array",
+              "minItems": 4,
+              "maxItems": 4,
+              "items": {
+                "type": "number",
+                "minimum": -1000000,
+                "maximum": 1000000
+              },
+              "description": "[a,b,c,d] linear affine matrix; x/y are the sole translation. Exclusive with rotation. Parser checks singular values and condition number against capabilities.geometry.limits; reflections are supported."
+            },
             "opacity": {
               "type": "number",
               "minimum": 0,
@@ -964,6 +975,14 @@
                   ]
                 }
               }
+            },
+            {
+              "not": {
+                "required": [
+                  "rotation",
+                  "linearTransform"
+                ]
+              }
             }
           ]
         },
@@ -1166,6 +1185,17 @@
           "type": "number",
           "minimum": -1000000,
           "maximum": 1000000
+        },
+        "linearTransform": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": {
+            "type": "number",
+            "minimum": -1000000,
+            "maximum": 1000000
+          },
+          "description": "[a,b,c,d] linear affine matrix; x/y are the sole translation. Exclusive with rotation. Parser checks singular values and condition number against capabilities.geometry.limits; reflections are supported."
         },
         "opacity": {
           "type": "number",
@@ -1718,6 +1748,14 @@
                 "textStyle"
               ]
             }
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "rotation",
+              "linearTransform"
+            ]
           }
         }
       ]

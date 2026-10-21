@@ -11,7 +11,11 @@ test("inspect reads actual pixels and React export downloads a usable file archi
   await page.getByRole("button", { name: "Экраны", exact: true }).click();
   await page.getByRole("button", { name: "Выделить " + target.nodeId, exact: true }).click();
   await page.getByText("Inspect и экспорт React", { exact: true }).click();
+  const inspected = page.waitForResponse(response => response.url().endsWith("/api/inspect") && response.request().method() === "POST");
   await page.getByRole("button", { name: "Проверить выбранный слой", exact: true }).click();
+  const response = await inspected;
+  expect(response.ok()).toBe(true);
+  expect((await response.json()).computedStyles).toBeDefined();
   await expect(page.getByLabel("Результат inspect", { exact: true })).toContainText('"computedStyles"');
   const inspection = JSON.parse(await page.getByLabel("Результат inspect", { exact: true }).innerText());
   expect(inspection.bounds.width).toBeGreaterThan(0);

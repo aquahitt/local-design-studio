@@ -85,6 +85,8 @@ function proposalChanges(project: Project, operation: Operation, t: (source: str
     return [t(operation.type === "addProjectFont" ? "Добавить шрифт {0} ({1}, {2})" : "Обновить шрифт {0} ({1}, {2})", {0: operation.font.name, 1: operation.font.weight, 2: operation.font.style})];
   if (operation.type === "removeProjectFont")
     return [t("Удалить шрифт {0}", {0: project.fonts?.find(font => font.id === operation.fontId)?.name ?? operation.fontId})];
+  if (operation.type === "setNodeGeometry")
+    return [t("Изменить геометрию слоя {0}", {0: operation.nodeId})];
   if (operation.type === "updateProps") {
     const before = project.pages
       .map((p) => locate(p.nodes, operation.nodeId))

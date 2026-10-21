@@ -77,6 +77,7 @@ test("desktop loads portable project font bytes in isolated preview and agent ca
                   y: 70,
                   width: 250,
                   height: 80,
+                  linearTransform: [1, 0.25, 0.5, 1],
                   fontSize: 24,
                   textStyle: {
                     fontId: font.id,
@@ -122,6 +123,10 @@ test("desktop loads portable project font bytes in isolated preview and agent ca
       inserted,
     );
     expect(rendered.warnings).toEqual([]);
+    const affineBounds = rendered.bounds.find((row: {id:string}) => row.id === "portable-font-text");
+    expect(affineBounds.width).toBeCloseTo(290, 5);
+    expect(affineBounds.height).toBeCloseTo(142.5, 5);
+    await expect(page.frameLocator(".page-stage iframe").locator('[data-node-id="portable-font-text"]')).toHaveCSS("transform", "matrix(1, 0.25, 0.5, 1, 0, 0)");
     expect(
       rendered.computedStyles.find(
         (row: { id: string }) => row.id === "portable-font-text",
@@ -143,6 +148,7 @@ test("desktop loads portable project font bytes in isolated preview and agent ca
       "font-family",
       `StudioFont_${inserted.font.assetHash}_400_normal`,
     );
+    await expect(page.frameLocator(".page-stage iframe").locator('[data-node-id="portable-font-text"]')).toHaveCSS("transform", "matrix(1, 0.25, 0.5, 1, 0, 0)");
     expect(await readFile(join(root, "project.json"), "utf8")).toBe(before);
   } finally {
     await app.close().catch(() => {});

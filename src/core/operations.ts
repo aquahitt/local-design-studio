@@ -1,3 +1,4 @@
+import { hasLockedSceneDescendant } from "./scene-locks";
 import { validateProjectFont, type ProjectFont } from "./fonts";
 import {
   createPageVariant,
@@ -9,7 +10,7 @@ import {
   type DesignComponentDefinition,
   type DesignInstance,
 } from "./design-components";
-import type { SceneMetadata } from "./scene";
+import { validateScene, type SceneMetadata, type SceneGeometry } from "./scene";
 import type { DeviceViewport } from "./viewport";
 import {
   CoreError,
@@ -23,6 +24,7 @@ import {
   type Tokens,
 } from "./project";
 export type Operation =
+  | { type: "setNodeGeometry"; nodeId: string; geometry: SceneGeometry }
   | { type: "addProjectFont"; font: ProjectFont }
   | { type: "updateProjectFont"; fontId: string; font: ProjectFont }
   | { type: "removeProjectFont"; fontId: string }
@@ -115,6 +117,7 @@ export function applyBatch(project: Project, batch: Batch): Project {
     detachInstance: ["nodeId"],
     setDesignComponents: ["definitions"],
     setInstance: ["nodeId", "instance"],
+    setNodeGeometry: ["nodeId", "geometry"],
     setNodeMetadata: ["nodeId", "name", "hidden", "locked", "scene"],
     updateProps: ["nodeId", "props"],
     insertNode: ["pageId", "parentId", "slot", "index", "node"],
@@ -197,11 +200,9 @@ export function applyBatch(project: Project, batch: Batch): Project {
     return result;
   }
   function hasLockedDescendant(node: ProjectNode): boolean {
-    return (
-      !!node.locked ||
-      Object.values(node.slots).some((nodes) => nodes.some(hasLockedDescendant))
-    );
+    return hasLockedSceneDescendant(next, node);
   }
+
   function required(id: string) {
     const n = locate(id);
     if (!n) throw new CoreError("NODE_NOT_FOUND", id);
@@ -270,6 +271,51 @@ export function applyBatch(project: Project, batch: Batch): Project {
       case "setInstance":
         editable(op.nodeId).node.instance = structuredClone(op.instance);
         break;
+      case "setNodeGeometry": {
+        const n = editable(op.nodeId).node;
+        if (!n.scene) throw new CoreError("NODE_NOT_SCENE", op.nodeId);
+        const geometry = op.geometry;
+        if (
+          !geometry ||
+          typeof geometry !== "object" ||
+          Array.isArray(geometry) ||
+          Object.keys(geometry).some(
+            (key) =>
+              ![
+                "x",
+                "y",
+                "width",
+                "height",
+                "rotation",
+                "linearTransform",
+              ].includes(key),
+          ) ||
+          ["x", "y", "width", "height"].some(
+            (key) => !Object.hasOwn(geometry, key),
+          )
+        )
+          throw new CoreError("INVALID_SCENE", op.nodeId);
+        const {
+          x: _x,
+          y: _y,
+          width: _width,
+          height: _height,
+          rotation: _rotation,
+          linearTransform: _linear,
+          ...rest
+        } = n.scene;
+        const replacement = validateScene(
+          { ...rest, ...geometry },
+          `node.${op.nodeId}.scene`,
+        );
+        if (
+          hasLockedDescendant(n) &&
+          stableStringify(n.scene) !== stableStringify(replacement)
+        )
+          throw new CoreError("NODE_LOCKED", op.nodeId);
+        n.scene = structuredClone(replacement);
+        break;
+      }
       case "setNodeMetadata": {
         const n = required(op.nodeId).node;
         const unlockingOnly =
@@ -286,11 +332,32 @@ export function applyBatch(project: Project, batch: Batch): Project {
         } else if (unlockingOnly) editable(op.nodeId);
         // Moving/resizing a parent must not indirectly edit a locked descendant.
         // Name/paint changes and unchanged geometry remain allowed.
-        if (op.scene && hasLockedDescendant(n) &&
-          (["kind", "x", "y", "width", "height", "rotation"] as const).some((key) =>
-            op.scene![key] !== undefined &&
-            op.scene![key] !== (key === "rotation" ? n.scene?.rotation ?? 0 : n.scene?.[key]),
-          )) throw new CoreError("NODE_LOCKED", op.nodeId);
+        if (
+          op.scene &&
+          hasLockedDescendant(n) &&
+          (
+            [
+              "kind",
+              "x",
+              "y",
+              "width",
+              "height",
+              "rotation",
+              "linearTransform",
+            ] as const
+          ).some(
+            (key) =>
+              op.scene![key] !== undefined &&
+              (key === "linearTransform"
+                ? stableStringify(op.scene![key]) !==
+                  stableStringify(n.scene?.[key] ?? null)
+                : op.scene![key] !==
+                  (key === "rotation"
+                    ? (n.scene?.rotation ?? 0)
+                    : n.scene?.[key])),
+          )
+        )
+          throw new CoreError("NODE_LOCKED", op.nodeId);
         if (op.name !== undefined) n.name = op.name;
         if (op.hidden !== undefined) n.hidden = op.hidden;
         if (op.locked !== undefined) n.locked = op.locked;

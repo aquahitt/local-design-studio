@@ -43,7 +43,9 @@ export function layerStyle(node: ProjectNode): Record<string, string | number> {
       top: s.y,
       width: s.width,
       height: s.height,
-      transform: `rotate(${s.rotation ?? 0}deg)`,
+      transform: s.linearTransform
+        ? `matrix(${s.linearTransform.join(", ")}, 0, 0)`
+        : `rotate(${s.rotation ?? 0}deg)`,
       transformOrigin: "0 0",
       opacity: s.opacity ?? 1,
       overflow: s.clip ? "hidden" : "visible",

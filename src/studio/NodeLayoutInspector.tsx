@@ -340,6 +340,37 @@ export function NodeLayoutInspector({
             ...(next.scene ? { scene: next.scene } : {}),
           },
         ];
+      if (next.scene && node.scene) {
+        const {
+          x,
+          y,
+          width,
+          height,
+          rotation,
+          linearTransform,
+          ...appearance
+        } = next.scene;
+        // The JSON editor owns the complete geometry snapshot. A metadata patch
+        // would retain an omitted legacy rotation/matrix and prevent switching.
+        operations[0] = {
+          type: "setNodeMetadata",
+          nodeId: node.id,
+          name: next.name,
+          scene: appearance,
+        };
+        operations.push({
+          type: "setNodeGeometry",
+          nodeId: node.id,
+          geometry: {
+            x,
+            y,
+            width,
+            height,
+            ...(rotation !== undefined ? { rotation } : {}),
+            ...(linearTransform !== undefined ? { linearTransform } : {}),
+          },
+        });
+      }
       if (next.instance)
         operations.push({
           type: "setInstance",
@@ -378,46 +409,58 @@ export function NodeLayoutInspector({
               "fontSize",
               "radius",
             ] as const
-          ).map((field) => (
-            <label key={field}>
-              {
+          )
+            .filter(
+              (field) => field !== "rotation" || !value.scene?.linearTransform,
+            )
+            .map((field) => (
+              <label key={field}>
                 {
-                  x: "X",
-                  y: "Y",
-                  width: t("Ширина слоя"),
-                  height: t("Высота слоя"),
-                  rotation: t("Поворот"),
-                  opacity: t("Прозрачность"),
-                  fontSize: t("Размер текста"),
-                  radius: t("Радиус"),
-                }[field]
-              }
-              <input
-                type="number"
-                aria-label={
                   {
-                    x: t("X слоя"),
-                    y: t("Y слоя"),
+                    x: "X",
+                    y: "Y",
                     width: t("Ширина слоя"),
                     height: t("Высота слоя"),
-                    rotation: t("Поворот слоя"),
-                    opacity: t("Прозрачность слоя"),
-                    fontSize: t("Размер текста слоя"),
-                    radius: t("Радиус слоя"),
+                    rotation: t("Поворот"),
+                    opacity: t("Прозрачность"),
+                    fontSize: t("Размер текста"),
+                    radius: t("Радиус"),
                   }[field]
                 }
-                disabled={disabled || node.locked}
-                value={value.scene?.[field] ?? (field === "opacity" ? 1 : 0)}
-                onChange={(e) =>
-                  change("scene", {
-                    ...value.scene,
-                    [field]: Number(e.target.value),
-                  })
-                }
-              />
-            </label>
-          ))}
+                <input
+                  type="number"
+                  aria-label={
+                    {
+                      x: t("X слоя"),
+                      y: t("Y слоя"),
+                      width: t("Ширина слоя"),
+                      height: t("Высота слоя"),
+                      rotation: t("Поворот слоя"),
+                      opacity: t("Прозрачность слоя"),
+                      fontSize: t("Размер текста слоя"),
+                      radius: t("Радиус слоя"),
+                    }[field]
+                  }
+                  disabled={disabled || node.locked}
+                  value={value.scene?.[field] ?? (field === "opacity" ? 1 : 0)}
+                  onChange={(e) =>
+                    change("scene", {
+                      ...value.scene,
+                      [field]: Number(e.target.value),
+                    })
+                  }
+                />
+              </label>
+            ))}
         </div>
+      )}
+      {value.scene?.linearTransform && (
+        <p>
+          {t("Матричное преобразование")}:{" "}
+          <output aria-label={t("Матричное преобразование")}>
+            {JSON.stringify(value.scene.linearTransform)}
+          </output>
+        </p>
       )}
       {value.scene?.kind === "text" && (
         <TypographyFields

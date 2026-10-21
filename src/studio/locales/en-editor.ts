@@ -1,4 +1,6 @@
 export const editorEnglish: Record<string, string> = {
+  "Изменить геометрию слоя {0}": "Change layer geometry {0}",
+  "Матричное преобразование": "Affine transform",
   "Редактирование холста": "Edit canvas",
   "Просмотр экрана": "Screen preview",
   Редактирование: "Edit",

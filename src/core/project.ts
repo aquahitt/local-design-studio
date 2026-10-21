@@ -10,7 +10,11 @@ import {
   type DesignComponentDefinition,
   type DesignInstance,
 } from "./design-components";
-import { validateScene, type SceneMetadata } from "./scene";
+import {
+  validateScene,
+  validateAffineRepresentability,
+  type SceneMetadata,
+} from "./scene";
 import { parseViewport, type Viewport } from "./viewport";
 import {
   CoreError,
@@ -406,6 +410,7 @@ export function parseProject(input: unknown): Project {
     });
   }
   validateDesignComponents({ ...p, pages } as Project);
+  validateAffineRepresentability({ ...p, pages } as Project);
   if (p.groups !== undefined) {
     if (!Array.isArray(p.groups) || p.groups.length > 100)
       throw new CoreError("INVALID_GROUPS");

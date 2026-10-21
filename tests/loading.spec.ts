@@ -1,5 +1,6 @@
+import { stopFixtureProcess as stopFixture } from "./fixture-process";
 import { test, expect } from "@playwright/test";
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn } from "node:child_process";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -44,21 +45,6 @@ async function startFixture(root: string) {
     await stopFixture(child);
     throw error;
   }
-}
-
-async function stopFixture(child: ChildProcess) {
-  if (child.exitCode !== null || child.signalCode !== null) return;
-  await new Promise<void>((resolveStop, reject) => {
-    const timer = setTimeout(() => {
-      child.kill("SIGKILL");
-      reject(new Error("Fixture server did not stop within 10 seconds"));
-    }, 10000);
-    child.once("exit", () => {
-      clearTimeout(timer);
-      resolveStop();
-    });
-    child.kill("SIGTERM");
-  });
 }
 
 for (const pendingPath of ["session", "project"] as const) {

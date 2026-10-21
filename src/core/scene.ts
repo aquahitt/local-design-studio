@@ -1,6 +1,6 @@
 import { validateTextStyle, type TextStyle } from "./text-style";
 import { CoreError } from "./tokens";
-import type { ProjectNode } from "./project";
+import type { Project, ProjectNode } from "./project";
 import { validateFramePaint, type Paint, type Shadow } from "./paint";
 
 /** Scene coordinates are CSS pixels in the parent's local coordinate system. */
@@ -11,6 +11,7 @@ export type SceneMetadata = {
   width: number;
   height: number;
   rotation?: number;
+  linearTransform?: LinearTransform;
   opacity?: number;
   fill?: string;
   fills?: Paint[];
@@ -25,6 +26,17 @@ export type SceneMetadata = {
 };
 export type Point = { x: number; y: number };
 export type SceneView = { zoom: number; panX: number; panY: number };
+export type LinearTransform = [number, number, number, number];
+export type SceneGeometry = Pick<
+  SceneMetadata,
+  "x" | "y" | "width" | "height" | "rotation" | "linearTransform"
+>;
+export const AFFINE_LIMITS = Object.freeze({
+  maxCoefficient: 1_000_000,
+  minSingularValue: 0.000001,
+  maxSingularValue: 1_000_000,
+  maxConditionNumber: 100_000_000,
+});
 export type Matrix = [number, number, number, number, number, number];
 export type SceneLayer = {
   node: ProjectNode;
@@ -47,6 +59,7 @@ export function validateScene(value: unknown, path: string): SceneMetadata {
     "width",
     "height",
     "rotation",
+    "linearTransform",
     "opacity",
     "fill",
     "fills",
@@ -91,6 +104,45 @@ export function validateScene(value: unknown, path: string): SceneMetadata {
     )
       fail();
     if (typeof number === "number" && key !== "rotation" && number < 0) fail();
+  }
+  if (scene.linearTransform !== undefined) {
+    if (scene.rotation !== undefined) fail();
+    const linear = scene.linearTransform;
+    if (
+      !Array.isArray(linear) ||
+      linear.length !== 4 ||
+      linear.some(
+        (n) =>
+          typeof n !== "number" ||
+          !Number.isFinite(n) ||
+          Math.abs(n) > AFFINE_LIMITS.maxCoefficient,
+      )
+    )
+      fail();
+    const [a, b, c, d] = linear as number[];
+    const scale = Math.max(Math.abs(a), Math.abs(b), Math.abs(c), Math.abs(d));
+    if (!scale) fail();
+    const na = a / scale,
+      nb = b / scale,
+      nc = c / scale,
+      nd = d / scale;
+    // Largest eigenvalue of L^T L, normalized to avoid overflow/underflow.
+    const first = na * na + nb * nb,
+      second = nc * nc + nd * nd;
+    const cross = na * nc + nb * nd;
+    const largest = Math.sqrt(
+      (first + second + Math.hypot(first - second, 2 * cross)) / 2,
+    );
+    // Product of singular values is |det L|; subtraction of eigenvalues loses
+    // the small singular value precisely where the condition check matters.
+    const smallest = Math.abs(na * nd - nb * nc) / largest;
+    const epsilon = 16 * Number.EPSILON;
+    if (
+      smallest * scale < AFFINE_LIMITS.minSingularValue * (1 - epsilon) ||
+      largest * scale > AFFINE_LIMITS.maxSingularValue * (1 + epsilon) ||
+      largest / smallest > AFFINE_LIMITS.maxConditionNumber * (1 + epsilon)
+    )
+      fail();
   }
   if (typeof scene.opacity === "number" && scene.opacity > 1) fail();
   if (scene.clip !== undefined && typeof scene.clip !== "boolean") fail();
@@ -167,20 +219,40 @@ export function transformPoint(point: Point, matrix: Matrix): Point {
   };
 }
 export function inverseTransform(matrix: Matrix): Matrix {
+  if (matrix.some((value) => !Number.isFinite(value)))
+    throw new CoreError("INVALID_TRANSFORM");
   const [a, b, c, d, e, f] = matrix;
-  const determinant = a * d - b * c;
+  // Normalize columns independently: one shared scale would turn a valid
+  // diag(1e200, 1e-200) into a singular matrix through underflow.
+  const sx = Math.max(Math.abs(a), Math.abs(b));
+  const sy = Math.max(Math.abs(c), Math.abs(d));
+  if (!sx || !sy) throw new CoreError("INVALID_TRANSFORM");
+  const na = a / sx,
+    nb = b / sx,
+    nc = c / sy,
+    nd = d / sy;
+  const determinant = na * nd - nb * nc;
   if (!determinant) throw new CoreError("INVALID_TRANSFORM");
-  return [
-    d / determinant,
-    -b / determinant,
-    -c / determinant,
-    a / determinant,
-    (c * f - d * e) / determinant,
-    (b * e - a * f) / determinant,
+  const ia = nd / determinant / sx,
+    ib = -nb / determinant / sy;
+  const ic = -nc / determinant / sx,
+    id = na / determinant / sy;
+  const inverse: Matrix = [
+    ia,
+    ib,
+    ic,
+    id,
+    -(ia * e + ic * f),
+    -(ib * e + id * f),
   ];
+  if (inverse.some((value) => !Number.isFinite(value)))
+    throw new CoreError("INVALID_TRANSFORM");
+  return inverse;
 }
 export function nodeTransform(node: ProjectNode): Matrix {
   if (!node.scene) return [1, 0, 0, 1, 0, 0];
+  if (node.scene.linearTransform)
+    return [...node.scene.linearTransform, node.scene.x, node.scene.y];
   const radians = ((node.scene.rotation ?? 0) * Math.PI) / 180;
   const cos = Math.cos(radians),
     sin = Math.sin(radians);
@@ -248,5 +320,70 @@ export function hitTestScene(
       continue;
     if (contains(point, layer.transform, scene.width, scene.height))
       return layer.node.id;
+  }
+}
+
+/** New affine trees must remain usable after composition, including definition
+ * expansion. Legacy-only projects keep their existing acceptance rules. */
+export function validateAffineRepresentability(project: Project): void {
+  const definitions = new Map(
+    (project.designComponents ?? []).map((def) => [def.id, def]),
+  );
+  function hasAffine(nodes: ProjectNode[]): boolean {
+    return nodes.some(
+      (node) =>
+        !!node.scene?.linearTransform ||
+        Object.values(node.slots).some(hasAffine),
+    );
+  }
+  const trees = [
+    ...project.pages.map((page) => page.nodes),
+    ...[...definitions.values()].map((def) => def.nodes),
+  ];
+  if (!trees.some(hasAffine)) return;
+  for (const roots of trees) {
+    let count = 0;
+    function walk(
+      nodes: ProjectNode[],
+      parent: Matrix,
+      affine = false,
+      depth = 0,
+    ) {
+      // Expansion is bounded like resolveSceneNodes. validateDesignComponents has
+      // already rejected unknown/cyclic references before this function is called.
+      if (depth > 64) throw new CoreError("MAX_DEPTH");
+      for (const node of nodes) {
+        if (++count > 10_000) throw new CoreError("MAX_NODES");
+        const world = multiplyTransforms(parent, nodeTransform(node));
+        const explicit = affine || !!node.scene?.linearTransform;
+        if (explicit) {
+          inverseTransform(world);
+          if (node.scene) {
+            const { width, height } = node.scene;
+            for (const point of [
+              { x: 0, y: 0 },
+              { x: width, y: 0 },
+              { x: width, y: height },
+              { x: 0, y: height },
+            ]) {
+              const corner = transformPoint(point, world);
+              if (!Number.isFinite(corner.x) || !Number.isFinite(corner.y))
+                throw new CoreError("INVALID_TRANSFORM");
+            }
+          }
+        }
+        if (node.instance)
+          walk(
+            definitions.get(node.instance.definitionId)!.nodes,
+            world,
+            explicit,
+            depth + 1,
+          );
+        else
+          for (const children of Object.values(node.slots))
+            walk(children, world, explicit, depth + 1);
+      }
+    }
+    walk(roots, [1, 0, 0, 1, 0, 0]);
   }
 }
