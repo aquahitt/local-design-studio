@@ -1,3 +1,4 @@
+import { CanvasSurface, type CanvasContext } from "./CanvasSurface";
 import { useI18n } from "./i18n";
 import { StudioSelect } from "./StudioSelect";
 import { Assets } from "./Assets";
@@ -219,6 +220,34 @@ export function StudioApp({
   const [tokenDraft, setTokenDraft] = useState<string | null>(null);
   const [tokenBase, setTokenBase] = useState(0);
   const [zoom, setZoom] = useState(1);
+  const [canvasEdit, setCanvasEdit] = useState(false);
+  const canvasContext = useRef<CanvasContext | null>(null);
+  const receiveCanvasContext = useCallback((value: CanvasContext) => {
+    canvasContext.current = value;
+  }, []);
+  useEffect(() => {
+    canvasContext.current = null;
+    try {
+      setCanvasEdit(
+        localStorage.getItem(
+          `local-design-studio:canvas-mode:${project?.projectId}:${pageId}`,
+        ) === "edit",
+      );
+    } catch {
+      setCanvasEdit(false);
+    }
+  }, [project?.projectId, pageId]);
+  function changeCanvasMode(edit: boolean) {
+    setCanvasEdit(edit);
+    try {
+      localStorage.setItem(
+        `local-design-studio:canvas-mode:${project?.projectId}:${pageId}`,
+        edit ? "edit" : "preview",
+      );
+    } catch {
+      /* optional UI preference */
+    }
+  }
   const stage = useRef<HTMLDivElement>(null);
   const selectedSnapshot = useRef<ProjectNode | undefined>(undefined);
   const clientId = useRef(crypto.randomUUID());
@@ -284,7 +313,9 @@ export function StudioApp({
         if (active)
           setError(
             controller.signal.aborted
-              ? translator.current("Загрузка отменена. Файлы проекта сохранены.")
+              ? translator.current(
+                  "Загрузка отменена. Файлы проекта сохранены.",
+                )
               : (e as Error).message,
           );
       }
@@ -309,26 +340,46 @@ export function StudioApp({
     const contextPage =
       project.pages.find((p) => p.screenId === pageId) ?? project.pages[0];
     const send = () => {
-      const bounds: Record<string, unknown> = {};
+      const bounds: Record<string, unknown> = Object.create(null);
       const frame = stage.current?.querySelector("iframe");
       const origin = frame?.getBoundingClientRect();
-      frame?.contentDocument
-        ?.querySelectorAll("[data-node-id]")
-        .forEach((element) => {
-          const rect = element.getBoundingClientRect();
-          bounds[element.getAttribute("data-node-id") ?? ""] = {
-            x: (origin?.x ?? 0) + rect.x * zoom,
-            y: (origin?.y ?? 0) + rect.y * zoom,
-            width: rect.width * zoom,
-            height: rect.height * zoom,
-          };
-        });
+      if (canvasEdit) {
+        const camera = canvasContext.current;
+        if (camera?.revision === project.revision) {
+          camera.bounds.forEach((rect) => {
+            bounds[rect.id] = {
+              x:
+                (origin?.x ?? 0) + rect.x * camera.view.zoom + camera.view.panX,
+              y:
+                (origin?.y ?? 0) + rect.y * camera.view.zoom + camera.view.panY,
+              width: rect.width * camera.view.zoom,
+              height: rect.height * camera.view.zoom,
+            };
+          });
+        }
+      } else
+        frame?.contentDocument
+          ?.querySelectorAll("[data-node-id]")
+          .forEach((element) => {
+            const rect = element.getBoundingClientRect();
+            bounds[element.getAttribute("data-node-id") ?? ""] = {
+              x: (origin?.x ?? 0) + rect.x * zoom,
+              y: (origin?.y ?? 0) + rect.y * zoom,
+              width: rect.width * zoom,
+              height: rect.height * zoom,
+            };
+          });
       void client
         .request("context", {
           clientId: clientId.current,
           pageId: contextPage.screenId,
           selectedIds: [
-            ...new Set([...multipleIds, ...(selected ? [selected] : [])]),
+            ...new Set([
+              ...multipleIds.filter((id) => locate(contextPage.nodes, id)),
+              ...(selected && locate(contextPage.nodes, selected)
+                ? [selected]
+                : []),
+            ]),
           ],
           viewport: {
             ...contextPage.viewport,
@@ -336,6 +387,11 @@ export function StudioApp({
             zoom,
           },
           bounds,
+          surfaceMode: canvasEdit ? "edit" : "preview",
+          camera:
+            canvasEdit && canvasContext.current?.revision === project.revision
+              ? canvasContext.current
+              : undefined,
           dirty,
           revision: project.revision,
         })
@@ -344,7 +400,7 @@ export function StudioApp({
     send();
     const timer = setInterval(send, 3500);
     return () => clearInterval(timer);
-  }, [client, project, pageId, selected, multipleIds, dirty, zoom]);
+  }, [client, project, pageId, selected, multipleIds, dirty, zoom, canvasEdit]);
   const livePage = project?.pages.find((p) => p.screenId === pageId);
   if (livePage) viewportPageSnapshot.current = livePage;
   const page =
@@ -630,7 +686,11 @@ export function StudioApp({
                 <StudioButton
                   key={id}
                   aria-label={name}
-                  aria-describedby={id === "proposals" && pendingProposals.length > 0 ? "studio-proposal-count" : undefined}
+                  aria-describedby={
+                    id === "proposals" && pendingProposals.length > 0
+                      ? "studio-proposal-count"
+                      : undefined
+                  }
                   aria-pressed={view === id}
                   onClick={() => {
                     if ((dirty || tokenDraft !== null) && id !== view) {
@@ -975,17 +1035,33 @@ export function StudioApp({
                         >
                           {t("Экран +")}
                         </StudioButton>
-                        <select
-                          aria-label={t("Масштаб")}
-                          value={zoom}
-                          onChange={(e) => setZoom(Number(e.target.value))}
+                        <StudioButton
+                          aria-label={t("Редактирование холста")}
+                          aria-pressed={canvasEdit}
+                          onClick={() => changeCanvasMode(true)}
                         >
-                          {[0.5, 0.75, 1].map((z) => (
-                            <option key={z} value={z}>
-                              {z * 100}%
-                            </option>
-                          ))}
-                        </select>
+                          {t("Редактирование")}
+                        </StudioButton>
+                        <StudioButton
+                          aria-label={t("Просмотр экрана")}
+                          aria-pressed={!canvasEdit}
+                          onClick={() => changeCanvasMode(false)}
+                        >
+                          {t("Просмотр")}
+                        </StudioButton>
+                        {!canvasEdit && (
+                          <select
+                            aria-label={t("Масштаб")}
+                            value={zoom}
+                            onChange={(e) => setZoom(Number(e.target.value))}
+                          >
+                            {[0.5, 0.75, 1].map((z) => (
+                              <option key={z} value={z}>
+                                {z * 100}%
+                              </option>
+                            ))}
+                          </select>
+                        )}
                         <StudioButton
                           aria-label={t("Настройки устройства")}
                           aria-expanded={deviceControlsOpen}
@@ -1078,6 +1154,22 @@ export function StudioApp({
                       />
                     </div>
                     <LayerActions
+                      insertionPoint={
+                        canvasEdit
+                          ? () => {
+                              const c = canvasContext.current;
+                              return c
+                                ? {
+                                    x:
+                                      (c.width / 2 - c.view.panX) / c.view.zoom,
+                                    y:
+                                      (c.height / 2 - c.view.panY) /
+                                      c.view.zoom,
+                                  }
+                                : undefined;
+                            }
+                          : undefined
+                      }
                       project={project}
                       page={page}
                       selectedIds={[
@@ -1169,28 +1261,66 @@ export function StudioApp({
                         </p>
                       </aside>
                       <div className="page-stage" ref={stage}>
-                        <div style={{ width: page.viewport.width, zoom }}>
-                          <DeviceFrame
-                            viewport={page.viewport}
-                            theme={project.theme}
-                            shade={shade}
-                            onCloseShade={() => setShade(false)}
-                          >
-                            {(size) => (
-                              <Preview
-                                library={displayLibrary}
-                                project={project}
-                                theme={project.theme}
-                                title={t("Экран ") + page.name}
-                                height={size.height}
-                                nodes={page.nodes}
-                                selected={selected}
-                                selectedIds={multipleIds}
-                                onSelect={select}
-                              />
-                            )}
-                          </DeviceFrame>
-                        </div>
+                        {canvasEdit ? (
+                          <CanvasSurface
+                            key={project.projectId + ":" + page.screenId}
+                            project={project}
+                            page={page}
+                            library={displayLibrary}
+                            selectedIds={[
+                              ...new Set([
+                                ...multipleIds.filter((id) =>
+                                  locate(page.nodes, id),
+                                ),
+                                ...(selected && locate(page.nodes, selected)
+                                  ? [selected]
+                                  : []),
+                              ]),
+                            ]}
+                            disabled={dirty}
+                            mutate={mutate}
+                            onContext={receiveCanvasContext}
+                            onSelection={(ids) => {
+                              if (
+                                dirty &&
+                                (ids.length !== 1 || ids[0] !== selected)
+                              ) {
+                                setError(
+                                  t(
+                                    "Есть несохранённый ввод. Примени или сбрось его перед сменой слоя.",
+                                  ),
+                                );
+                                return false;
+                              }
+                              setMultipleIds(ids);
+                              setSelected(ids[0] ?? null);
+                              return true;
+                            }}
+                          />
+                        ) : (
+                          <div style={{ width: page.viewport.width, zoom }}>
+                            <DeviceFrame
+                              viewport={page.viewport}
+                              theme={project.theme}
+                              shade={shade}
+                              onCloseShade={() => setShade(false)}
+                            >
+                              {(size) => (
+                                <Preview
+                                  library={displayLibrary}
+                                  project={project}
+                                  theme={project.theme}
+                                  title={t("Экран ") + page.name}
+                                  height={size.height}
+                                  nodes={page.nodes}
+                                  selected={selected}
+                                  selectedIds={multipleIds}
+                                  onSelect={select}
+                                />
+                              )}
+                            </DeviceFrame>
+                          </div>
+                        )}
                       </div>
                       <aside>
                         {node && (

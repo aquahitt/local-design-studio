@@ -1,4 +1,28 @@
 export const editorEnglish: Record<string, string> = {
+  "Редактирование холста": "Edit canvas",
+  "Просмотр экрана": "Screen preview",
+  Редактирование: "Edit",
+  Просмотр: "Preview",
+  "Свободный холст": "Free canvas",
+  "Масштаб холста, проценты": "Canvas zoom, percent",
+  "Камера холста": "Canvas camera",
+  "Инструмент выбора": "Selection tool",
+  "Рука: перемещение холста": "Hand: pan canvas",
+  "Уменьшить масштаб": "Zoom out",
+  "Увеличить масштаб": "Zoom in",
+  "Масштаб 100%": "100% zoom",
+  "Вместить всё": "Fit all",
+  "Вместить выделение": "Fit selection",
+  "Сетка холста": "Canvas grid",
+  "Холст ": "Canvas ",
+  "Переместить слои на холсте": "Move layers on canvas",
+  "Этот слой нельзя переместить на холсте.":
+    "This layer cannot be moved on the canvas.",
+  "Документ изменился. Перемещение отменено.":
+    "The document changed. The move was cancelled.",
+  "Колесо — перемещение · Ctrl/⌘ + колесо — масштаб · пробел — рука · Shift + 1 — вместить всё":
+    "Wheel: pan · Ctrl/⌘ + wheel: zoom · Space: hand · Shift + 1: fit all",
+
   Обычный: "Normal",
   Умножение: "Multiply",
   "Режим «Экран»": "Screen",

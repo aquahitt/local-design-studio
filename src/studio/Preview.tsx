@@ -1,4 +1,6 @@
 import { compileTextStyle } from "../core/text-style";
+import { validCanvasBounds, type CanvasBounds } from "./canvasCamera";
+import type { SceneView } from "../core/scene";
 import { layerStyle } from "../core/handoff";
 import { useI18n, type StudioLocale } from "./i18n";
 import {
@@ -48,7 +50,21 @@ function RenderError({ message }: { message: string }) {
     </div>
   );
 }
+export type CanvasPreview = {
+  epoch: number;
+  surfaceId: string;
+  view: SceneView;
+  positions?: Record<string, { x: number; y: number }>;
+  pick?: { requestId: number; x: number; y: number };
+};
 export interface PreviewInput {
+  canvas?: CanvasPreview;
+  onGeometry?: (
+    bounds: CanvasBounds[],
+    revision: number,
+    epoch: number,
+  ) => void;
+  onPick?: (id: string | null, requestId: number) => void;
   locale?: StudioLocale;
   project: Project;
   library: ComponentLibrary;
@@ -74,10 +90,31 @@ export function Preview({
   selected,
   selectedIds,
   onSelect,
+  canvas,
+  onGeometry,
+  onPick,
 }: PreviewInput) {
   const { locale, t } = useI18n();
   const desktopLibrary = useContext(DesktopLibraryContext);
   const ref = useRef<HTMLIFrameElement>(null);
+  const live = useRef({
+    canvas,
+    revision: project.revision,
+    projectId: project.projectId,
+    fonts: project.fonts,
+    nodes,
+    onGeometry,
+    onPick,
+  });
+  live.current = {
+    canvas,
+    revision: project.revision,
+    projectId: project.projectId,
+    fonts: project.fonts,
+    nodes,
+    onGeometry,
+    onPick,
+  };
   const container = useRef<HTMLDivElement>(null);
   const [availableWidth, setAvailableWidth] = useState(0);
   const [contentWidth, setContentWidth] = useState(0);
@@ -108,15 +145,15 @@ export function Preview({
       if (event.data?.type === "studio-preview-ready") setReady(true);
       if (
         event.data?.type === "studio-preview-font-status" &&
-        event.data.projectId === project.projectId &&
-        event.data.revision === project.revision &&
+        event.data.projectId === live.current.projectId &&
+        event.data.revision === live.current.revision &&
         Array.isArray(event.data.warnings) &&
         event.data.warnings.length <= 128 &&
         event.data.warnings.every(
           (warning: { code?: unknown; fontId?: unknown }) =>
             warning?.code === "PROJECT_FONT_UNAVAILABLE" &&
             typeof warning.fontId === "string" &&
-            project.fonts?.some((font) => font.id === warning.fontId),
+            live.current.fonts?.some((font) => font.id === warning.fontId),
         )
       )
         setFontWarnings(
@@ -124,6 +161,35 @@ export function Preview({
             (warning: { fontId: string }) => warning.fontId,
           ),
         );
+      if (
+        live.current.canvas &&
+        event.data?.surfaceId === live.current.canvas.surfaceId &&
+        event.data?.epoch === live.current.canvas.epoch &&
+        event.data?.revision === live.current.revision
+      ) {
+        const allowed = new Set<string>();
+        const walk = (rows: ProjectNode[]) =>
+          rows.forEach((n) => {
+            allowed.add(n.id);
+            Object.values(n.slots).forEach(walk);
+          });
+        walk(live.current.nodes ?? []);
+        if (
+          event.data.type === "studio-preview-geometry" &&
+          validCanvasBounds(event.data.bounds, allowed)
+        )
+          live.current.onGeometry?.(
+            event.data.bounds,
+            event.data.revision,
+            event.data.epoch,
+          );
+        if (
+          event.data.type === "studio-preview-picked" &&
+          Number.isSafeInteger(event.data.requestId) &&
+          (event.data.id === null || allowed.has(event.data.id))
+        )
+          live.current.onPick?.(event.data.id, event.data.requestId);
+      }
       if (
         autoHeight &&
         event.data?.type === "studio-preview-size" &&
@@ -150,7 +216,15 @@ export function Preview({
     }
     window.addEventListener("message", receive);
     return () => window.removeEventListener("message", receive);
-  }, [onSelect, autoHeight]);
+  }, [
+    onSelect,
+    autoHeight,
+    canvas?.surfaceId,
+    project.revision,
+    nodes,
+    onGeometry,
+    onPick,
+  ]);
   useEffect(() => {
     if (ready)
       ref.current?.contentWindow?.postMessage(
@@ -166,6 +240,14 @@ export function Preview({
           selected,
           selectedIds,
           desktopLibrary,
+          canvas: canvas
+            ? {
+                surfaceId: canvas.surfaceId,
+                epoch: canvas.epoch,
+                view: canvas.view,
+                positions: canvas.positions,
+              }
+            : undefined,
         },
         __STUDIO_DESKTOP__ ? "studio://preview" : location.origin,
       );
@@ -181,7 +263,24 @@ export function Preview({
     selectedIds,
     desktopLibrary,
     locale,
+    canvas?.surfaceId,
+    canvas?.view,
+    canvas?.positions,
+    canvas?.epoch,
   ]);
+  useEffect(() => {
+    if (ready && canvas?.pick)
+      ref.current?.contentWindow?.postMessage(
+        {
+          type: "studio-preview-pick",
+          surfaceId: canvas.surfaceId,
+          epoch: canvas.epoch,
+          revision: project.revision,
+          ...canvas.pick,
+        },
+        __STUDIO_DESKTOP__ ? "studio://preview" : location.origin,
+      );
+  }, [ready, canvas?.pick, canvas?.surfaceId, project.revision]);
   const renderWidth = Math.max(availableWidth, contentWidth);
   const scale =
     autoHeight && availableWidth && renderWidth
@@ -191,6 +290,8 @@ export function Preview({
     <iframe
       ref={ref}
       title={title}
+      tabIndex={canvas ? -1 : undefined}
+      aria-hidden={canvas ? true : undefined}
       src={
         __STUDIO_DESKTOP__
           ? "studio://preview/preview"
@@ -214,12 +315,12 @@ export function Preview({
         transformOrigin: "top left",
         border: 0,
         display: "block",
-        background: "#fff",
+        background: canvas ? "transparent" : "#fff",
       }}
     />
   );
   const warning = fontWarnings.length ? (
-    <p role="status">
+    <p role="status" className="preview-font-warning">
       {t("Не удалось загрузить шрифт проекта. Текст может отличаться:")}{" "}
       {fontWarnings
         .map((id) => {
@@ -230,7 +331,7 @@ export function Preview({
     </p>
   ) : null;
   return (
-    <>
+    <div className="studio-preview-ui">
       {warning}
       {autoHeight ? (
         <div
@@ -246,7 +347,7 @@ export function Preview({
       ) : (
         frame
       )}
-    </>
+    </div>
   );
 }
 export function resolveProps(props: Props, project: Project): Props {
@@ -289,6 +390,7 @@ export function Nodes({
   onSelect,
   inheritedLocked = false,
   materializedNodes = false,
+  positions = {},
 }: {
   nodes: ProjectNode[];
   library: ComponentLibrary;
@@ -298,6 +400,7 @@ export function Nodes({
   onSelect: (id: string, additive?: boolean) => void;
   inheritedLocked?: boolean;
   materializedNodes?: boolean;
+  positions?: Record<string, { x: number; y: number }>;
 }) {
   const { t } = useI18n();
   const hasInstance = (rows: ProjectNode[]): boolean =>
@@ -326,6 +429,7 @@ export function Nodes({
             <div
               key={node.id}
               data-node-id={node.id}
+              data-selection-id={sceneSelectionId(node)}
               onClick={(e) => {
                 e.stopPropagation();
                 if (!node.locked && !inheritedLocked)
@@ -339,6 +443,9 @@ export function Nodes({
                   position: node.scene ? "absolute" : "relative",
                   padding: node.scene ? 0 : 8,
                   ...(node.scene ? layerStyle(node) : {}),
+                  ...(positions[node.id]
+                    ? { left: positions[node.id].x, top: positions[node.id].y }
+                    : {}),
                   outline:
                     node.id === selected || selectedIds.includes(node.id)
                       ? "2px solid #4673e8"
@@ -394,6 +501,7 @@ export function Nodes({
                       nodes: children,
                       inheritedLocked: inheritedLocked || !!node.locked,
                       materializedNodes: true,
+                      positions,
                       library,
                       project,
                       selected,
@@ -420,6 +528,7 @@ export function Nodes({
                                 inheritedLocked:
                                   inheritedLocked || !!node.locked,
                                 materializedNodes: true,
+                                positions,
                                 library,
                                 project,
                                 selected,

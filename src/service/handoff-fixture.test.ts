@@ -442,6 +442,27 @@ it.each(["components", "scene", "paint", "fonts", "fonts-wide"])(
         expect(Buffer.from(packaged[0].data, "base64")).toEqual(
           Buffer.from(fontBytes!),
         );
+        // Node capture translates the disposable body to the crop origin. Give
+        // the independent export the same compositing geometry: comparing a
+        // transformed owner with an untransformed locator crop changes Chromium
+        // glyph edge rasterization even at integer coordinates. Keep exact RGBA
+        // equality, original bounds/style checks, and the original CSS viewport.
+        const viewportBeforeCapture = page.viewportSize();
+        await page.evaluate(async ({ x, y }) => {
+          document.body.style.translate = `${-x}px ${-y}px`;
+          await new Promise((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(resolve)),
+          );
+        }, typography.bounds);
+        expect(
+          await page.locator('[data-node-id="font-text"]').boundingBox(),
+        ).toEqual({
+          x: 0,
+          y: 0,
+          width: typography.bounds.width,
+          height: typography.bounds.height,
+        });
+        expect(page.viewportSize()).toEqual(viewportBeforeCapture);
         const handoffPNG = await page
           .locator('[data-node-id="font-text"]')
           .screenshot({ animations: "disabled" });

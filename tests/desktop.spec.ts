@@ -174,6 +174,28 @@ test("desktop creates, saves, reopens disk project and isolates preview", async 
     await expect
       .poll(() => page.getByLabel("Свойства JSON").inputValue())
       .toContain("Saved from desktop");
+    // Edit geometry crosses the isolated preview origin through the bounded bridge.
+    const beforeCamera = await readFile(join(root, "project.json"), "utf8");
+    await page.getByRole("button", {name:"Редактирование холста",exact:true}).click();
+    const canvas = page.getByRole("region", {name:"Свободный холст",exact:true});
+    await expect(canvas).toBeVisible();
+    await canvas.scrollIntoViewIfNeeded();
+    const canvasNode = page.frameLocator(".page-stage iframe").locator('[data-node-id="demo-title"]');
+    await expect(canvasNode).toBeVisible();
+    const nodeBox = (await canvasNode.boundingBox())!;
+    await page.mouse.click(nodeBox.x+nodeBox.width/2,nodeBox.y+nodeBox.height/2);
+    await expect(page.getByTestId("selection")).toContainText("demo-title");
+    await expect(canvas.locator('..').getByRole('alert')).toHaveCount(0);
+    await expect.poll(()=>page.evaluate(async()=>{
+      const session=await fetch('/api/session').then(r=>r.json());
+      const result=await fetch('/api/context',{headers:{Authorization:`Bearer ${session.token}`}}).then(r=>r.json());
+      return result.context?.surfaceMode==='edit' && result.context?.camera?.revision===result.context?.revision && result.context?.camera?.bounds.some((b:{id:string})=>b.id==='demo-title');
+    }),{timeout:10000}).toBe(true);
+    const pan=Number(await canvas.getAttribute('data-pan-x'));
+    await canvas.dispatchEvent('wheel',{deltaX:45,deltaY:0});
+    await expect.poll(async()=>Number(await canvas.getAttribute('data-pan-x'))).toBeCloseTo(pan-45);
+    expect(await readFile(join(root,"project.json"),"utf8")).toBe(beforeCamera);
+    await page.getByRole("button", {name:"Просмотр экрана",exact:true}).click();
     await page.getByRole("button", { name: "Все проекты" }).click();
     await expect(
       page.getByRole("heading", { name: "Твои проекты — на твоём компьютере" }),
@@ -199,7 +221,7 @@ test("desktop creates, saves, reopens disk project and isolates preview", async 
 });
 
 
-test("desktop installed MCP survives owner replacement, trusted library restart and offline review", async () => {
+test("desktop installed MCP survives owner replacement, trusted library restart and offline review", async ({}, testInfo) => {
   test.setTimeout(150000);
   const temp = await mkdtemp(join(tmpdir(), "studio-installed-acceptance-"));
   const projectRoot = join(temp, "project");
@@ -214,12 +236,24 @@ test("desktop installed MCP survives owner replacement, trusted library restart 
   if (!packaged)
     execFileSync(process.execPath, ["scripts/desktop/build.mjs"], { stdio: "pipe" });
   const env = desktopRuntimeEnv(settings, emptyPath);
-  const launch = () => electron.launch({
+  let captureDiagnostics = "";
+  const launch = async () => {
+    const launched = await electron.launch({
     ...(packaged ? { executablePath: packaged } : { args: [resolve(".")] }),
     chromiumSandbox: process.platform === "linux",
     cwd,
-    env,
+    env: {...env, STUDIO_CAPTURE_DIAGNOSTICS: "1"},
   });
+    launched.on("console", async message => {
+      if (!message.text().startsWith("Studio capture")) return;
+      const values = await Promise.all(message.args().map(argument => argument.jsonValue().catch(() => "[closed]")));
+      captureDiagnostics = (captureDiagnostics + values.map(value => typeof value === "string" ? value : JSON.stringify(value)).join(" ") + "\n").slice(-12000);
+    });
+    launched.process().stderr?.on("data", chunk => {
+      captureDiagnostics = (captureDiagnostics + String(chunk)).slice(-12000);
+    });
+    return launched;
+  };
   let app = await launch();
   const client = new Client({ name: "installed-acceptance", version: "1" });
   let standalone: Client | undefined;
@@ -326,6 +360,28 @@ test("desktop installed MCP survives owner replacement, trusted library restart 
                 blur: 0, spread: 0, color: { r: 0, g: 0, b: 0, a: 0.5 } }],
             },
           } },
+          ...[
+            [-550.25, -400.5],
+            [6000.25, 7000.5],
+          ].map(([x, y], i) => ({
+            type: "insertNode",
+            pageId: initial.pages[0].screenId,
+            index: 4 + i,
+            node: {
+              id: "remote-capture-" + i,
+              type: "SceneFrame",
+              props: {},
+              slots: {},
+              scene: {
+                kind: "frame",
+                x,
+                y,
+                width: 80.5,
+                height: 60.25,
+                fill: "#ff0000",
+              },
+            },
+          })),
           { type: "setTokens", tokens },
         ],
       },
@@ -374,6 +430,9 @@ test("desktop installed MCP survives owner replacement, trusted library restart 
         contents.once("dom-ready", () => {
           if (contents.getURL() !== "studio://preview/preview") return;
           void contents.executeJavaScript(`(() => {
+            const viewportGuard = document.createElement("style");
+            viewportGuard.textContent = '@media (max-width:100px){[data-node-id^="remote-capture-"]{background:rgb(0,255,0)!important}}';
+            document.head.append(viewportGuard);
             const request = window.requestAnimationFrame.bind(window);
             const cancel = window.cancelAnimationFrame.bind(window);
             const pending = new Map();
@@ -405,6 +464,7 @@ test("desktop installed MCP survives owner replacement, trusted library restart 
     const png = Buffer.from(image.data, "base64");
     const renderMetadata = JSON.parse((rendered.content as { type: string; text: string }[]).find((item) => item.type === "text")!.text);
     expect(await app.evaluate(() => (globalThis as any).__slowSnapshotFramesInstalled)).toBe(1);
+    expect(await app.evaluate(() => (globalThis as any).__studioCaptureDiagnostics?.some((row: {stage:string}) => row.stage === "complete"))).toBe(true);
     expect(renderMetadata.viewport).toEqual({ width: 390, height: 600 });
     expect(renderMetadata.text).toContain("Installed MCP approved");
     expect(renderMetadata.warnings).toEqual([]);
@@ -442,6 +502,52 @@ test("desktop installed MCP survives owner replacement, trusted library restart 
     const croppedPng = Buffer.from(croppedContent.find((item) => item.type === "image")!.data, "base64");
     expect(croppedPng.readUInt32BE(16)).toBe(Math.ceil(croppedBound.width));
     expect(croppedPng.readUInt32BE(20)).toBe(Math.ceil(croppedBound.height));
+    for (let i = 0; i < 2; i++) {
+      const remote = await raw("document_render", {
+        pageId: initial.pages[0].screenId,
+        revision: current.revision,
+        nodeId: "remote-capture-" + i,
+        viewport: { width: 390, height: 600 },
+      });
+      expect(remote.isError, JSON.stringify(remote.content)).not.toBe(true);
+      const content = remote.content as {
+        type: string;
+        text: string;
+        data: string;
+      }[];
+      const metadata = JSON.parse(
+        content.find((item) => item.type === "text")!.text,
+      );
+      const bound = metadata.bounds.find(
+        (row: { id: string }) => row.id === "remote-capture-" + i,
+      );
+      expect(bound.x).toBeCloseTo((i ? 6000.25 : -550.25) + 20);
+      expect(bound.y).toBeCloseTo((i ? 7000.5 : -400.5) + 20);
+      expect(metadata.viewport).toEqual({ width: 390, height: 600 });
+      const pixels = await page.evaluate(
+        async (data) => {
+          const image = new Image();
+          image.src = "data:image/png;base64," + data;
+          await image.decode();
+          const canvas = globalThis.document.createElement("canvas");
+          canvas.width = image.naturalWidth;
+          canvas.height = image.naturalHeight;
+          const context = canvas.getContext("2d")!;
+          context.drawImage(image, 0, 0);
+          return {
+            width: image.naturalWidth,
+            height: image.naturalHeight,
+            center: Array.from(context.getImageData(40, 30, 1, 1).data),
+          };
+        },
+        content.find((item) => item.type === "image")!.data,
+      );
+      expect(pixels).toEqual({
+        width: 81,
+        height: 61,
+        center: [255, 0, 0, 255],
+      });
+    }
     const handoff = await call("react_export", { pageId: initial.pages[0].screenId, revision: current.revision });
     expect(handoff.files["Screen.tsx"]).toContain("Installed MCP approved");
     expect(handoff.files["tokens.json"]).toBeDefined();
@@ -476,6 +582,11 @@ test("desktop installed MCP survives owner replacement, trusted library restart 
     const preferences = JSON.parse(await readFile(join(settings, "libraries.json"), "utf8"));
     expect(preferences[await realpath(projectRoot)]).toBe(canonicalLibrary);
   } finally {
+    const stages = await app.evaluate(() => (globalThis as any).__studioCaptureDiagnostics ?? []).catch(() => []);
+    if (stages.length) console.error("Studio capture stages:", JSON.stringify(stages));
+    await testInfo.attach("desktop-capture-diagnostics", {body: captureDiagnostics,contentType:"text/plain"});
+    if (testInfo.status !== testInfo.expectedStatus) console.error(captureDiagnostics);
+
     await standalone?.close();
     if (connected) await client.close();
     await app.close().catch(() => {});

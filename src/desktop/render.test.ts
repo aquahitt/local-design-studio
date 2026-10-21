@@ -60,6 +60,7 @@ it("delivers a snapshot once after listener installation, allowing slow preview 
           document: {
             documentElement: { dataset },
             fonts: { ready: Promise.resolve() },
+            getAnimations: () => [],
             body: { innerText: "Slow preview" },
             querySelectorAll: () => [],
           },
@@ -72,6 +73,7 @@ it("delivers a snapshot once after listener installation, allowing slow preview 
             }
           },
           window: {
+            devicePixelRatio: 2,
             dispatchEvent: (event: { data: { project: Project } }) => {
               if (!dataset.studioPreviewListening) return;
               delivered.push(event.data);
@@ -104,5 +106,91 @@ it("delivers a snapshot once after listener installation, allowing slow preview 
     value: { revision: 7, text: "Slow preview" },
   });
   expect(delivered).toHaveLength(1);
+  expect(destroy).toHaveBeenCalledOnce();
+});
+
+it("primes the hidden native compositor while a node CDP capture waits for a frame", async () => {
+  vi.useFakeTimers();
+  let complete: undefined | (() => void);
+  const prime = vi.fn(async () => {
+      complete?.();
+      return { toPNG: () => Buffer.from("warmup") };
+    }),
+    detach = vi.fn(),
+    destroy = vi.fn();
+  state.createWindow = () => ({
+    destroy,
+    loadURL: async () => {},
+    webContents: {
+      setWindowOpenHandler: vi.fn(),
+      on: vi.fn(),
+      capturePage: prime,
+      debugger: {
+        attach: vi.fn(),
+        detach,
+        sendCommand: vi.fn(
+          () =>
+            new Promise((resolve) => {
+              complete = () =>
+                resolve({ data: Buffer.from("native png").toString("base64") });
+            }),
+        ),
+      },
+      executeJavaScript: async (source: string) => {
+        if (source.includes("const listening"))
+          return { listening: true, revision: "7" };
+        if (source.includes("bounds: [..."))
+          return {
+            bounds: [{ id: "node", x: -100, y: -50, width: 80, height: 60 }],
+            warnings: [],
+            text: "Node",
+          };
+        if (source.includes("body.style.translate")) return 2;
+        return [];
+      },
+    },
+  });
+  const p = {
+    ...project,
+    pages: [
+      {
+        ...project.pages[0],
+        nodes: [
+          {
+            id: "node",
+            type: "SceneFrame",
+            props: {},
+            slots: {},
+            scene: {
+              kind: "frame" as const,
+              x: -100,
+              y: -50,
+              width: 80,
+              height: 60,
+            },
+          },
+        ],
+      },
+    ],
+  };
+  const outcome = captureDesktopSnapshot(p, {
+    pageId: "home",
+    revision: 7,
+    nodeId: "node",
+  }).then(
+    (value) => ({ value }),
+    (error) => ({ error }),
+  );
+  await vi.runAllTimersAsync();
+  expect(await outcome).toMatchObject({
+    value: { revision: 7, nodeId: "node" },
+  });
+  expect(prime).toHaveBeenCalledExactlyOnceWith({
+    x: 0,
+    y: 0,
+    width: 1,
+    height: 1,
+  });
+  expect(detach).toHaveBeenCalledOnce();
   expect(destroy).toHaveBeenCalledOnce();
 });

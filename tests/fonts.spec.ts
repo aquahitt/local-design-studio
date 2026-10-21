@@ -245,8 +245,16 @@ test("English dark font controls stay accessible and reject oversized imports lo
       .filter({ hasText: "Up to 128 files, each no larger than 8 MiB." }),
   ).toBeVisible();
   expect(requests).toEqual([]);
-  await page.getByLabel("Import fonts").setInputFiles({name:"broken.ttf",mimeType:"font/ttf",buffer:Buffer.from([0,1,2])});
-  await expect(page.getByRole("alert")).toContainText("Could not read the font. Choose another TTF, OTF, WOFF or WOFF2 file.");
+  await page
+    .getByLabel("Import fonts")
+    .setInputFiles({
+      name: "broken.ttf",
+      mimeType: "font/ttf",
+      buffer: Buffer.from([0, 1, 2]),
+    });
+  await expect(page.getByRole("alert")).toContainText(
+    "Could not read the font. Choose another TTF, OTF, WOFF or WOFF2 file.",
+  );
   expect(requests).toHaveLength(1);
   await page.getByLabel("Import fonts").focus();
   await expect(page.getByLabel("Import fonts")).toBeFocused();
@@ -481,14 +489,12 @@ test("font proposals show affected page preview and metadata warnings before and
   await page
     .getByRole("button", { name: "Предложения агента", exact: true })
     .click();
-  const card = page
-    .locator(".proposal-card")
-    .filter({
-      has: page.getByRole("heading", {
-        name: "Font mismatch preview",
-        exact: true,
-      }),
-    });
+  const card = page.locator(".proposal-card").filter({
+    has: page.getByRole("heading", {
+      name: "Font mismatch preview",
+      exact: true,
+    }),
+  });
   const preview = card.getByTestId("proposal-preview-" + fixture.proposal.id);
   await expect(preview.locator(".proposal-comparison iframe")).toHaveCount(2);
   await expect(preview.locator(".proposal-font-changes")).toContainText(
@@ -519,4 +525,36 @@ test("font proposals show affected page preview and metadata warnings before and
       .getByRole("status")
       .filter({ hasText: "Не удалось загрузить шрифт проекта" }),
   ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Редактирование холста", exact: true })
+    .click();
+  const canvas = page.getByRole("region", {
+    name: "Свободный холст",
+    exact: true,
+  });
+  await expect(canvas.getByRole("status")).toContainText(
+    "Не удалось загрузить шрифт проекта",
+  );
+  await canvas.scrollIntoViewIfNeeded();
+  const surfaceBox = (await canvas.boundingBox())!,
+    iframeBox = (await canvas.locator("iframe").boundingBox())!;
+  expect(iframeBox.x).toBeCloseTo(surfaceBox.x, 3);
+  expect(iframeBox.y).toBeCloseTo(surfaceBox.y, 3);
+  await page.evaluate(
+    () =>
+      new Promise<void>((ok) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => ok())),
+      ),
+  );
+  const nodeBox = (await page
+    .frameLocator(".canvas-surface iframe")
+    .locator(`[data-node-id="${fixture.screenId}-text"]`)
+    .boundingBox())!;
+  await page.mouse.click(
+    nodeBox.x + nodeBox.width / 2,
+    nodeBox.y + nodeBox.height / 2,
+  );
+  await expect(page.getByTestId("selection")).toContainText(
+    fixture.screenId + "-text",
+  );
 });
