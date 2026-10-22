@@ -84,26 +84,26 @@ test("layer keyboard commands share undoable actions and leave text editing alon
   await page.getByRole("button", { name: "Экраны", exact: true }).click();
   const rows = page.locator(".layer-row");
   const before = await rows.count();
-  const savedFrame = page.waitForResponse((response) =>
+  // Consume the body as soon as headers arrive, before click/keyboard auto-waits
+  // can let a following navigation invalidate Chromium's response resource.
+  const savedOperation = () => page.waitForResponse((response) =>
     response.url().endsWith("/api/operations") && response.request().method() === "POST",
-  );
+  ).then(async (response) => {
+    expect(response.ok()).toBe(true);
+    return response.json() as Promise<{ revision: number }>;
+  });
+  const savedFrame = savedOperation();
   await page.getByRole("button", { name: "Фрейм +", exact: true }).click();
-  const frameResult = await savedFrame;
-  expect(frameResult.ok()).toBe(true);
-  const frameRevision = (await frameResult.json()).revision;
+  const frameRevision = (await savedFrame).revision;
   await expect(rows).toHaveCount(before + 1);
   await expect(page.getByTestId("save-status")).toContainText("ревизия " + frameRevision);
   const count = await rows.count();
   const mod = await page.evaluate(() =>
     /Mac/.test(navigator.platform) ? "Meta" : "Control",
   );
-  const savedDuplicate = page.waitForResponse((response) =>
-    response.url().endsWith("/api/operations") && response.request().method() === "POST",
-  );
+  const savedDuplicate = savedOperation();
   await page.keyboard.press(`${mod}+d`);
-  const duplicateResult = await savedDuplicate;
-  expect(duplicateResult.ok()).toBe(true);
-  const duplicateRevision = (await duplicateResult.json()).revision;
+  const duplicateRevision = (await savedDuplicate).revision;
   await expect(rows).toHaveCount(count + 1);
   await expect(page.getByTestId("save-status")).toContainText("ревизия " + duplicateRevision);
   await page.keyboard.press(`${mod}+z`);
