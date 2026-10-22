@@ -1,0 +1,108 @@
+.transform-controls {
+  margin: 12px 0;
+  border: 1px solid var(--studio-line);
+  border-radius: 12px;
+  min-width: 0;
+}
+.transform-controls summary {
+  padding: 12px;
+  min-height: 40px;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+.transform-controls-body {
+  display: grid;
+  gap: 12px;
+  padding: 0 12px 12px;
+}
+.transform-controls-body p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+.transform-controls fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.transform-modes,
+.transform-actions,
+.transform-numbers {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.transform-controls button {
+  min-height: 40px;
+}
+.transform-modes button {
+  flex: 1;
+}
+.transform-modes button[aria-pressed="true"] {
+  color: var(--studio-accent);
+  background: var(--studio-accent-bg);
+  border-color: var(--studio-accent);
+}
+.transform-numbers label {
+  display: grid;
+  gap: 6px;
+  flex: 1 1 100px;
+  min-width: 0;
+}
+.transform-numbers input {
+  min-height: 40px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  font-variant-numeric: tabular-nums;
+}
+.transform-numbers input[aria-invalid="true"] {
+  border-color: var(--studio-error-text);
+}
+.transform-lock {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+}
+.transform-help,
+.transform-bounds,
+.transform-draft-mark {
+  color: var(--studio-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.transform-bounds {
+  font-variant-numeric: tabular-nums;
+}
+.transform-conflict {
+  display: grid;
+  gap: 8px;
+  color: var(--studio-warning-text);
+  background: var(--studio-warning-bg);
+  border-radius: 8px;
+  padding: 12px;
+}
+.transform-controls [role="alert"] {
+  color: var(--studio-error-text);
+}
+.transform-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.transform-numbers input {
+  border: 1px solid var(--studio-border);
+  border-radius: 8px;
+  padding: 8px;
+  background: var(--studio-surface);
+  color: var(--studio-control-text);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}

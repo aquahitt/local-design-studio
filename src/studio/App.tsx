@@ -3,6 +3,7 @@ import { useI18n } from "./i18n";
 import { StudioSelect } from "./StudioSelect";
 import { Assets } from "./Assets";
 import { FontLibrary } from "./FontLibrary";
+import { TransformControls } from "./TransformControls";
 import { LayerActions } from "./LayerActions";
 import { NodeLayoutInspector } from "./NodeLayoutInspector";
 import { Annotations } from "./Annotations";
@@ -80,13 +81,37 @@ function download(name: string, content: string, type = "application/json") {
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-function proposalChanges(project: Project, operation: Operation, t: (source: string, values?: Record<string, string | number>) => string): string[] {
-  if (operation.type === "addProjectFont" || operation.type === "updateProjectFont")
-    return [t(operation.type === "addProjectFont" ? "Добавить шрифт {0} ({1}, {2})" : "Обновить шрифт {0} ({1}, {2})", {0: operation.font.name, 1: operation.font.weight, 2: operation.font.style})];
+function proposalChanges(
+  project: Project,
+  operation: Operation,
+  t: (source: string, values?: Record<string, string | number>) => string,
+): string[] {
+  if (
+    operation.type === "addProjectFont" ||
+    operation.type === "updateProjectFont"
+  )
+    return [
+      t(
+        operation.type === "addProjectFont"
+          ? "Добавить шрифт {0} ({1}, {2})"
+          : "Обновить шрифт {0} ({1}, {2})",
+        {
+          0: operation.font.name,
+          1: operation.font.weight,
+          2: operation.font.style,
+        },
+      ),
+    ];
   if (operation.type === "removeProjectFont")
-    return [t("Удалить шрифт {0}", {0: project.fonts?.find(font => font.id === operation.fontId)?.name ?? operation.fontId})];
+    return [
+      t("Удалить шрифт {0}", {
+        0:
+          project.fonts?.find((font) => font.id === operation.fontId)?.name ??
+          operation.fontId,
+      }),
+    ];
   if (operation.type === "setNodeGeometry")
-    return [t("Изменить геометрию слоя {0}", {0: operation.nodeId})];
+    return [t("Изменить геометрию слоя {0}", { 0: operation.nodeId })];
   if (operation.type === "updateProps") {
     const before = project.pages
       .map((p) => locate(p.nodes, operation.nodeId))
@@ -193,7 +218,9 @@ export function StudioApp({
   const [propsDirty, setDirty] = useState(false);
   const [layoutDirty, setLayoutDirty] = useState(false);
   const [definitionDirty, setDefinitionDirty] = useState(false);
-  const inspectorDirty = propsDirty || layoutDirty || definitionDirty;
+  const [transformDirty, setTransformDirty] = useState(false);
+  const inspectorDirty =
+    propsDirty || layoutDirty || definitionDirty || transformDirty;
   const [viewportDirty, setViewportDirty] = useState(false);
   const viewportPageSnapshot = useRef<ProjectPage | null>(null);
   const dirty = inspectorDirty || viewportDirty;
@@ -407,7 +434,7 @@ export function StudioApp({
   if (livePage) viewportPageSnapshot.current = livePage;
   const page =
     livePage ??
-    (viewportDirty ? viewportPageSnapshot.current : null) ??
+    (viewportDirty || transformDirty ? viewportPageSnapshot.current : null) ??
     project?.pages[0];
   const library: ComponentLibrary | undefined = activeLibraries.find(
     (l) =>
@@ -979,7 +1006,14 @@ export function StudioApp({
                         </article>
                       ))}
                   </div>
-                  {client && <FontLibrary client={client} project={project} onApply={mutate} disabled={dirty || tokenDraft !== null} />}
+                  {client && (
+                    <FontLibrary
+                      client={client}
+                      project={project}
+                      onApply={mutate}
+                      disabled={dirty || tokenDraft !== null}
+                    />
+                  )}
                 </section>
               )}
               {view === "editor" &&
@@ -1053,7 +1087,7 @@ export function StudioApp({
                         </StudioButton>
                         {!canvasEdit && (
                           <select
-                            aria-label={t("Масштаб")}
+                            aria-label={t("Масштаб просмотра")}
                             value={zoom}
                             onChange={(e) => setZoom(Number(e.target.value))}
                           >
@@ -1180,7 +1214,12 @@ export function StudioApp({
                           ...(selected ? [selected] : []),
                         ]),
                       ]}
-                      disabled={propsDirty || layoutDirty || viewportDirty}
+                      disabled={
+                        propsDirty ||
+                        layoutDirty ||
+                        viewportDirty ||
+                        transformDirty
+                      }
                       onDirty={setDefinitionDirty}
                       mutate={mutate}
                       onSelection={(ids) => {
@@ -1325,18 +1364,43 @@ export function StudioApp({
                         )}
                       </div>
                       <aside>
+                        <TransformControls
+                          key={project.projectId + ":" + page.screenId}
+                          project={project}
+                          pageId={page.screenId}
+                          selectedIds={[
+                            ...new Set([
+                              ...multipleIds.filter((id) =>
+                                locate(page.nodes, id),
+                              ),
+                              ...(selected ? [selected] : []),
+                            ]),
+                          ]}
+                          disabled={
+                            propsDirty ||
+                            layoutDirty ||
+                            definitionDirty ||
+                            viewportDirty ||
+                            tokenDraft !== null
+                          }
+                          onDirty={setTransformDirty}
+                          onApply={mutate}
+                        />
                         {node && (
                           <NodeLayoutInspector
                             key={node.id + "-layout"}
                             node={node}
                             project={project}
-                            disabled={propsDirty || definitionDirty}
+                            disabled={
+                              propsDirty || definitionDirty || transformDirty
+                            }
                             onDirty={setLayoutDirty}
                             onApply={mutate}
                           />
                         )}
                         {node ? (
                           <Inspector
+                            disabled={transformDirty}
                             key={node.id}
                             node={node}
                             revision={project.revision}
@@ -1368,6 +1432,7 @@ export function StudioApp({
                         {node && (
                           <div className="inspector">
                             <StudioButton
+                              disabled={transformDirty}
                               onClick={() =>
                                 void mutate(
                                   [{ type: "removeNode", nodeId: node.id }],
