@@ -76,3 +76,27 @@ Finite animations завершаются, infinite отменяются в dispo
 и его [реализации v44.5.1](https://github.com/electron/electron/blob/v44.5.1/shell/browser/api/electron_api_web_contents.cc).
 Native packaged smoke проверяет pixels удалённых узлов и media-query guard
 на сохранность исходного viewport. Timeout и raster budgets не увеличиваются.
+
+## Affine-геометрия сцены
+
+`scene.linearTransform: [a,b,c,d]` задаёт линейную часть CSS
+`matrix(a,b,c,d,0,0)` с origin `0 0`. Единственный перенос хранится в `x/y`;
+`width/height` остаются локальными размерами layout, а не мировым bounding box.
+Preview и React handoff используют общий `layerStyle`: неравномерный масштаб,
+shear и отражение применяются ко всему wrapper, включая текст, SVG, paint и детей.
+Шрифт, path, локальные размеры детей и определения компонентов не переписываются.
+Legacy `rotation` по-прежнему выдаёт прежний `rotate(…deg)`; открытие старого
+документа не добавляет матрицы. Одновременные rotation и linearTransform запрещены
+валидатором.
+
+DOM bounds и PNG узла описывают его мировой axis-aligned bounding box; пустые
+углы после поворота/shear допустимы. Clip предков действует в их преобразованной
+локальной системе координат и сохраняется при node capture. Порталы доверенного
+React-компонента за пределами wrapper не получают его transform/clip: это
+ограничение DOM-порталов, а не повод преобразовывать документ или rasterize компонент.
+
+Проверки `src/core/affine-render.test.ts` измеряют четыре угла по независимым
+числовым ожиданиям, layout текста/SVG и масштаб содержимого в настоящем Chromium.
+Режим `affine` в `src/service/handoff-fixture.test.ts` собирает независимый React
+export, проверяет мировые bounds и реальные RGB для вложенных shear/reflection,
+неравномерного масштаба и clipping в service snapshot и export.

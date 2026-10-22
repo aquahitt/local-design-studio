@@ -22,7 +22,7 @@ import { computedStylesExpression } from "./computed-styles";
 import type { RenderComputedStyles } from "./render";
 const require = createRequire(import.meta.url);
 
-it.each(["components", "scene", "paint", "fonts", "fonts-wide"])(
+it.each(["components", "scene", "paint", "fonts", "fonts-wide", "affine"])(
   "exported %s screen builds and renders in an isolated fixture with matching real styles and spacing",
   async (mode) => {
     const viewportWidth = mode === "fonts-wide" ? 1280 : 390;
@@ -194,6 +194,59 @@ it.each(["components", "scene", "paint", "fonts", "fonts-wide"])(
           solid("violet", rgba(128, 128, 255)),
         ]),
         rounded,
+      );
+    }
+    if (mode === "affine") {
+      project.pages[0].nodes.push(
+        {
+          id: "affine-clip",
+          type: "SceneFrame",
+          props: {},
+          scene: {
+            kind: "frame",
+            x: 80,
+            y: 280,
+            width: 100,
+            height: 80,
+            linearTransform: [1, 0.5, 0.5, 1],
+            clip: true,
+            fill: "#ff0000",
+          },
+          slots: {
+            content: [
+              {
+                id: "reflected-child",
+                type: "SceneFrame",
+                props: {},
+                slots: {},
+                scene: {
+                  kind: "frame",
+                  x: 90,
+                  y: 20,
+                  width: 60,
+                  height: 50,
+                  linearTransform: [-1, 0, 0, 2],
+                  fill: "#0000ff",
+                },
+              },
+            ],
+          },
+        },
+        {
+          id: "nonuniform",
+          type: "SceneFrame",
+          props: {},
+          slots: {},
+          scene: {
+            kind: "frame",
+            x: 250,
+            y: 280,
+            width: 30,
+            height: 20,
+            linearTransform: [2, 0, 0, 3],
+            fill: "#00ff00",
+          },
+        },
       );
     }
     let fontBytes: Uint8Array | undefined;
@@ -522,6 +575,66 @@ it.each(["components", "scene", "paint", "fonts", "fonts-wide"])(
             .evaluate((node) => getComputedStyle(node).boxShadow),
         ).toContain("inset");
         expect(frame.modelStyle.boxShadow).toBe("inset 0 0 0 10px #123456");
+      }
+      if (mode === "affine") {
+        const snapshot = await ownerRender(project, {
+          pageId: "home",
+          revision: 2,
+        });
+        expect(snapshot.warnings).toEqual([]);
+        // Independently computed world bounds: body origin (20,20), then
+        // parent shear, then child's reflected/nonuniform local transform.
+        const expectedBounds = [
+          { id: "affine-clip", x: 100, y: 300, width: 140, height: 130 },
+          { id: "reflected-child", x: 140, y: 335, width: 110, height: 130 },
+          { id: "nonuniform", x: 270, y: 300, width: 60, height: 60 },
+        ];
+        for (const { id, ...bounds } of expectedBounds) {
+          expect(
+            await page.locator(`[data-node-id="${id}"]`).boundingBox(),
+          ).toEqual(bounds);
+          expect(snapshot.bounds.find((row) => row.id === id)).toEqual({
+            id,
+            ...bounds,
+          });
+        }
+        const captures = [
+          snapshot.data,
+          (await page.screenshot()).toString("base64"),
+        ];
+        const samples = await page.evaluate(
+          async (captures) =>
+            Promise.all(
+              captures.map(async (data) => {
+                const image = new Image();
+                image.src = "data:image/png;base64," + data;
+                await image.decode();
+                const canvas = document.createElement("canvas");
+                canvas.width = image.naturalWidth;
+                canvas.height = image.naturalHeight;
+                const context = canvas.getContext("2d")!;
+                context.drawImage(image, 0, 0);
+                return [
+                  [115, 315],
+                  [180, 370],
+                  [205, 420],
+                  [130, 345],
+                  [300, 330],
+                ].map(([x, y]) =>
+                  Array.from(context.getImageData(x, y, 1, 1).data),
+                );
+              }),
+            ),
+          captures,
+        );
+        const expected = [
+          [255, 0, 0, 255], // Parent fill inside transformed clip.
+          [0, 0, 255, 255], // Reflected and vertically scaled child.
+          [255, 255, 255, 255], // Child geometry exists here, but parent's shear clip removes paint.
+          [255, 0, 0, 255], // Reflection puts child to the other side of its local origin.
+          [0, 255, 0, 255], // Nonuniformly scaled independent root.
+        ];
+        expect(samples).toEqual([expected, expected]);
       }
       if (mode === "paint") {
         const snapshot = await renderSnapshot(project, {

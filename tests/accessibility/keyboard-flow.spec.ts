@@ -1,6 +1,7 @@
+import { stopFixtureProcess as stopFixture } from "../fixture-process";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -68,18 +69,6 @@ async function startFixture(projectRoot: string) {
     await stopFixture(child);
     throw new Error("Owned accessibility fixture did not become ready: " + output, {cause:error});
   }
-}
-
-async function stopFixture(child: ChildProcess) {
-  if (child.exitCode !== null || child.signalCode !== null) return;
-  await new Promise<void>((resolveStop, reject) => {
-    const timer = setTimeout(() => {
-      child.kill("SIGKILL");
-      reject(new Error("Fixture server did not stop within 10 seconds"));
-    }, 10000);
-    child.once("exit", () => { clearTimeout(timer); resolveStop(); });
-    child.kill("SIGTERM");
-  });
 }
 
 for (const locale of ["ru", "en"] as const) {

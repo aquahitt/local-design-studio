@@ -1,3 +1,4 @@
+import { AFFINE_LIMITS } from "../core/scene";
 import { readProjectAsset, projectAssetMediaType, requestedFontFace } from "./project-assets";
 import { writeFontAsset } from "./font-assets";
 import { inspectDocument } from "./inspect";
@@ -231,6 +232,15 @@ export async function createStudioServer(options: StudioOptions) {
               autoApply: options.autoApply === true,
               contextTTL: 15000,
               allowedOrigins: origins,
+              geometry: {
+                affine: true,
+                format: "linearTransform",
+                translation: "x/y",
+                resize: "layout",
+                scale: "content",
+                operation: "setNodeGeometry",
+                limits: AFFINE_LIMITS,
+              },
               operations: true,
               undo: true,
               redo: true,

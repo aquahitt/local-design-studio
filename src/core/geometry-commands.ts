@@ -1,3 +1,4 @@
+import { hasLockedSceneDescendant } from "./scene-locks";
 import type { Operation } from "./operations";
 import { CoreError, type Project, type ProjectNode } from "./project";
 import {
@@ -10,12 +11,7 @@ import {
 } from "./scene";
 
 export type SceneAlignment =
-  | "left"
-  | "center"
-  | "right"
-  | "top"
-  | "middle"
-  | "bottom";
+  "left" | "center" | "right" | "top" | "middle" | "bottom";
 export type SceneDistribution = "horizontal" | "vertical";
 
 type SelectedLayer = {
@@ -51,7 +47,10 @@ function selectedLayers(
     selectedAncestor = false,
   ) {
     for (const node of nodes) {
-      const transform = multiplyTransforms(parentTransform, nodeTransform(node));
+      const transform = multiplyTransforms(
+        parentTransform,
+        nodeTransform(node),
+      );
       const locked = inheritedLock || !!node.locked;
       const isSelected = selected.has(node.id);
       if (isSelected)
@@ -64,7 +63,13 @@ function selectedLayers(
           selectedAncestor,
         });
       for (const children of Object.values(node.slots))
-        walk(children, pageId, transform, locked, selectedAncestor || isSelected);
+        walk(
+          children,
+          pageId,
+          transform,
+          locked,
+          selectedAncestor || isSelected,
+        );
     }
   }
   for (const page of project.pages)
@@ -78,16 +83,8 @@ function selectedLayers(
   if (new Set([...found.values()].map((layer) => layer.pageId)).size > 1)
     throw new CoreError("MIXED_PAGE_SELECTION");
   const roots = [...found.values()].filter((layer) => !layer.selectedAncestor);
-  function hasLockedDescendant(node: ProjectNode): boolean {
-    return (
-      !!node.locked ||
-      Object.values(node.slots).some((children) =>
-        children.some(hasLockedDescendant),
-      )
-    );
-  }
   for (const layer of roots)
-    if (hasLockedDescendant(layer.node))
+    if (hasLockedSceneDescendant(project, layer.node))
       throw new CoreError("NODE_LOCKED", layer.node.id);
   if (roots.length < minimum) throw new CoreError("INSUFFICIENT_SELECTION");
   return roots;
@@ -148,7 +145,9 @@ export function alignSceneLayers(
   nodeIds: string[],
   alignment: SceneAlignment,
 ): Operation[] {
-  if (!["left", "center", "right", "top", "middle", "bottom"].includes(alignment))
+  if (
+    !["left", "center", "right", "top", "middle", "bottom"].includes(alignment)
+  )
     throw new CoreError("INVALID_ALIGNMENT");
   const layers = selectedLayers(project, nodeIds, 2);
   const bounds = layers.map(worldBounds);

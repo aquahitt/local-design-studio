@@ -2,6 +2,7 @@ import type { Project, ProjectNode } from "../core/project";
 import type { LibraryMetadata } from "../library/sdk";
 import { resolveTokens } from "../core/tokens";
 import { BLEND_MODES } from "../core/paint";
+import { AFFINE_LIMITS } from "../core/scene";
 const str = { type: "string", minLength: 1 };
 const number = { type: "number" };
 const integer = { type: "integer", minimum: 0 };
@@ -140,6 +141,37 @@ const textStyleConstraint = {
   },
   then: { not: { required: ["textStyle"] } },
 };
+const linearTransform = {
+  type: "array",
+  minItems: 4,
+  maxItems: 4,
+  items: {
+    type: "number",
+    minimum: -AFFINE_LIMITS.maxCoefficient,
+    maximum: AFFINE_LIMITS.maxCoefficient,
+  },
+  description:
+    "[a,b,c,d] linear affine matrix; x/y are the sole translation. Exclusive with rotation. Parser checks singular values and condition number against capabilities.geometry.limits; reflections are supported.",
+};
+const transformConstraint = {
+  not: { required: ["rotation", "linearTransform"] },
+};
+const geometry = {
+  ...object(
+    {
+      x: coordinate,
+      y: coordinate,
+      width: dimension,
+      height: dimension,
+      rotation: coordinate,
+      linearTransform,
+    },
+    ["x", "y", "width", "height"],
+  ),
+  allOf: [transformConstraint],
+  description:
+    "Replaces geometry only, removing the previous rotation or linearTransform when absent; preserves kind, paint, text and child geometry.",
+};
 const sceneFields = {
   kind: { enum: ["frame", "text", "vector", "component", "image"] },
   x: coordinate,
@@ -147,6 +179,7 @@ const sceneFields = {
   width: dimension,
   height: dimension,
   rotation: coordinate,
+  linearTransform,
   opacity: { type: "number", minimum: 0, maximum: 1 },
   fill: { type: "string" },
   fills: paints,
@@ -161,7 +194,7 @@ const sceneFields = {
 };
 const scene = {
   ...object(sceneFields, ["kind", "x", "y", "width", "height"]),
-  allOf: [framePaintConstraint, textStyleConstraint],
+  allOf: [framePaintConstraint, textStyleConstraint, transformConstraint],
 };
 const overrides = {
   type: "object",
@@ -335,11 +368,16 @@ export const batchSchema = {
                 locked: { type: "boolean" },
                 scene: {
                   ...object(sceneFields, []),
-                  allOf: [framePaintConstraint, textStyleConstraint],
+                  allOf: [
+                    framePaintConstraint,
+                    textStyleConstraint,
+                    transformConstraint,
+                  ],
                 },
               },
               ["nodeId"],
             ),
+            op("setNodeGeometry", { nodeId: str, geometry }),
             op("addProjectFont", { font: projectFont }),
             op("updateProjectFont", { fontId, font: projectFont }),
             op("removeProjectFont", { fontId }),
