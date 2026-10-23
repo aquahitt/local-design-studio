@@ -1,3 +1,4 @@
+import { transformsEnglish } from "./en-transforms";
 import { fontsEnglish } from "./en-fonts";
 import { editorEnglish } from "./en-editor";
 import { desktopEnglish } from "./en-desktop";
@@ -132,6 +133,7 @@ export const english: Record<string, string> = {
   "Язык студии": "Studio language",
   Русский: "Russian",
   Английский: "English",
+  ...transformsEnglish,
   ...fontsEnglish,
   ...editorEnglish,
   ...desktopEnglish,
