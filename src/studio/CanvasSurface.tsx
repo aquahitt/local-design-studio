@@ -11,6 +11,8 @@ import type { Point, SceneView } from "../core/scene";
 import { translateSceneLayers } from "../core/geometry-commands";
 import type { ComponentLibrary } from "../library/sdk";
 import { Preview } from "./Preview";
+import { measuredCanvasContext, type CanvasContext } from "./canvasContext";
+export type { CanvasContext } from "./canvasContext";
 import {
   fitCanvasBounds,
   readCanvasView,
@@ -62,14 +64,6 @@ type Gesture = {
   ids?: string[];
   basis?: Basis[];
   blockedReason?: string;
-};
-export type CanvasContext = {
-  revision: number | null;
-  transient: boolean;
-  view: SceneView;
-  bounds: CanvasBounds[];
-  width: number;
-  height: number;
 };
 export function CanvasSurface({
   project,
@@ -124,6 +118,7 @@ export function CanvasSurface({
     [hand, setHand] = useState(false),
     [space, setSpace] = useState(false),
     [error, setError] = useState("");
+  const [nonPanGesture, setNonPanGesture] = useState(false);
   const [positions, setPositions] = useState<Record<string, Point>>({});
   const renderState = useRef({
     view,
@@ -262,13 +257,19 @@ export function CanvasSurface({
     }
   }, [bounds, size, updateView]);
   useEffect(() => {
-    onContext?.({
-      view,
-      bounds: geometryEpoch === epoch ? bounds : [],
-      ...size,
-      revision: geometryEpoch === epoch ? geometryRevision : null,
-      transient: Object.keys(positions).length > 0,
-    });
+    onContext?.(
+      measuredCanvasContext({
+        projectId: project.projectId,
+        pageId: page.screenId,
+        view,
+        bounds,
+        ...size,
+        revision: geometryRevision,
+        transient: nonPanGesture || Object.keys(positions).length > 0,
+        epoch,
+        measuredEpoch: geometryEpoch,
+      }),
+    );
   }, [
     view,
     bounds,
@@ -277,10 +278,14 @@ export function CanvasSurface({
     geometryEpoch,
     epoch,
     positions,
+    nonPanGesture,
+    project.projectId,
+    page.screenId,
     onContext,
   ]);
   const cancel = useCallback(() => {
     gesture.current = null;
+    setNonPanGesture(false);
     setPositions((current) => (Object.keys(current).length ? {} : current));
     setSpace(false);
   }, []);
@@ -346,6 +351,7 @@ export function CanvasSurface({
     if (g !== gesture.current) return;
     if (!g.pan && !g.ids) return; // Pick may still be in flight.
     gesture.current = null;
+    setNonPanGesture(false);
     setPositions((current) => (Object.keys(current).length ? {} : current));
     if (
       g.pan ||
@@ -408,7 +414,7 @@ export function CanvasSurface({
             : [id]
         : [];
       if (!current.onSelection(ids)) {
-        gesture.current = null;
+        cancel();
         return;
       }
       g.ids = ids;
@@ -472,6 +478,7 @@ export function CanvasSurface({
       ended: false,
     };
     gesture.current = g;
+    setNonPanGesture(!g.pan);
     if (!g.pan) setPick({ requestId: g.requestId, ...p });
   }
   function applyZoom() {
