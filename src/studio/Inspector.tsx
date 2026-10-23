@@ -7,7 +7,9 @@ export function Inspector({
   revision,
   onApply,
   onDirty,
+  disabled = false,
 }: {
+  disabled?: boolean;
   node: ProjectNode;
   revision: number;
   onApply: (
@@ -29,6 +31,7 @@ export function Inspector({
     return () => onDirty(false);
   }, [draft.dirty, onDirty]);
   async function apply() {
+    if (disabled) return;
     try {
       const props = JSON.parse(draft.value);
       if (!props || Array.isArray(props) || typeof props !== "object")
@@ -51,6 +54,7 @@ export function Inspector({
           value={draft.value}
           onChange={(e) => setDraft((d) => editDraft(d, e.target.value))}
           spellCheck={false}
+          disabled={disabled}
         />
       </label>
       {draft.conflict && (
@@ -60,7 +64,10 @@ export function Inspector({
             {t("Твой ввод сохранён. Базовая ревизия")} {draft.baseRevision}
             {t(", актуальная")} {revision}.
           </p>
-          <button onClick={() => setDraft((d) => rebaseDraft(d, revision))}>
+          <button
+            disabled={disabled}
+            onClick={() => setDraft((d) => rebaseDraft(d, revision))}
+          >
             {t("Сохранить мой ввод поверх новой ревизии")}
           </button>
         </div>
@@ -68,12 +75,15 @@ export function Inspector({
       {error && <p role="alert">{error}</p>}
       <button
         className="accent"
-        disabled={!draft.dirty || draft.conflict}
+        disabled={disabled || !draft.dirty || draft.conflict}
         onClick={() => void apply()}
       >
         {t("Применить свойства")}
       </button>
-      <button onClick={() => setDraft(beginDraft(node.props, revision))}>
+      <button
+        disabled={disabled}
+        onClick={() => setDraft(beginDraft(node.props, revision))}
+      >
         {t("Сбросить ввод")}
       </button>
     </section>

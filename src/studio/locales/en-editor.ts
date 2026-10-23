@@ -214,7 +214,7 @@ export const editorEnglish: Record<string, string> = {
   "· ссылка": "· reference",
   "Живые компоненты": "Live components",
   Экран: "Page",
-  Масштаб: "Zoom",
+  "Масштаб просмотра": "Preview zoom",
   "· не сохранено": "· unsaved",
   "Настройки устройства": "Device settings",
   "Выбранный экран удалён. Ввод размеров сохранён: скопируй его или нажми «Сбросить размеры».":
