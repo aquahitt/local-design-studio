@@ -1,6 +1,47 @@
 import { cleanupCanvasPages } from "./canvas-cleanup";
 import { test, expect, type Page } from "@playwright/test";
 import { selectStudioOption } from "./select-helpers";
+async function waitForCanvasGeometry(
+  page: Page,
+  canvas: ReturnType<Page["getByRole"]>,
+  node: ReturnType<ReturnType<Page["frameLocator"]>["locator"]>,
+  headers: Record<string, string>,
+  nodeId: string,
+) {
+  await expect
+    .poll(async () => {
+      const { context, revision } = await page.evaluate(async (headers) => {
+        const [context, project] = await Promise.all([
+          fetch("/api/context", { headers }).then((r) => r.json()),
+          fetch("/api/project", { headers }).then((r) => r.json()),
+        ]);
+        return { context: context.context, revision: project.revision };
+      }, headers);
+      const view = await canvas.evaluate((element) => ({
+        zoom: Number(element.getAttribute("data-zoom")),
+        panX: Number(element.getAttribute("data-pan-x")),
+        panY: Number(element.getAttribute("data-pan-y")),
+      }));
+      const camera = context?.camera,
+        measured = context?.bounds?.[nodeId];
+      const box = await node.boundingBox();
+      return (
+        context?.revision === revision &&
+        camera?.revision === revision &&
+        camera.transient === false &&
+        camera.view.zoom === view.zoom &&
+        camera.view.panX === view.panX &&
+        camera.view.panY === view.panY &&
+        camera.bounds.some((bound: { id: string }) => bound.id === nodeId) &&
+        !!measured &&
+        !!box &&
+        (["x", "y", "width", "height"] as const).every(
+          (key) => Math.abs(measured[key] - box[key]) < 1,
+        )
+      );
+    })
+    .toBe(true);
+}
 async function setup(page: Page) {
   await page.setViewportSize({ width: 1600, height: 1200 });
   await page.goto("/");
@@ -143,10 +184,11 @@ test("camera pans, zooms around cursor, fits negative frames and restores withou
 test("scene drag commits once, undo restores, Shift toggles and Escape cancels", async ({
   page,
 }) => {
-  const { canvas, read, screenId, revision, name } = await setup(page);
+  const { canvas, read, screenId, revision, name, headers } = await setup(page);
   const frame = page.frameLocator(`iframe[title="Холст ${name}"]`);
   const node = frame.locator(`[data-node-id="${screenId}-a"]`);
   const p = async () => {
+    await waitForCanvasGeometry(page, canvas, node, headers, screenId + "-a");
     const b = (await node.boundingBox())!;
     return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
   };
@@ -190,9 +232,82 @@ test("scene drag commits once, undo restores, Shift toggles and Escape cancels",
   const click = await p();
   await page.mouse.click(click.x, click.y);
   await expect(page.getByTestId("selection")).toContainText(screenId + "-a");
+  await waitForCanvasGeometry(page, canvas, node, headers, screenId + "-a");
   await page.keyboard.down("Shift");
   await page.mouse.click(click.x, click.y);
   await page.keyboard.up("Shift");
+  await expect(page.getByTestId("selection")).toContainText("—");
+  expect(await read()).toEqual(before);
+});
+
+test("rapid selected-layer clicks apply the latest held reply and ignore an older reply", async ({
+  page,
+}) => {
+  const { canvas, read, screenId, name, headers } = await setup(page);
+  const nodeId = screenId + "-a";
+  const node = page
+    .frameLocator(`iframe[title="Холст ${name}"]`)
+    .locator(`[data-node-id="${nodeId}"]`);
+  await page
+    .getByRole("button", { name: "Выделить " + nodeId, exact: true })
+    .click();
+  await expect(page.getByTestId("selection")).toContainText(nodeId);
+  await waitForCanvasGeometry(page, canvas, node, headers, nodeId);
+  const before = await read();
+  await page.evaluate(() => {
+    const w = window as any;
+    w.__heldPicks = [];
+    const iframe = document.querySelector(
+      ".canvas-surface iframe",
+    ) as HTMLIFrameElement;
+    const hold = (event: MessageEvent) => {
+      if (
+        event.isTrusted &&
+        event.origin === location.origin &&
+        event.source === iframe.contentWindow &&
+        event.data?.type === "studio-preview-picked"
+      ) {
+        w.__heldPicks.push({
+          data: event.data,
+          source: event.source,
+          origin: event.origin,
+        });
+        event.stopImmediatePropagation();
+      }
+    };
+    addEventListener("message", hold, true);
+    w.__stopHoldingPicks = () => removeEventListener("message", hold, true);
+  });
+  const box = (await node.boundingBox())!;
+  const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  await page.mouse.click(point.x, point.y);
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__heldPicks.length))
+    .toBe(1);
+  await page.keyboard.down("Shift");
+  await page.mouse.click(point.x, point.y);
+  await page.keyboard.up("Shift");
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__heldPicks.length))
+    .toBe(2);
+  const replies = await page.evaluate(() =>
+    (window as any).__heldPicks.map((reply: any) => reply.data),
+  );
+  expect(replies[1].requestId).toBeGreaterThan(replies[0].requestId);
+  expect(replies[1].epoch).toBe(replies[0].epoch);
+  expect(replies.map((reply: any) => reply.id)).toEqual([nodeId, nodeId]);
+  await page.evaluate(() => {
+    const w = window as any;
+    w.__stopHoldingPicks();
+    dispatchEvent(new MessageEvent("message", w.__heldPicks[1]));
+  });
+  await expect(page.getByTestId("selection")).toContainText("—");
+  await page.evaluate(async () => {
+    dispatchEvent(new MessageEvent("message", (window as any).__heldPicks[0]));
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    );
+  });
   await expect(page.getByTestId("selection")).toContainText("—");
   expect(await read()).toEqual(before);
 });
