@@ -182,6 +182,33 @@ test("desktop creates, saves, reopens disk project and isolates preview", async 
     await canvas.scrollIntoViewIfNeeded();
     const canvasNode = page.frameLocator(".page-stage iframe").locator('[data-node-id="demo-title"]');
     await expect(canvasNode).toBeVisible();
+    // Visibility precedes the first geometry measurement and camera fit. Read
+    // hit-test coordinates only when the service context describes this DOM camera.
+    await expect.poll(async () => {
+      const context = await page.evaluate(async () => {
+        const session = await fetch("/api/session").then((r) => r.json());
+        return (await fetch("/api/context", {
+          headers: { Authorization: `Bearer ${session.token}` },
+        }).then((r) => r.json())).context;
+      });
+      const view = await canvas.evaluate((element) => ({
+        zoom: Number(element.getAttribute("data-zoom")),
+        panX: Number(element.getAttribute("data-pan-x")),
+        panY: Number(element.getAttribute("data-pan-y")),
+      }));
+      const box = await canvasNode.boundingBox();
+      const camera = context?.camera;
+      const measured = context?.bounds?.["demo-title"];
+      return context?.surfaceMode === "edit" &&
+        camera?.transient === false && camera.revision === context.revision &&
+        camera.view.zoom === view.zoom && camera.view.panX === view.panX &&
+        camera.view.panY === view.panY &&
+        camera.bounds.some((bound: { id: string }) => bound.id === "demo-title") &&
+        !!box && !!measured &&
+        (["x", "y", "width", "height"] as const).every(
+          (key) => Math.abs(box[key] - measured[key]) < 1,
+        );
+    }, { timeout: 10000 }).toBe(true);
     const nodeBox = (await canvasNode.boundingBox())!;
     await page.mouse.click(nodeBox.x+nodeBox.width/2,nodeBox.y+nodeBox.height/2);
     await expect(page.getByTestId("selection")).toContainText("demo-title");

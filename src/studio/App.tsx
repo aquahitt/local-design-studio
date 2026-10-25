@@ -1,4 +1,9 @@
 import { CanvasSurface, type CanvasContext } from "./CanvasSurface";
+import {
+  canonicalCanvasBounds,
+  canvasContextIdentity,
+  createLatestPublisher,
+} from "./canvasContext";
 import { useI18n } from "./i18n";
 import { StudioSelect } from "./StudioSelect";
 import { Assets } from "./Assets";
@@ -251,8 +256,27 @@ export function StudioApp({
   const [zoom, setZoom] = useState(1);
   const [canvasEdit, setCanvasEdit] = useState(false);
   const canvasContext = useRef<CanvasContext | null>(null);
+  const [contextPublisher] = useState(() =>
+    createLatestPublisher<{ client: StudioClient; data: unknown }>(
+      ({ client, data }) => client.request("context", data),
+    ),
+  );
+  const sendEditorContext = useRef<((updated?: CanvasContext) => void) | null>(
+    null,
+  );
   const receiveCanvasContext = useCallback((value: CanvasContext) => {
+    const previous = canvasContext.current;
     canvasContext.current = value;
+    if (
+      !previous ||
+      previous.transient !== value.transient ||
+      previous.revision !== value.revision ||
+      previous.view !== value.view ||
+      previous.width !== value.width ||
+      previous.height !== value.height ||
+      (!value.transient && previous.bounds !== value.bounds)
+    )
+      sendEditorContext.current?.(value);
   }, []);
   useEffect(() => {
     canvasContext.current = null;
@@ -354,28 +378,42 @@ export function StudioApp({
       controller.abort();
       if (poll) clearInterval(poll);
       if (api)
-        void api
-          .request("context", {
+        contextPublisher.publish({
+          client: api,
+          data: {
             clientId: clientId.current,
             pageId,
             selectedIds: [],
             connected: false,
-          })
-          .catch(() => {});
+          },
+        });
     };
   }, [accept, loadAttempt]);
   useEffect(() => {
     if (!client || !project) return;
     const contextPage =
       project.pages.find((p) => p.screenId === pageId) ?? project.pages[0];
-    const send = () => {
+    const send = (updated?: CanvasContext) => {
+      if (
+        updated &&
+        !canvasContextIdentity(updated, project.projectId, contextPage.screenId)
+      )
+        return;
+      const camera =
+        canvasContext.current &&
+        canvasContextIdentity(
+          canvasContext.current,
+          project.projectId,
+          contextPage.screenId,
+        )
+          ? canvasContext.current
+          : null;
       const bounds: Record<string, unknown> = Object.create(null);
       const frame = stage.current?.querySelector("iframe");
       const origin = frame?.getBoundingClientRect();
       if (canvasEdit) {
-        const camera = canvasContext.current;
-        if (camera?.revision === project.revision) {
-          camera.bounds.forEach((rect) => {
+        if (camera) {
+          canonicalCanvasBounds(camera, project.revision).forEach((rect) => {
             bounds[rect.id] = {
               x:
                 (origin?.x ?? 0) + rect.x * camera.view.zoom + camera.view.panX,
@@ -398,8 +436,9 @@ export function StudioApp({
               height: rect.height * zoom,
             };
           });
-      void client
-        .request("context", {
+      contextPublisher.publish({
+        client,
+        data: {
           clientId: clientId.current,
           pageId: contextPage.screenId,
           selectedIds: [
@@ -418,17 +457,24 @@ export function StudioApp({
           bounds,
           surfaceMode: canvasEdit ? "edit" : "preview",
           camera:
-            canvasEdit && canvasContext.current?.revision === project.revision
-              ? canvasContext.current
+            canvasEdit && camera
+              ? {
+                  ...camera,
+                  bounds: canonicalCanvasBounds(camera, project.revision),
+                }
               : undefined,
           dirty,
           revision: project.revision,
-        })
-        .catch(() => {});
+        },
+      });
     };
+    sendEditorContext.current = send;
     send();
     const timer = setInterval(send, 3500);
-    return () => clearInterval(timer);
+    return () => {
+      if (sendEditorContext.current === send) sendEditorContext.current = null;
+      clearInterval(timer);
+    };
   }, [client, project, pageId, selected, multipleIds, dirty, zoom, canvasEdit]);
   const livePage = project?.pages.find((p) => p.screenId === pageId);
   if (livePage) viewportPageSnapshot.current = livePage;
