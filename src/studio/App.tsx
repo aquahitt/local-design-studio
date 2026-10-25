@@ -256,6 +256,7 @@ export function StudioApp({
   const [zoom, setZoom] = useState(1);
   const [canvasEdit, setCanvasEdit] = useState(false);
   const canvasContext = useRef<CanvasContext | null>(null);
+  const transformPanel = useRef<HTMLElement | null>(null);
   const [contextPublisher] = useState(() =>
     createLatestPublisher<{ client: StudioClient; data: unknown }>(
       ({ client, data }) => client.request("context", data),
@@ -1367,6 +1368,18 @@ export function StudioApp({
                             disabled={dirty}
                             mutate={mutate}
                             onContext={receiveCanvasContext}
+                            onOpenTransformControls={() => {
+                              const panel =
+                                transformPanel.current?.querySelector<HTMLDetailsElement>(
+                                  ".transform-controls",
+                                );
+                              if (!panel) return;
+                              panel.open = true;
+                              panel
+                                .querySelector<HTMLElement>("summary")
+                                ?.focus({ preventScroll: true });
+                              panel.scrollIntoView({ block: "center" });
+                            }}
                             onSelection={(ids) => {
                               if (
                                 dirty &&
@@ -1409,7 +1422,7 @@ export function StudioApp({
                           </div>
                         )}
                       </div>
-                      <aside>
+                      <aside ref={transformPanel}>
                         <TransformControls
                           key={project.projectId + ":" + page.screenId}
                           project={project}

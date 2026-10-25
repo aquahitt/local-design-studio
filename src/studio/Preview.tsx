@@ -2,6 +2,10 @@ import { compileTextStyle } from "../core/text-style";
 import { validCanvasBounds, type CanvasBounds } from "./canvasCamera";
 import type { SceneView } from "../core/scene";
 import { layerStyle } from "../core/handoff";
+import {
+  withTransientGeometry,
+  type SceneGeometryMap,
+} from "./transientGeometry";
 import { useI18n, type StudioLocale } from "./i18n";
 import {
   Component,
@@ -54,7 +58,7 @@ export type CanvasPreview = {
   epoch: number;
   surfaceId: string;
   view: SceneView;
-  positions?: Record<string, { x: number; y: number }>;
+  geometry?: SceneGeometryMap;
   pick?: { requestId: number; x: number; y: number };
 };
 export interface PreviewInput {
@@ -245,7 +249,7 @@ export function Preview({
                 surfaceId: canvas.surfaceId,
                 epoch: canvas.epoch,
                 view: canvas.view,
-                positions: canvas.positions,
+                geometry: canvas.geometry,
               }
             : undefined,
         },
@@ -265,7 +269,7 @@ export function Preview({
     locale,
     canvas?.surfaceId,
     canvas?.view,
-    canvas?.positions,
+    canvas?.geometry,
     canvas?.epoch,
   ]);
   useEffect(() => {
@@ -316,6 +320,7 @@ export function Preview({
         border: 0,
         display: "block",
         background: canvas ? "transparent" : "#fff",
+        colorScheme: canvas ? "normal" : undefined,
       }}
     />
   );
@@ -390,7 +395,7 @@ export function Nodes({
   onSelect,
   inheritedLocked = false,
   materializedNodes = false,
-  positions = {},
+  geometry = {},
 }: {
   nodes: ProjectNode[];
   library: ComponentLibrary;
@@ -400,7 +405,7 @@ export function Nodes({
   onSelect: (id: string, additive?: boolean) => void;
   inheritedLocked?: boolean;
   materializedNodes?: boolean;
-  positions?: Record<string, { x: number; y: number }>;
+  geometry?: SceneGeometryMap;
 }) {
   const { t } = useI18n();
   const hasInstance = (rows: ProjectNode[]): boolean =>
@@ -415,7 +420,8 @@ export function Nodes({
     <>
       {materialized
         .filter((node) => !node.hidden)
-        .map((node) => {
+        .map((sourceNode) => {
+          const node = withTransientGeometry(sourceNode, geometry);
           const definition =
             library.id === project.library.id &&
             library.version === project.library.version
@@ -443,9 +449,6 @@ export function Nodes({
                   position: node.scene ? "absolute" : "relative",
                   padding: node.scene ? 0 : 8,
                   ...(node.scene ? layerStyle(node) : {}),
-                  ...(positions[node.id]
-                    ? { left: positions[node.id].x, top: positions[node.id].y }
-                    : {}),
                   outline:
                     node.id === selected || selectedIds.includes(node.id)
                       ? "2px solid #4673e8"
@@ -501,7 +504,7 @@ export function Nodes({
                       nodes: children,
                       inheritedLocked: inheritedLocked || !!node.locked,
                       materializedNodes: true,
-                      positions,
+                      geometry,
                       library,
                       project,
                       selected,
@@ -528,7 +531,7 @@ export function Nodes({
                                 inheritedLocked:
                                   inheritedLocked || !!node.locked,
                                 materializedNodes: true,
-                                positions,
+                                geometry,
                                 library,
                                 project,
                                 selected,

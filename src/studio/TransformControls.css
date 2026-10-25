@@ -1,5 +1,8 @@
 .transform-controls {
   margin: 12px 0;
+  scroll-margin-top: calc(
+    104px + var(--studio-demo-offset, 0px) + var(--studio-desktop-offset, 0px)
+  );
   border: 1px solid var(--studio-line);
   border-radius: 12px;
   min-width: 0;

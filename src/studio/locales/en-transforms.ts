@@ -1,4 +1,19 @@
 export const transformsEnglish: Record<string, string> = {
+  "Изменить размер: {0}": "Resize: {0}",
+  "Масштабировать: {0}": "Scale: {0}",
+  "Повернуть выделение": "Rotate selection",
+  "Изменение размера": "Resize selection",
+  "Масштабирование содержимого": "Scale content",
+  "Числовые параметры преобразования": "Numeric transform controls",
+  "Документ или контекст изменился. Преобразование отменено.":
+    "The document or context changed. Transform cancelled.",
+  "Преобразование недопустимо. Изменения отменены.":
+    "Invalid transform. Changes cancelled.",
+  "Этот слой нельзя преобразовать на холсте.":
+    "This layer cannot be transformed on the canvas.",
+  "Изменить размер слоёв на холсте": "Resize layers on canvas",
+  "Масштабировать содержимое на холсте": "Scale content on canvas",
+  "Повернуть слои на холсте": "Rotate layers on canvas",
   "Выбраны другие слои или проект. Сбросьте черновик перед новым преобразованием.":
     "A different selection or project is active. Reset the draft before starting a new transform.",
   Преобразования: "Transforms",

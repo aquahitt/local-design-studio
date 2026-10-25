@@ -1,3 +1,4 @@
+import { measuredCanvasContext, type CanvasContext } from "./canvasContext";
 import {
   useCallback,
   useEffect,
@@ -5,14 +6,24 @@ import {
   useState,
   type PointerEvent,
 } from "react";
-import type { Project, ProjectNode, ProjectPage } from "../core/project";
+import type { Project, ProjectPage } from "../core/project";
 import type { Operation } from "../core/operations";
 import type { Point, SceneView } from "../core/scene";
-import { translateSceneLayers } from "../core/geometry-commands";
+import {
+  getTransformFrame,
+  type TransformFrame,
+} from "../core/affine-geometry";
+import {
+  createTransformGesture,
+  updateTransformGesture,
+  type TransformGesture,
+  type TransformHandle,
+  type TransformRotationState,
+} from "../core/transform-gesture";
+import { geometryResult, type SceneGeometryMap } from "./transientGeometry";
+import { TransformHandles } from "./TransformHandles";
 import type { ComponentLibrary } from "../library/sdk";
 import { Preview } from "./Preview";
-import { measuredCanvasContext, type CanvasContext } from "./canvasContext";
-export type { CanvasContext } from "./canvasContext";
 import {
   fitCanvasBounds,
   readCanvasView,
@@ -39,16 +50,8 @@ function CanvasIcon({ path }: { path: string }) {
     </svg>
   );
 }
-type Basis = {
-  id: string;
-  x: number;
-  y: number;
-  xx: number;
-  xy: number;
-  yx: number;
-  yy: number;
-};
 type Gesture = {
+  token: number;
   pointer: number;
   from: Point;
   last: Point;
@@ -57,14 +60,24 @@ type Gesture = {
   locale: string;
   revision: number;
   project: Project;
+  pageId: string;
+  mode: "resize" | "scale";
+  selection: string[];
   pan: boolean;
   requestId: number;
   additive: boolean;
   ended: boolean;
-  ids?: string[];
-  basis?: Basis[];
-  blockedReason?: string;
+  picked: boolean;
+  shiftKey: boolean;
+  altKey: boolean;
+  transform?: TransformGesture;
+  rotation?: TransformRotationState;
+  blocked?: boolean;
+  modeAfterPick?: "resize" | "scale";
 };
+const sameIds = (a: string[], b: string[]) =>
+  a.length === b.length && a.every((id, i) => id === b[i]);
+export type { CanvasContext } from "./canvasContext";
 export function CanvasSurface({
   project,
   page,
@@ -74,6 +87,7 @@ export function CanvasSurface({
   onSelection,
   mutate,
   onContext,
+  onOpenTransformControls,
 }: {
   project: Project;
   page: ProjectPage;
@@ -87,6 +101,7 @@ export function CanvasSurface({
     revision?: number,
   ) => Promise<void>;
   onContext?: (context: CanvasContext) => void;
+  onOpenTransformControls?: () => void;
 }) {
   const { t, locale } = useI18n();
   const surface = useRef<HTMLDivElement>(null);
@@ -118,11 +133,20 @@ export function CanvasSurface({
     [hand, setHand] = useState(false),
     [space, setSpace] = useState(false),
     [error, setError] = useState("");
-  const [nonPanGesture, setNonPanGesture] = useState(false);
-  const [positions, setPositions] = useState<Record<string, Point>>({});
+  const [geometry, setGeometry] = useState<SceneGeometryMap>({});
+  const [gestureTransient, setTransient] = useState(false);
+  const [commitBusy, setCommitBusy] = useState(false);
+  const committing = useRef(false);
+  const transient = gestureTransient || commitBusy;
+  const [mode, setMode] = useState<"resize" | "scale">("resize");
+  const [gestureFrame, setGestureFrame] = useState<TransformFrame | null>(null);
+  const raf = useRef<number | null>(null);
+  const lifetime = useRef(0);
   const renderState = useRef({
     view,
-    positions,
+    geometry,
+    projectId: project.projectId,
+    pageId: page.screenId,
     size,
     locale,
     revision: project.revision,
@@ -130,14 +154,18 @@ export function CanvasSurface({
   });
   if (
     renderState.current.view !== view ||
-    renderState.current.positions !== positions ||
+    renderState.current.geometry !== geometry ||
+    renderState.current.projectId !== project.projectId ||
+    renderState.current.pageId !== page.screenId ||
     renderState.current.size !== size ||
     renderState.current.locale !== locale ||
     renderState.current.revision !== project.revision
   )
     renderState.current = {
       view,
-      positions,
+      geometry,
+      projectId: project.projectId,
+      pageId: page.screenId,
       size,
       locale,
       revision: project.revision,
@@ -160,6 +188,12 @@ export function CanvasSurface({
     mutate,
     selectedIds,
     view,
+    size,
+    locale,
+    mode,
+    pageId: page.screenId,
+    hand,
+    space,
   });
   latest.current = {
     project,
@@ -168,6 +202,12 @@ export function CanvasSurface({
     mutate,
     selectedIds,
     view,
+    size,
+    locale,
+    mode,
+    pageId: page.screenId,
+    hand,
+    space,
   };
   const fitted = useRef(!!initial.current);
   const viewRef = useRef(view);
@@ -265,9 +305,10 @@ export function CanvasSurface({
         bounds,
         ...size,
         revision: geometryRevision,
-        transient: nonPanGesture || Object.keys(positions).length > 0,
+        transient,
         epoch,
-        measuredEpoch: geometryEpoch,
+        measuredEpoch:
+          geometryRevision === project.revision ? geometryEpoch : null,
       }),
     );
   }, [
@@ -277,39 +318,80 @@ export function CanvasSurface({
     geometryRevision,
     geometryEpoch,
     epoch,
-    positions,
-    nonPanGesture,
+    transient,
     project.projectId,
     page.screenId,
+    project.revision,
     onContext,
   ]);
   const cancel = useCallback(() => {
+    ++lifetime.current;
     gesture.current = null;
-    setNonPanGesture(false);
-    setPositions((current) => (Object.keys(current).length ? {} : current));
-    setSpace(false);
+    if (raf.current !== null) cancelAnimationFrame(raf.current);
+    raf.current = null;
+    setPick(undefined);
+    setGeometry((current) => (Object.keys(current).length ? {} : current));
+    setGestureFrame(null);
+    setTransient(false);
   }, []);
+  function currentGesture(g: Gesture) {
+    const c = latest.current;
+    return (
+      gesture.current === g &&
+      lifetime.current === g.token &&
+      c.project.projectId === g.project.projectId &&
+      c.pageId === g.pageId &&
+      c.project.revision === g.revision &&
+      c.size === g.size &&
+      c.locale === g.locale &&
+      (g.pan ||
+        (!c.disabled &&
+          !committing.current &&
+          c.view === g.view &&
+          c.mode === g.mode &&
+          !c.hand &&
+          !c.space &&
+          sameIds(c.selectedIds, g.selection)))
+    );
+  }
   useEffect(() => {
     const g = gesture.current;
-    if (
-      g &&
-      (g.size !== size || g.locale !== locale || (!g.pan && g.view !== view))
-    )
+    if (g && !currentGesture(g)) {
       cancel();
-  }, [view, size, locale, cancel]);
-  useEffect(() => {
-    if (gesture.current && gesture.current.revision !== project.revision) {
-      const moved =
-        gesture.current.last.x !== gesture.current.from.x ||
-        gesture.current.last.y !== gesture.current.from.y;
-      cancel();
-      if (moved) setError(t("Документ изменился. Перемещение отменено."));
+      if (!g.pan)
+        setError(
+          t(
+            g.transform?.tool === "move" && project.revision !== g.revision
+              ? "Документ изменился. Перемещение отменено."
+              : "Документ или контекст изменился. Преобразование отменено.",
+          ),
+        );
     }
-  }, [project.revision, cancel, t]);
+  }, [
+    project.projectId,
+    project.revision,
+    page.screenId,
+    selectedIds,
+    disabled,
+    view,
+    size,
+    locale,
+    mode,
+    hand,
+    space,
+    cancel,
+    t,
+  ]);
   useEffect(() => {
-    const blur = () => cancel();
+    const blur = () => {
+      cancel();
+      setSpace(false);
+    };
     window.addEventListener("blur", blur);
-    return () => window.removeEventListener("blur", blur);
+    return () => {
+      window.removeEventListener("blur", blur);
+      cancel();
+    };
   }, [cancel]);
   useEffect(() => {
     const element = surface.current;
@@ -338,39 +420,110 @@ export function CanvasSurface({
     element.addEventListener("wheel", wheel, { passive: false });
     return () => element.removeEventListener("wheel", wheel);
   }, [size.height, updateView]);
-  function operations(g: Gesture) {
-    const dx = (g.last.x - g.from.x) / g.view.zoom,
-      dy = (g.last.y - g.from.y) / g.view.zoom;
-    return (g.basis ?? []).map((b) => ({
-      type: "setNodeMetadata" as const,
-      nodeId: b.id,
-      scene: { x: b.x + b.xx * dx + b.xy * dy, y: b.y + b.yx * dx + b.yy * dy },
-    }));
+  function world(p: Point, v: SceneView): Point {
+    return { x: (p.x - v.panX) / v.zoom, y: (p.y - v.panY) / v.zoom };
+  }
+  function result(g: Gesture) {
+    if (!g.transform) return null;
+    const value = updateTransformGesture(
+      g.transform,
+      world(g.last, g.view),
+      { shiftKey: g.shiftKey, altKey: g.altKey },
+      g.rotation,
+    );
+    g.rotation = value.rotationState;
+    return value;
   }
   function finish(g: Gesture) {
-    if (g !== gesture.current) return;
-    if (!g.pan && !g.ids) return; // Pick may still be in flight.
-    gesture.current = null;
-    setNonPanGesture(false);
-    setPositions((current) => (Object.keys(current).length ? {} : current));
-    if (
-      g.pan ||
-      Math.hypot(g.last.x - g.from.x, g.last.y - g.from.y) < 3 ||
-      !g.basis
-    )
-      return;
-    if (
-      latest.current.disabled ||
-      latest.current.project.revision !== g.revision
-    ) {
-      setError(t("Документ изменился. Перемещение отменено."));
+    if (!currentGesture(g)) {
+      cancel();
       return;
     }
+    if (!g.pan && !g.picked) return;
+    // Read the final coordinates synchronously, even if a preview RAF is pending.
+    const value = !g.pan && g.transform ? result(g) : null;
+    const moved = Math.hypot(g.last.x - g.from.x, g.last.y - g.from.y) >= 3;
+    if (g.blocked && moved)
+      setError(t("Этот слой нельзя переместить на холсте."));
+    cancel();
+    if (g.pan || !g.transform || (g.transform.tool === "move" && !moved))
+      return;
+    if (!value?.valid) {
+      setError(t("Преобразование недопустимо. Изменения отменены."));
+      return;
+    }
+    if (!value.operations.length) return;
+    let operations: Operation[];
+    try {
+      operations = geometryResult(
+        value.operations,
+        g.project,
+        g.pageId,
+        g.transform.frame.rootIds,
+      ).operations;
+    } catch {
+      setError(t("Преобразование недопустимо. Изменения отменены."));
+      return;
+    }
+    committing.current = true;
+    setCommitBusy(true);
+    const description =
+      g.transform.tool === "move"
+        ? "Переместить слои на холсте"
+        : g.transform.tool === "resize"
+          ? "Изменить размер слоёв на холсте"
+          : g.transform.tool === "scale"
+            ? "Масштабировать содержимое на холсте"
+            : "Повернуть слои на холсте";
     void latest.current
-      .mutate(operations(g), t("Переместить слои на холсте"), g.revision)
-      .catch((e) => setError(e.message));
+      .mutate(operations, t(description), g.revision)
+      .catch((e) => setError(e.message))
+      .finally(() => {
+        committing.current = false;
+        setCommitBusy(false);
+      });
+  }
+  function publish(g: Gesture) {
+    if (!currentGesture(g) || g.pan) return;
+    if (!g.transform) {
+      if (
+        g.blocked &&
+        Math.hypot(g.last.x - g.from.x, g.last.y - g.from.y) >= 3
+      )
+        setError(t("Этот слой нельзя переместить на холсте."));
+      return;
+    }
+    if (
+      g.transform.tool === "move" &&
+      Math.hypot(g.last.x - g.from.x, g.last.y - g.from.y) < 3
+    )
+      return;
+    const value = result(g);
+    if (!value?.valid) {
+      setGeometry((current) => (Object.keys(current).length ? {} : current));
+      setGestureFrame(null);
+      setError(t("Преобразование недопустимо. Изменения отменены."));
+      return;
+    }
+    try {
+      const next = geometryResult(
+        value.operations,
+        g.project,
+        g.pageId,
+        g.transform.frame.rootIds,
+      );
+      setGeometry(next.geometry);
+      setGestureFrame(value.frame);
+      setError("");
+    } catch {
+      setError(t("Преобразование недопустимо. Изменения отменены."));
+    }
   }
   function move(g: Gesture) {
+    if (!currentGesture(g)) {
+      cancel();
+      return;
+    }
     if (g.pan) {
       updateView({
         ...g.view,
@@ -379,91 +532,76 @@ export function CanvasSurface({
       });
       return;
     }
-    if (Math.hypot(g.last.x - g.from.x, g.last.y - g.from.y) < 3) return;
-    if (!g.basis) {
-      if (g.blockedReason)
-        setError(
-          t("Этот слой нельзя переместить на холсте.") + " " + g.blockedReason,
-        );
-      return;
-    }
-    setPositions(
-      Object.fromEntries(
-        operations(g).map((op) => [op.nodeId, op.scene! as Point]),
-      ),
-    );
+    if (raf.current === null)
+      raf.current = requestAnimationFrame(() => {
+        raf.current = null;
+        publish(g);
+      });
   }
   const receivePick = useCallback(
     (id: string | null, requestId: number) => {
       const g = gesture.current;
-      if (
-        !g ||
-        g.pan ||
-        g.requestId !== requestId ||
-        latest.current.project.revision !== g.revision
-      )
+      if (!g || g.pan || g.requestId !== requestId || !currentGesture(g))
         return;
-      const current = latest.current;
-      let ids = id
+      const c = latest.current;
+      const ids = id
         ? g.additive
-          ? current.selectedIds.includes(id)
-            ? current.selectedIds.filter((v) => v !== id)
-            : [...current.selectedIds, id]
-          : current.selectedIds.includes(id)
-            ? current.selectedIds
+          ? c.selectedIds.includes(id)
+            ? c.selectedIds.filter((v) => v !== id)
+            : [...c.selectedIds, id]
+          : c.selectedIds.includes(id)
+            ? c.selectedIds
             : [id]
         : [];
-      if (!current.onSelection(ids)) {
+      g.selection = ids; // The following selection update belongs to this gesture.
+      if (!c.onSelection(ids)) {
         cancel();
         return;
       }
-      g.ids = ids;
-      if (id && ids.includes(id) && !g.additive && !current.disabled) {
+      // React may not have rendered the accepted selection before pointerup.
+      latest.current = { ...latest.current, selectedIds: ids };
+      g.picked = true;
+      if (
+        id &&
+        ids.includes(id) &&
+        !g.additive &&
+        !c.disabled &&
+        !committing.current
+      ) {
         try {
-          const base = translateSceneLayers(g.project, ids, { x: 0, y: 0 }),
-            x = translateSceneLayers(g.project, ids, { x: 1, y: 0 }),
-            y = translateSceneLayers(g.project, ids, { x: 0, y: 1 });
-          g.basis = base.map((op, i) => {
-            if (
-              op.type !== "setNodeMetadata" ||
-              x[i].type !== "setNodeMetadata" ||
-              y[i].type !== "setNodeMetadata"
-            )
-              throw new Error("INVALID_TRANSLATION");
-            const b = op.scene!,
-              a = (x[i] as typeof op).scene!,
-              c = (y[i] as typeof op).scene!;
-            return {
-              id: op.nodeId,
-              x: b.x!,
-              y: b.y!,
-              xx: a.x! - b.x!,
-              xy: c.x! - b.x!,
-              yx: a.y! - b.y!,
-              yy: c.y! - b.y!,
-            };
+          g.transform = createTransformGesture(g.project, ids, {
+            tool: "move",
+            pointer: world(g.from, g.view),
           });
-        } catch (e) {
-          g.blockedReason = (e as Error).message;
+          g.rotation = g.transform.rotationState;
+        } catch {
+          g.blocked = true;
         }
       }
-      move(g);
-      if (g.ended) finish(g);
+      if (g.ended) {
+        const nextMode = g.modeAfterPick;
+        finish(g);
+        if (nextMode) {
+          setHand(false);
+          setMode(nextMode);
+        }
+      } else move(g);
     },
-    [t],
+    [t, cancel],
   );
   function point(e: PointerEvent) {
     const b = surface.current!.getBoundingClientRect();
     return { x: e.clientX - b.x, y: e.clientY - b.y };
   }
-  function down(e: PointerEvent) {
-    if (e.button !== 0 && e.button !== 1) return;
+  function begin(e: PointerEvent, pan: boolean): Gesture {
+    cancel();
     e.preventDefault();
     surface.current?.focus({ preventScroll: true });
     surface.current?.setPointerCapture(e.pointerId);
     setError("");
     const p = point(e);
     const g: Gesture = {
+      token: ++lifetime.current,
       pointer: e.pointerId,
       from: p,
       last: p,
@@ -472,14 +610,65 @@ export function CanvasSurface({
       locale,
       revision: project.revision,
       project,
-      pan: hand || space || e.button === 1,
+      pageId: page.screenId,
+      mode,
+      selection: [...selectedIds],
+      pan,
       requestId: ++count.current,
       additive: e.shiftKey,
       ended: false,
+      picked: pan,
+      shiftKey: e.shiftKey,
+      altKey: e.altKey,
     };
     gesture.current = g;
-    setNonPanGesture(!g.pan);
-    if (!g.pan) setPick({ requestId: g.requestId, ...p });
+    if (!pan) setTransient(true);
+    return g;
+  }
+  function down(e: PointerEvent) {
+    if (e.button !== 0 && e.button !== 1) return;
+    const pan = hand || space || e.button === 1;
+    if (!pan && disabled) {
+      setError(
+        t("Есть несохранённый ввод. Примени или сбрось его перед сменой слоя."),
+      );
+      return;
+    }
+    if (!pan && committing.current) return;
+    const g = begin(e, pan);
+    if (!pan) setPick({ requestId: g.requestId, ...g.from });
+  }
+  function startHandle(
+    e: PointerEvent<HTMLButtonElement>,
+    tool: "resize" | "scale" | "rotate",
+    handle?: TransformHandle,
+  ) {
+    // Middle-button and camera tools retain precedence even over a handle.
+    if (e.button !== 0 || hand || space) return;
+    e.stopPropagation();
+    if (disabled || committing.current) return;
+    const g = begin(e, false);
+    g.picked = true;
+    try {
+      g.transform = createTransformGesture(project, selectedIds, {
+        tool,
+        handle,
+        pointer: world(g.from, g.view),
+      });
+      g.rotation = g.transform.rotationState;
+      setGestureFrame(g.transform.frame);
+    } catch {
+      cancel();
+      setError(t("Этот слой нельзя преобразовать на холсте."));
+    }
+  }
+  let frame: TransformFrame | null = null;
+  if (!disabled && !commitBusy && selectedIds.length) {
+    try {
+      frame = getTransformFrame(project, selectedIds);
+    } catch {
+      /* Locked or non-scene selection. */
+    }
   }
   function applyZoom() {
     const value = Number(zoomDraft);
@@ -507,17 +696,45 @@ export function CanvasSurface({
       >
         <button
           type="button"
-          aria-label={t("Инструмент выбора")}
-          aria-pressed={!hand}
-          onClick={() => setHand(false)}
+          aria-label={t("Изменение размера")}
+          aria-pressed={!hand && mode === "resize"}
+          onClick={() => {
+            cancel();
+            setHand(false);
+            setMode("resize");
+          }}
         >
-          <CanvasIcon path="M4 3l16 9-7 2-3 7-6-18z" />
+          <CanvasIcon path="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5M4 4l6 6M20 20l-6-6" />
         </button>
+        <button
+          type="button"
+          aria-label={t("Масштабирование содержимого")}
+          aria-pressed={!hand && mode === "scale"}
+          onClick={() => {
+            cancel();
+            setHand(false);
+            setMode("scale");
+          }}
+        >
+          <CanvasIcon path="M4 14v6h6M14 4h6v6M20 4l-8 8M4 20l8-8" />
+        </button>
+        {onOpenTransformControls && (
+          <button
+            type="button"
+            aria-label={t("Числовые параметры преобразования")}
+            onClick={onOpenTransformControls}
+          >
+            <CanvasIcon path="M4 6h16M4 12h16M4 18h16M8 3v6M16 9v6M10 15v6" />
+          </button>
+        )}
         <button
           type="button"
           aria-label={t("Рука: перемещение холста")}
           aria-pressed={hand}
-          onClick={() => setHand((v) => !v)}
+          onClick={() => {
+            cancel();
+            setHand((v) => !v);
+          }}
         >
           <CanvasIcon path="M8 13V6a2 2 0 014 0v6-8a2 2 0 014 0v8-6a2 2 0 014 0v9c0 4-3 7-7 7h-1c-2 0-3-1-4-3l-4-6a2 2 0 013-2l1 2z" />
         </button>
@@ -610,6 +827,8 @@ export function CanvasSurface({
           const g = gesture.current;
           if (g && g.pointer === e.pointerId) {
             g.last = point(e);
+            g.shiftKey = e.shiftKey;
+            g.altKey = e.altKey;
             move(g);
           }
         }}
@@ -617,6 +836,8 @@ export function CanvasSurface({
           const g = gesture.current;
           if (g && g.pointer === e.pointerId) {
             g.last = point(e);
+            g.shiftKey = e.shiftKey;
+            g.altKey = e.altKey;
             g.ended = true;
             finish(g);
           }
@@ -626,10 +847,54 @@ export function CanvasSurface({
           if (gesture.current && !gesture.current.ended) cancel();
         }}
         onKeyDown={(e) => {
-          if (e.target !== e.currentTarget || e.nativeEvent.isComposing) return;
+          if (
+            e.nativeEvent.isComposing ||
+            (e.target instanceof HTMLElement &&
+              e.target.closest("input,textarea,select,[contenteditable=true]"))
+          )
+            return;
+          const toolKey =
+            e.code === "KeyV"
+              ? "v"
+              : e.code === "KeyK"
+                ? "k"
+                : e.key.toLowerCase();
+          if (
+            !e.ctrlKey &&
+            !e.metaKey &&
+            !e.altKey &&
+            (toolKey === "v" || toolKey === "k")
+          ) {
+            e.preventDefault();
+            if (!e.repeat) {
+              const nextMode = toolKey === "k" ? "scale" : "resize";
+              const pending = gesture.current;
+              // Complete an already released click before changing tools; it
+              // cannot write geometry. Active drags still cancel immediately.
+              if (
+                pending &&
+                !pending.pan &&
+                pending.ended &&
+                !pending.picked &&
+                Math.hypot(
+                  pending.last.x - pending.from.x,
+                  pending.last.y - pending.from.y,
+                ) < 3
+              ) {
+                pending.modeAfterPick = nextMode;
+              } else {
+                cancel();
+                setHand(false);
+                setMode(nextMode);
+              }
+            }
+          }
           if (e.key === " ") {
             e.preventDefault();
-            setSpace(true);
+            if (!e.repeat) {
+              cancel();
+              setSpace(true);
+            }
           }
           if (e.key === "Escape") {
             e.preventDefault();
@@ -682,7 +947,12 @@ export function CanvasSurface({
         onKeyUp={(e) => {
           if (e.key === " ") setSpace(false);
         }}
-        onBlur={() => {
+        onBlur={(e) => {
+          if (
+            e.relatedTarget instanceof Node &&
+            e.currentTarget.contains(e.relatedTarget)
+          )
+            return;
           setSpace(false);
           if (gesture.current) cancel();
         }}
@@ -695,26 +965,36 @@ export function CanvasSurface({
             title={t("Холст ") + page.name}
             height={size.height}
             nodes={page.nodes}
-            canvas={{ surfaceId, epoch, view, positions, pick }}
+            canvas={{ surfaceId, epoch, view, geometry, pick }}
             onGeometry={receiveGeometry}
             onPick={receivePick}
           />
         </div>
         <div className="canvas-capture" />
-        {bounds
-          .filter((b) => selectedIds.includes(b.id))
-          .map((b) => (
-            <div
-              key={b.id}
-              className="canvas-selection"
-              style={{
-                left: b.x * view.zoom + view.panX,
-                top: b.y * view.zoom + view.panY,
-                width: b.width * view.zoom,
-                height: b.height * view.zoom,
-              }}
-            />
-          ))}
+        {geometryEpoch === epoch &&
+          bounds
+            .filter((b) => selectedIds.includes(b.id))
+            .map((b) => (
+              <div
+                key={b.id}
+                className="canvas-selection"
+                style={{
+                  left: b.x * view.zoom + view.panX,
+                  top: b.y * view.zoom + view.panY,
+                  width: b.width * view.zoom,
+                  height: b.height * view.zoom,
+                }}
+              />
+            ))}{" "}
+        {!hand && !space && (gestureFrame ?? frame) && (
+          <TransformHandles
+            frame={(gestureFrame ?? frame)!}
+            view={view}
+            mode={mode}
+            disabled={disabled || commitBusy}
+            onStart={startHandle}
+          />
+        )}
       </div>
       <p id={"canvas-help-" + surfaceId} className="canvas-help">
         {t(
