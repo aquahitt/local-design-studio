@@ -84,13 +84,32 @@ test("layer keyboard commands share undoable actions and leave text editing alon
   await page.getByRole("button", { name: "Экраны", exact: true }).click();
   const rows = page.locator(".layer-row");
   const before = await rows.count();
-  // Consume the body as soon as headers arrive, before click/keyboard auto-waits
-  // can let a following navigation invalidate Chromium's response resource.
-  const savedOperation = () => page.waitForResponse((response) =>
-    response.url().endsWith("/api/operations") && response.request().method() === "POST",
-  ).then(async (response) => {
-    expect(response.ok()).toBe(true);
-    return response.json() as Promise<{ revision: number }>;
+  // Read the owner's exact operation response through APIRequestContext before
+  // fulfilling it to Chromium. The browser may discard a response body when the
+  // preview document is replaced; its resource lifetime is not a save receipt.
+  let pendingSave: {
+    resolve: (value: { revision: number }) => void;
+    reject: (reason: unknown) => void;
+  } | undefined;
+  await page.route("**/api/operations", async (route) => {
+    const pending = pendingSave;
+    pendingSave = undefined;
+    try {
+      const response = await route.fetch();
+      const body = await response.json();
+      await route.fulfill({ response });
+      if (pending) {
+        expect(response.ok()).toBe(true);
+        pending.resolve(body);
+      }
+    } catch (error) {
+      if (pending) pending.reject(error);
+      else throw error;
+    }
+  });
+  const savedOperation = () => new Promise<{ revision: number }>((resolve, reject) => {
+    if (pendingSave) throw new Error("An operation receipt is already pending");
+    pendingSave = { resolve, reject };
   });
   const savedFrame = savedOperation();
   await page.getByRole("button", { name: "Фрейм +", exact: true }).click();
