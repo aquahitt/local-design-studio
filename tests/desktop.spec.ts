@@ -6,6 +6,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { desktopRuntimeEnv, writeDesktopLibraryFixture, writeDesktopProjectFixture } from "./desktop-fixtures";
 import { execFileSync } from "node:child_process";
+import { closeOwnedNativeApp, finishNativeTest, nativeDeadline } from "./native-test-lifecycle";
 test("desktop creates, saves, reopens disk project and isolates preview", async () => {
   const temp = await mkdtemp(join(tmpdir(), "studio-desktop-e2e-"));
   const root = join(temp, "project");
@@ -264,7 +265,15 @@ test("desktop installed MCP survives owner replacement, trusted library restart 
     execFileSync(process.execPath, ["scripts/desktop/build.mjs"], { stdio: "pipe" });
   const env = desktopRuntimeEnv(settings, emptyPath);
   let captureDiagnostics = "";
+  let lifecycleDiagnostics = "";
+  const started = Date.now();
+  const mark = (stage: string) => {
+    const line = `Native MCP stage ${stage} ${Date.now() - started}ms`;
+    console.info(line);
+    lifecycleDiagnostics += line + "\n";
+  };
   const launch = async () => {
+    mark("launch:start");
     const launched = await electron.launch({
     ...(packaged ? { executablePath: packaged } : { args: [resolve(".")] }),
     chromiumSandbox: process.platform === "linux",
@@ -279,12 +288,15 @@ test("desktop installed MCP survives owner replacement, trusted library restart 
     launched.process().stderr?.on("data", chunk => {
       captureDiagnostics = (captureDiagnostics + String(chunk)).slice(-12000);
     });
+    mark("launch:done");
     return launched;
   };
-  let app = await launch();
+  let app!: Awaited<ReturnType<typeof launch>>;
+  let appStarted = false;
   const client = new Client({ name: "installed-acceptance", version: "1" });
   let standalone: Client | undefined;
   let connected = false;
+  let primaryError: unknown;
   const offline = async () => app.evaluate(({ session }) => {
     // Block external Chromium requests, including screenshot windows. Loopback is local IO.
     (globalThis as any).__desktopExternalRequests = [];
@@ -298,14 +310,25 @@ test("desktop installed MCP survives owner replacement, trusted library restart 
     );
   });
   const call = async (name: string, args: Record<string, unknown> = {}) => {
+    mark(`tool:${name}:start`);
     const result = await client.callTool({ name, arguments: args });
+    mark(`tool:${name}:done`);
     const content = result.content as { type: string; text: string }[];
     expect(result.isError, content.find((item) => item.type === "text")?.text).not.toBe(true);
     return JSON.parse(content.find((item) => item.type === "text")!.text);
   };
-  const raw = (name: string, args: Record<string, unknown> = {}) => client.callTool({ name, arguments: args });
+  const raw = async (name: string, args: Record<string, unknown> = {}) => {
+    mark(`tool:${name}:start`);
+    const result = await client.callTool({ name, arguments: args });
+    mark(`tool:${name}:done`);
+    return result;
+  };
   try {
+    app = await launch();
+    appStarted = true;
+    mark("offline:start");
     await offline();
+    mark("offline:done");
     let page = await app.firstWindow();
     await app.evaluate(({ dialog }, root) => {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [root] });
@@ -321,8 +344,10 @@ test("desktop installed MCP survives owner replacement, trusted library restart 
       // Keep native bootstrap failures visible in cross-platform CI logs.
       stderr: "inherit",
     });
-    await client.connect(helper());
     connected = true;
+    mark("client-connect:start");
+    await client.connect(helper());
+    mark("client-connect:done");
     expect((await client.listTools()).tools.map((tool) => tool.name)).toContain("proposal_create");
     const initial = await call("project_read");
     const initialOwner = JSON.parse(await readFile(join(projectRoot, ".studio/connection.json"), "utf8"));
@@ -581,17 +606,25 @@ test("desktop installed MCP survives owner replacement, trusted library restart 
     const connection = await readFile(join(projectRoot, ".studio/connection.json"), "utf8");
     // A second installed MCP attaches to the same owner without replacing its credentials.
     standalone = new Client({ name: "second-installed-helper", version: "1" });
+    mark("standalone-connect:start");
     await standalone.connect(helper());
+    mark("standalone-connect:done");
     expect((await standalone.callTool({ name: "project_read", arguments: {} })).isError).not.toBe(true);
     expect(await readFile(join(projectRoot, ".studio/connection.json"), "utf8")).toBe(connection);
+    mark("standalone-close:start");
     await standalone.close();
+    mark("standalone-close:done");
     standalone = undefined;
     expect(await app.evaluate(() => (globalThis as any).__desktopExternalRequests)).toEqual([]);
-    await app.close();
+    mark("app-close:start");
+    await closeOwnedNativeApp(app);
+    appStarted = false;
+    mark("app-close:done");
     const missing = await raw("project_read");
     expect(missing.isError).toBe(true);
     expect(JSON.parse((missing.content as { text: string }[])[0].text).error).toBe("OWNER_NOT_RUNNING");
     app = await launch();
+    appStarted = true;
     await offline();
     page = await app.firstWindow();
     await page.getByRole("button", { name: "Installed acceptance", exact: false }).click();
@@ -608,15 +641,40 @@ test("desktop installed MCP survives owner replacement, trusted library restart 
     expect(document).not.toContain(JSON.stringify(canonicalLibrary));
     const preferences = JSON.parse(await readFile(join(settings, "libraries.json"), "utf8"));
     expect(preferences[await realpath(projectRoot)]).toBe(canonicalLibrary);
+  } catch (error) {
+    primaryError = error;
+    throw error;
   } finally {
-    const stages = await app.evaluate(() => (globalThis as any).__studioCaptureDiagnostics ?? []).catch(() => []);
-    if (stages.length) console.error("Studio capture stages:", JSON.stringify(stages));
-    await testInfo.attach("desktop-capture-diagnostics", {body: captureDiagnostics,contentType:"text/plain"});
-    if (testInfo.status !== testInfo.expectedStatus) console.error(captureDiagnostics);
-
-    await standalone?.close();
-    if (connected) await client.close();
-    await app.close().catch(() => {});
-    await rm(temp, { recursive: true, force: true });
+    mark("cleanup:start");
+    await finishNativeTest({
+      primaryError,
+      attach: async () => {
+        await testInfo.attach("desktop-capture-diagnostics", {
+          body: lifecycleDiagnostics + captureDiagnostics,
+          contentType: "text/plain",
+        });
+        if (testInfo.status !== testInfo.expectedStatus) console.error(captureDiagnostics);
+      },
+      diagnostics: async () => {
+        if (!appStarted) return;
+        mark("cleanup-diagnostics:start");
+        const stages = await nativeDeadline("native-main-diagnostics", () => app.evaluate(() => (globalThis as any).__studioCaptureDiagnostics ?? []), 2000);
+        if (stages.length) console.error("Studio capture stages:", JSON.stringify(stages));
+        mark("cleanup-diagnostics:done");
+      },
+      closeClients: async () => {
+        mark("cleanup-clients:start");
+        await Promise.all([standalone?.close(), connected ? client.close() : undefined]);
+        mark("cleanup-clients:done");
+      },
+      closeApp: async () => {
+        if (!appStarted) return;
+        mark("cleanup-app:start");
+        await closeOwnedNativeApp(app);
+        mark("cleanup-app:done");
+      },
+      removeFixture: () => rm(temp, { recursive: true, force: true }),
+    });
+    mark("cleanup:done");
   }
 });

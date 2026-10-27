@@ -68,8 +68,15 @@ CSS matrix общий для Preview, service capture и React handoff. Инсп
 Удаление страницы или слоя не теряет ввод. Другие редакторы и команды изменения
 документа заблокированы до применения или сброса черновика.
 
-Pointer handles, отдельный Scale tool на холсте, snapping, rulers/guides
-и полный transform inspector — следующие этапы #9. До их приёмки issue открыта.
+Pointer Move/Resize/Scale/Rotate используют immutable capture и общее ядро жестов.
+Transient передаёт полную whitelist geometry map; замена применяется до text layout,
+vector viewBox и CSS. Preview не записывает проект; финальный pointerup пересчитывает
+последние координаты и создаёт один batch. Нулевой/отрицательный размер жеста
+отклоняется, отражение остаётся явным действием. Описание управления —
+[canvas-transforms.md](../canvas-transforms.md).
+
+Snapping, rulers/guides и полный transform inspector — следующие этапы #9.
+До их приёмки issue открыта.
 Portals внешней библиотеки вне scene wrapper не наследуют его transform и clip;
 точный Scale такой поверхности не обещается.
 

@@ -117,32 +117,52 @@ async function setup(
   ).toBeVisible();
   // A visible node may still use the camera from before initial fit. Require
   // canonical measurements for the camera currently displayed before hit testing.
-  await expect.poll(async () => {
-    const context = await page.evaluate(async (headers) =>
-      (await fetch("/api/context", { headers }).then((r) => r.json())).context,
-      state.headers,
-    );
-    const displayed = await canvas.evaluate((element) => ({
-      zoom: Number(element.getAttribute("data-zoom")),
-      panX: Number(element.getAttribute("data-pan-x")),
-      panY: Number(element.getAttribute("data-pan-y")),
-    }));
-    const camera = context?.camera;
-    if (context?.pageId !== state.screenId || context.revision !== state.revision ||
-      camera?.transient !== false || camera.revision !== context.revision ||
-      camera.view.zoom !== displayed.zoom || camera.view.panX !== displayed.panX ||
-      camera.view.panY !== displayed.panY) return false;
-    for (const suffix of ["-a", "-b"]) {
-      const id = state.screenId + suffix;
-      const measured = context.bounds?.[id];
-      const box = await frame.locator(`[data-node-id="${id}"]`).boundingBox();
-      if (!camera.bounds.some((bound: { id: string }) => bound.id === id) ||
-        !measured || !box || !(["x", "y", "width", "height"] as const).every(
-          (key) => Math.abs(box[key] - measured[key]) < 1,
-        )) return false;
-    }
-    return true;
-  }, { timeout: 10000 }).toBe(true);
+  await expect
+    .poll(
+      async () => {
+        const context = await page.evaluate(
+          async (headers) =>
+            (await fetch("/api/context", { headers }).then((r) => r.json()))
+              .context,
+          state.headers,
+        );
+        const displayed = await canvas.evaluate((element) => ({
+          zoom: Number(element.getAttribute("data-zoom")),
+          panX: Number(element.getAttribute("data-pan-x")),
+          panY: Number(element.getAttribute("data-pan-y")),
+        }));
+        const camera = context?.camera;
+        if (
+          context?.pageId !== state.screenId ||
+          context.revision !== state.revision ||
+          camera?.transient !== false ||
+          camera.revision !== context.revision ||
+          camera.view.zoom !== displayed.zoom ||
+          camera.view.panX !== displayed.panX ||
+          camera.view.panY !== displayed.panY
+        )
+          return false;
+        for (const suffix of ["-a", "-b"]) {
+          const id = state.screenId + suffix;
+          const measured = context.bounds?.[id];
+          const box = await frame
+            .locator(`[data-node-id="${id}"]`)
+            .boundingBox();
+          if (
+            !camera.bounds.some((bound: { id: string }) => bound.id === id) ||
+            !measured ||
+            !box ||
+            !(["x", "y", "width", "height"] as const).every(
+              (key) => Math.abs(box[key] - measured[key]) < 1,
+            )
+          )
+            return false;
+        }
+        return true;
+      },
+      { timeout: 10000 },
+    )
+    .toBe(true);
   const read = () =>
     page.evaluate(
       async (headers) =>
@@ -514,7 +534,7 @@ test("cancelled drag cannot publish late geometry from its old render snapshot",
         .locator("body")
         .evaluate(
           () =>
-            Object.keys((window as any).__canvasInput.canvas.positions ?? {})
+            Object.keys((window as any).__canvasInput.canvas.geometry ?? {})
               .length,
         ),
     )

@@ -1,0 +1,48 @@
+.canvas-transform-handles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.canvas-transform-outline {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  fill: none;
+  stroke: var(--studio-accent);
+  stroke-width: 1.5;
+}
+.ds-studio .canvas-transform-handle {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  transform: translate(-50%, -50%);
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  pointer-events: auto;
+  touch-action: none;
+  transition: none;
+}
+.ds-studio .canvas-transform-handle:hover,
+.ds-studio .canvas-transform-handle:active {
+  background: transparent;
+  transform: translate(-50%, -50%);
+}
+.canvas-transform-handle span {
+  width: 8px;
+  height: 8px;
+  background: var(--studio-surface);
+  border: 1.5px solid var(--studio-accent);
+  box-shadow: 0 0 0 1px var(--studio-surface);
+}
+.ds-studio .canvas-transform-rotate {
+  cursor: grab;
+}
+.canvas-transform-rotate span {
+  border-radius: 50%;
+}

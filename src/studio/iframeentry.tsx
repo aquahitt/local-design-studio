@@ -17,6 +17,7 @@ import {
   type PreviewInput,
 } from "./Preview";
 import { resolveTokens } from "../core/tokens";
+import { validCanvasRender } from "./transientGeometry";
 import type { Project } from "../core/project";
 type Input = Omit<PreviewInput, "library" | "onSelect"> & {
   library: { id: string; version: string };
@@ -103,7 +104,9 @@ export function PreviewApp() {
           y: d.y,
         });
       }
-      if (event.data?.type === "studio-preview-render") setInput(event.data);
+      if (event.data?.type === "studio-preview-render" &&
+          (event.data.canvas === undefined || validCanvasRender(event.data.canvas, event.data.project, event.data.nodes)))
+        setInput(event.data);
     }
     window.addEventListener("message", receive);
     document.documentElement.dataset.studioPreviewListening = "true";
@@ -333,7 +336,7 @@ export function PreviewApp() {
               nodes={input.nodes ?? []}
               library={library}
               project={project}
-              positions={input.canvas?.positions}
+              geometry={input.canvas?.geometry}
               selected={input.canvas ? null : (input.selected ?? null)}
               selectedIds={input.canvas ? [] : input.selectedIds}
               onSelect={(id, additive) =>
