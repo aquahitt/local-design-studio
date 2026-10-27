@@ -1,6 +1,9 @@
 import type { Project } from "../core/project";
 import { createReactHandoff, type HandoffOptions } from "../core/handoff";
 import type { LibraryMetadata } from "../library/sdk";
+import { createHash } from "node:crypto";
+import { validateSVG } from "./assets";
+import { pngDimensions } from "./image-assets";
 
 /** Return a reviewable file map; exported source never contains operator-library code or filesystem paths. */
 export async function exportReactHandoff(
@@ -15,6 +18,13 @@ export async function exportReactHandoff(
     try {
       if (!readAsset) throw new Error("ASSET_UNAVAILABLE");
       const bytes = await readAsset(path.slice(7));
+      if (/\.(png|svg)$/.test(path)) {
+        const buffer = Buffer.from(bytes);
+        if (createHash("sha256").update(buffer).digest("hex") !== path.slice(7, 71))
+          throw new Error("ASSET_HASH_MISMATCH");
+        if (path.endsWith(".png")) pngDimensions(buffer);
+        else validateSVG(buffer.toString("utf8"));
+      }
       assets.push({
         path,
         mediaType: path.endsWith(".svg")

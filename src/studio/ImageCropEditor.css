@@ -1,0 +1,78 @@
+.image-crop-dialog {
+  width: min(720px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  box-sizing: border-box;
+  padding: 24px;
+  border: 1px solid var(--studio-border);
+  border-radius: 20px;
+  background: var(--studio-surface);
+  color: var(--studio-text);
+}
+.image-crop-dialog::backdrop {
+  background: rgb(0 0 0 / 55%);
+}
+.image-crop-dialog header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.image-crop-dialog h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.image-crop-dialog p {
+  color: var(--studio-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.image-crop-surface {
+  position: relative;
+  height: 360px;
+  touch-action: none;
+  overflow: hidden;
+  background: var(--studio-bg);
+  border: 1px solid var(--studio-border);
+  border-radius: 12px;
+  cursor: move;
+}
+.image-crop-surface:focus-visible {
+  outline: 2px solid var(--studio-accent);
+  outline-offset: 3px;
+}
+.image-crop-window {
+  position: absolute;
+  box-shadow: 0 0 0 1px var(--studio-accent);
+  overflow: hidden;
+  background: repeating-conic-gradient(
+      rgb(127 127 127 / 12%) 0 25%,
+      transparent 0 50%
+    )
+    0 / 16px 16px;
+  pointer-events: none;
+}
+.image-crop-window svg {
+  display: block;
+}
+
+.image-crop-dialog h2 {
+  flex: 1;
+}
+.image-crop-dialog header > button {
+  width: auto;
+  flex: 0 0 auto;
+  min-width: 88px;
+  margin: 0;
+}
+.image-crop-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 16px;
+}
+.image-crop-actions button {
+  width: 100%;
+  margin: 0;
+  min-height: 40px;
+}

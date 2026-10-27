@@ -1,3 +1,5 @@
+import type { StudioClient } from "./client";
+import { useImagePaintAssets } from "./useImagePaintAssets";
 import { useI18n } from "./i18n";
 import { useCallback, useEffect, useState } from "react";
 import type { Project, ProjectNode } from "../core/project";
@@ -256,9 +258,11 @@ export function NodeLayoutInspector({
   onDirty,
   onApply,
   disabled,
+  imageClient,
 }: {
   node: ProjectNode;
   project: Project;
+  imageClient?: Pick<StudioClient, "request">;
   disabled: boolean;
   onDirty: (dirty: boolean) => void;
   onApply: (
@@ -268,6 +272,11 @@ export function NodeLayoutInspector({
   ) => Promise<void>;
 }) {
   const { t } = useI18n();
+  const images = useImagePaintAssets(
+    imageClient,
+    project.projectId,
+    project.revision,
+  );
 
   const data = {
     name: node.name ?? node.type,
@@ -476,11 +485,20 @@ export function NodeLayoutInspector({
         isRenderableFramePaintDraft(value.scene) && (
           <PaintFields
             scene={value.scene}
+            imageAssets={images.assets}
+            onImportImage={images.importImage}
+            scope={JSON.stringify([
+              project.projectId,
+              node.id,
+              project.revision,
+            ])}
+            revision={project.revision}
             disabled={disabled || !!node.locked}
             onChange={(scene) => change("scene", scene)}
             onPendingChange={setPendingPaint}
           />
         )}
+      {images.error && <p role="alert">{t(images.error)}</p>}
       <label>
         {t("Параметры слоя JSON")}
         <textarea

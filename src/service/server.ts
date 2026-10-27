@@ -1,3 +1,4 @@
+import { PAINT_CAPABILITIES } from "./read";
 import { AFFINE_LIMITS } from "../core/scene";
 import { readProjectAsset, projectAssetMediaType, requestedFontFace } from "./project-assets";
 import { writeFontAsset } from "./font-assets";
@@ -232,6 +233,7 @@ export async function createStudioServer(options: StudioOptions) {
               autoApply: options.autoApply === true,
               contextTTL: 15000,
               allowedOrigins: origins,
+              paints: PAINT_CAPABILITIES,
               geometry: {
                 affine: true,
                 format: "linearTransform",

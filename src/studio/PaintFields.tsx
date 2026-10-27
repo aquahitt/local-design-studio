@@ -1,18 +1,13 @@
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useId,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { BlendMode, Paint, RGBA, Shadow } from "../core/paint";
 import { BLEND_MODES } from "../core/paint";
 import type { SceneMetadata } from "../core/scene";
 import { StudioSelect } from "./StudioSelect";
 import { useI18n } from "./i18n";
 import "./PaintFields.css";
+import { Numeric, PendingNumbers } from "./PaintNumbers";
+import { ImagePaintFields } from "./ImagePaintFields";
+import type { ImageAsset } from "../service/image-assets";
 
 const white: RGBA = { r: 255, g: 255, b: 255, a: 1 };
 const black: RGBA = { r: 0, g: 0, b: 0, a: 1 };
@@ -104,65 +99,6 @@ function Action({
     </button>
   );
 }
-const PendingNumbers = createContext<(id: string, pending: boolean) => void>(
-  () => {},
-);
-function Numeric({
-  label,
-  value,
-  onChange,
-  disabled,
-  min,
-  max,
-  step = "any",
-}: {
-  label: string;
-  value: number;
-  onChange: (next: number) => void;
-  disabled: boolean;
-  min?: number;
-  max?: number;
-  step?: string | number;
-}) {
-  const id = useId();
-  const report = useContext(PendingNumbers);
-  const [raw, setRaw] = useState(String(value));
-  const [pending, setPending] = useState(false);
-  useEffect(() => {
-    setRaw(String(value));
-    setPending(false);
-  }, [value]);
-  useEffect(() => {
-    report(id, pending);
-    return () => report(id, false);
-  }, [id, pending, report]);
-  return (
-    <label>
-      {label}
-      <input
-        type="text"
-        inputMode="decimal"
-        aria-label={label}
-        aria-invalid={pending || undefined}
-        value={raw}
-        disabled={disabled}
-        onChange={(e) => {
-          const next = e.target.value;
-          setRaw(next);
-          const complete = next.trim() !== "" && Number.isFinite(Number(next));
-          setPending(!complete);
-          if (complete) onChange(Number(next));
-        }}
-        onBlur={() => {
-          if (pending) {
-            setRaw(String(value));
-            setPending(false);
-          }
-        }}
-      />
-    </label>
-  );
-}
 function Color({
   label,
   alphaLabel,
@@ -205,7 +141,10 @@ function reorder<T>(items: T[], index: number, delta: number): T[] {
   [next[index], next[index + delta]] = [next[index + delta], next[index]];
   return next;
 }
-function changeKind(paint: Paint, kind: Paint["kind"]): Paint {
+function changeKind(
+  paint: Paint,
+  kind: Exclude<Paint["kind"], "image">,
+): Paint {
   const { id, enabled, opacity, blendMode } = paint;
   const common = {
     id,
@@ -213,9 +152,14 @@ function changeKind(paint: Paint, kind: Paint["kind"]): Paint {
     ...(opacity !== undefined ? { opacity } : {}),
     ...(blendMode ? { blendMode } : {}),
   };
-  const color = paint.kind === "solid" ? paint.color : paint.stops[0].color;
-  const stops =
+  const color =
     paint.kind === "solid"
+      ? paint.color
+      : paint.kind === "image"
+        ? white
+        : paint.stops[0].color;
+  const stops =
+    paint.kind === "solid" || paint.kind === "image"
       ? [
           { offset: 0, color },
           { offset: 1, color: white },
@@ -260,6 +204,17 @@ export function isRenderableFramePaintDraft(
         )
           return false;
         if (p.kind === "solid") return rgba(p.color);
+        if (p.kind === "image")
+          return (
+            typeof p.asset === "string" &&
+            object(p.mapping) &&
+            (((p.mapping.mode === "cover" || p.mapping.mode === "contain") &&
+              pair(p.mapping.anchor)) ||
+              ((p.mapping.mode === "crop" || p.mapping.mode === "tile") &&
+                Array.isArray(p.mapping.imageToFrame) &&
+                p.mapping.imageToFrame.length === 6 &&
+                p.mapping.imageToFrame.every(numeric)))
+          );
         if (p.kind !== "linear" && p.kind !== "radial") return false;
         return (
           Array.isArray(p.stops) &&
@@ -295,13 +250,33 @@ export function PaintFields({
   disabled,
   onChange,
   onPendingChange,
+  imageAssets = [],
+  onImportImage,
+  scope = "",
+  revision = 0,
 }: {
   scene: SceneMetadata;
   disabled: boolean;
   onChange: (next: SceneMetadata) => void;
   onPendingChange: (pending: boolean) => void;
+  imageAssets?: ImageAsset[];
+  onImportImage?: (file: File) => Promise<ImageAsset>;
+  scope?: string;
+  revision?: number;
 }) {
   const { t } = useI18n();
+  const [importing, setImporting] = useState(false),
+    [imageError, setImageError] = useState("");
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const identity = JSON.stringify([scope, scene]);
+  const latest = useRef({ identity, disabled, onChange });
+  latest.current = { identity, disabled, onChange };
   const root = useRef<HTMLDivElement>(null);
   const [pendingInputs, setPendingInputs] = useState<Set<string>>(
     () => new Set(),
@@ -317,19 +292,33 @@ export function PaintFields({
       }),
   );
   useEffect(() => {
-    onPendingChange(pendingInputs.size > 0);
-  }, [pendingInputs, onPendingChange]);
+    onPendingChange(pendingInputs.size > 0 || importing);
+  }, [pendingInputs, importing, onPendingChange]);
   useEffect(() => () => onPendingChange(false), [onPendingChange]);
   const fills = scene.fills ?? [];
   const shadows = scene.shadows ?? [];
   const legacy = legacyColor(scene.fill);
+  const canAddImage = scene.fills !== undefined || !scene.fill || !!legacy;
+  const appendImage = (asset: ImageAsset): Paint[] => [
+    {
+      id: crypto.randomUUID(),
+      kind: "image",
+      asset: asset.path,
+      mapping: { mode: "cover", anchor: { x: 0.5, y: 0.5 } },
+    },
+    ...(scene.fills ??
+      (legacy
+        ? [{ id: crypto.randomUUID(), kind: "solid" as const, color: legacy }]
+        : [])),
+  ];
   const setFills = (next: Paint[]) => onChange({ ...scene, fills: next });
   const setShadows = (next: Shadow[]) => onChange({ ...scene, shadows: next });
   const updateFill = (index: number, next: Paint) =>
     setFills(fills.map((paint, i) => (i === index ? next : paint)));
   const updateShadow = (index: number, next: Shadow) =>
     setShadows(shadows.map((shadow, i) => (i === index ? next : shadow)));
-  const kindLabels = {
+  const kindLabels: Record<Paint["kind"], string> = {
+    image: t("Изображение"),
     solid: t("Сплошная"),
     linear: t("Линейный градиент"),
     radial: t("Радиальный градиент"),
@@ -492,15 +481,51 @@ export function PaintFields({
               value={paint.kind}
               disabled={disabled}
               onChange={(kind) =>
-                updateFill(index, changeKind(paint, kind as Paint["kind"]))
+                kind === "image"
+                  ? imageAssets.find(
+                      (asset) => !asset.missing && !asset.archived,
+                    ) &&
+                    updateFill(index, {
+                      id: paint.id,
+                      kind: "image",
+                      asset: imageAssets.find(
+                        (asset) => !asset.missing && !asset.archived,
+                      )!.path,
+                      mapping: { mode: "cover", anchor: { x: 0.5, y: 0.5 } },
+                      ...(paint.enabled !== undefined
+                        ? { enabled: paint.enabled }
+                        : {}),
+                      ...(paint.opacity !== undefined
+                        ? { opacity: paint.opacity }
+                        : {}),
+                      ...(paint.blendMode
+                        ? { blendMode: paint.blendMode }
+                        : {}),
+                    })
+                  : updateFill(
+                      index,
+                      changeKind(
+                        paint,
+                        kind as Exclude<Paint["kind"], "image">,
+                      ),
+                    )
               }
               sections={[
                 {
                   label: "",
-                  options: Object.entries(kindLabels).map(([value, label]) => ({
-                    value,
-                    label,
-                  })),
+                  options: Object.entries(kindLabels)
+                    .filter(
+                      ([value]) =>
+                        value !== "image" ||
+                        paint.kind === "image" ||
+                        imageAssets.some(
+                          (asset) => !asset.missing && !asset.archived,
+                        ),
+                    )
+                    .map(([value, label]) => ({
+                      value,
+                      label,
+                    })),
                 },
               ]}
             />
@@ -538,7 +563,19 @@ export function PaintFields({
                 />
               </label>
             </div>
-            {paint.kind === "solid" ? (
+            {paint.kind === "image" ? (
+              <ImagePaintFields
+                paint={paint}
+                width={scene.width ?? 1}
+                height={scene.height ?? 1}
+                scope={scope}
+                revision={revision}
+                assets={imageAssets}
+                disabled={disabled || importing}
+                onImport={onImportImage}
+                onChange={(next) => updateFill(index, next)}
+              />
+            ) : paint.kind === "solid" ? (
               <Color
                 label={t("Цвет заливки {0}", { 0: index + 1 })}
                 alphaLabel={t("Альфа заливки {0}", { 0: index + 1 })}
@@ -703,6 +740,70 @@ export function PaintFields({
             {t("Добавить заливку")}
           </button>
         )}
+        <div className="image-paint-add">
+          {imageAssets.some((asset) => !asset.missing && !asset.archived) && (
+            <button
+              type="button"
+              disabled={
+                disabled || importing || fills.length >= 16 || !canAddImage
+              }
+              onClick={() => {
+                const asset = imageAssets.find(
+                  (asset) => !asset.missing && !asset.archived,
+                )!;
+                setFills(appendImage(asset));
+              }}
+            >
+              {t("Добавить заливку изображением")}
+            </button>
+          )}
+          {onImportImage ? (
+            <label>
+              {t("Импортировать изображение и добавить заливку")}
+              <input
+                type="file"
+                aria-label={t("Импортировать изображение и добавить заливку")}
+                accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                disabled={
+                  disabled || importing || fills.length >= 16 || !canAddImage
+                }
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  event.target.value = "";
+                  if (!file) return;
+                  const source = identity;
+                  setImporting(true);
+                  setImageError("");
+                  void onImportImage(file)
+                    .then((asset) => {
+                      if (
+                        mounted.current &&
+                        latest.current.identity === source &&
+                        !latest.current.disabled
+                      )
+                        latest.current.onChange({
+                          ...scene,
+                          fills: appendImage(asset),
+                        });
+                    })
+                    .catch((error) => {
+                      if (mounted.current && latest.current.identity === source)
+                        setImageError(t((error as Error).message));
+                    })
+                    .finally(() => setImporting(false));
+                }}
+              />
+            </label>
+          ) : (
+            <p className="paint-hint">
+              {t(
+                "Импорт изображений доступен в локальной студии. Ресурсы хранятся в папке проекта.",
+              )}
+            </p>
+          )}
+          {importing && <p role="status">{t("Обрабатываем изображения…")}</p>}
+          {imageError && <p role="alert">{imageError}</p>}
+        </div>
         {scene.fills !== undefined && fills.length === 0 && (
           <p className="paint-hint">
             {t("Фон прозрачен. Прежняя заливка не используется.")}
@@ -793,7 +894,7 @@ export function PaintFields({
         </button>
         <p className="paint-hint">
           {t(
-            "Заливки и тени пока доступны для фреймов. Изображения, маски и несколько обводок ещё не поддерживаются.",
+            "Заливки и тени доступны для фреймов. Маски и несколько обводок ещё не поддерживаются.",
           )}
         </p>
       </div>

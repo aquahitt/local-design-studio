@@ -473,6 +473,124 @@
                         ]
                       },
                       "kind": {
+                        "const": "image"
+                      },
+                      "asset": {
+                        "type": "string",
+                        "pattern": "^assets/[a-f0-9]{64}\\.(png|svg)$"
+                      },
+                      "mapping": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "mode": {
+                                "enum": [
+                                  "cover",
+                                  "contain"
+                                ]
+                              },
+                              "anchor": {
+                                "type": "object",
+                                "properties": {
+                                  "x": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "maximum": 1
+                                  },
+                                  "y": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "maximum": 1
+                                  }
+                                },
+                                "required": [
+                                  "x",
+                                  "y"
+                                ],
+                                "additionalProperties": false
+                              }
+                            },
+                            "required": [
+                              "mode",
+                              "anchor"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "mode": {
+                                "enum": [
+                                  "crop",
+                                  "tile"
+                                ]
+                              },
+                              "imageToFrame": {
+                                "type": "array",
+                                "minItems": 6,
+                                "maxItems": 6,
+                                "items": {
+                                  "type": "number",
+                                  "minimum": -1000000,
+                                  "maximum": 1000000
+                                },
+                                "description": "UV unit rectangle to frame-local CSS pixels [a,b,c,d,e,f]. Parser checks invertibility and affine limits."
+                              }
+                            },
+                            "required": [
+                              "mode",
+                              "imageToFrame"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "kind",
+                      "asset",
+                      "mapping"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "enabled": {
+                        "type": "boolean"
+                      },
+                      "opacity": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      },
+                      "blendMode": {
+                        "enum": [
+                          "normal",
+                          "multiply",
+                          "screen",
+                          "overlay",
+                          "darken",
+                          "lighten",
+                          "color-dodge",
+                          "color-burn",
+                          "hard-light",
+                          "soft-light",
+                          "difference",
+                          "exclusion",
+                          "hue",
+                          "saturation",
+                          "color",
+                          "luminosity"
+                        ]
+                      },
+                      "kind": {
                         "const": "solid"
                       },
                       "color": {
@@ -1211,6 +1329,124 @@
           "description": "Top paint first; IDs must be unique within the list (checked by the document parser). Frame surfaces only.",
           "items": {
             "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "opacity": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "blendMode": {
+                    "enum": [
+                      "normal",
+                      "multiply",
+                      "screen",
+                      "overlay",
+                      "darken",
+                      "lighten",
+                      "color-dodge",
+                      "color-burn",
+                      "hard-light",
+                      "soft-light",
+                      "difference",
+                      "exclusion",
+                      "hue",
+                      "saturation",
+                      "color",
+                      "luminosity"
+                    ]
+                  },
+                  "kind": {
+                    "const": "image"
+                  },
+                  "asset": {
+                    "type": "string",
+                    "pattern": "^assets/[a-f0-9]{64}\\.(png|svg)$"
+                  },
+                  "mapping": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "mode": {
+                            "enum": [
+                              "cover",
+                              "contain"
+                            ]
+                          },
+                          "anchor": {
+                            "type": "object",
+                            "properties": {
+                              "x": {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 1
+                              },
+                              "y": {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 1
+                              }
+                            },
+                            "required": [
+                              "x",
+                              "y"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "mode",
+                          "anchor"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "mode": {
+                            "enum": [
+                              "crop",
+                              "tile"
+                            ]
+                          },
+                          "imageToFrame": {
+                            "type": "array",
+                            "minItems": 6,
+                            "maxItems": 6,
+                            "items": {
+                              "type": "number",
+                              "minimum": -1000000,
+                              "maximum": 1000000
+                            },
+                            "description": "UV unit rectangle to frame-local CSS pixels [a,b,c,d,e,f]. Parser checks invertibility and affine limits."
+                          }
+                        },
+                        "required": [
+                          "mode",
+                          "imageToFrame"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "kind",
+                  "asset",
+                  "mapping"
+                ],
+                "additionalProperties": false
+              },
               {
                 "type": "object",
                 "properties": {

@@ -1,3 +1,6 @@
+import { createImageResourceLoader } from "../library/image-resource-runtime";
+import { collectImagePaintReferences } from "../core/image-paint";
+import { resolveSceneNodes } from "../core/design-components";
 import { createProjectFontLoader } from "./projectFonts";
 import { I18nProvider, translate } from "./i18n";
 import { observePreviewSize } from "./previewSizing";
@@ -38,7 +41,16 @@ export function PreviewApp() {
   const fontLoader = useRef<ReturnType<typeof createProjectFontLoader> | null>(
     null,
   );
-  useEffect(() => () => fontLoader.current?.dispose(), []);
+  const imageLoader = useRef<ReturnType<
+    typeof createImageResourceLoader
+  > | null>(null);
+  useEffect(
+    () => () => {
+      fontLoader.current?.dispose();
+      imageLoader.current?.dispose();
+    },
+    [],
+  );
   const [pickRequest, setPickRequest] = useState<{
     surfaceId: string;
     epoch: number;
@@ -104,8 +116,15 @@ export function PreviewApp() {
           y: d.y,
         });
       }
-      if (event.data?.type === "studio-preview-render" &&
-          (event.data.canvas === undefined || validCanvasRender(event.data.canvas, event.data.project, event.data.nodes)))
+      if (
+        event.data?.type === "studio-preview-render" &&
+        (event.data.canvas === undefined ||
+          validCanvasRender(
+            event.data.canvas,
+            event.data.project,
+            event.data.nodes,
+          ))
+      )
         setInput(event.data);
     }
     window.addEventListener("message", receive);
@@ -122,12 +141,30 @@ export function PreviewApp() {
   useEffect(() => {
     delete document.documentElement.dataset.studioPreviewRevision;
     delete document.documentElement.dataset.studioPreviewFontWarnings;
+    delete document.documentElement.dataset.studioPreviewImageWarnings;
     if (!input || !library) return;
     const loader = (fontLoader.current ??= createProjectFontLoader(document));
     let active = true,
       first = 0,
       second = 0;
-    void loader.load(input.project, input.nodes ?? []).then(({ warnings }) => {
+    const images = (imageLoader.current ??=
+      createImageResourceLoader(document));
+    const assets = [
+      ...new Set(
+        collectImagePaintReferences(
+          resolveSceneNodes(input.project, input.nodes ?? []),
+          "rendered",
+        ).map((ref) => ref.asset),
+      ),
+    ];
+    void Promise.all([
+      loader.load(input.project, input.nodes ?? []),
+      images.load({
+        projectId: input.project.projectId,
+        revision: input.project.revision,
+        assets,
+      }),
+    ]).then(([{ warnings }, imageStatus]) => {
       if (!active) return;
       parent.postMessage(
         {
@@ -140,6 +177,20 @@ export function PreviewApp() {
       );
       document.documentElement.dataset.studioPreviewFontWarnings =
         JSON.stringify(warnings);
+      document.documentElement.dataset.studioPreviewImageWarnings =
+        JSON.stringify(imageStatus.warnings);
+      parent.postMessage(
+        {
+          type: "studio-preview-image-status",
+          projectId: input.project.projectId,
+          revision: input.project.revision,
+          ...(input.canvas
+            ? { surfaceId: input.canvas.surfaceId, epoch: input.canvas.epoch }
+            : {}),
+          warnings: imageStatus.warnings,
+        },
+        __STUDIO_DESKTOP__ ? "studio://app" : location.origin,
+      );
       first = requestAnimationFrame(() => {
         second = requestAnimationFrame(() => {
           if (active)
@@ -152,6 +203,7 @@ export function PreviewApp() {
     return () => {
       active = false;
       loader.cancel();
+      images.cancel();
       cancelAnimationFrame(first);
       cancelAnimationFrame(second);
     };

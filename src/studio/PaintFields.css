@@ -98,3 +98,24 @@
   outline: 2px solid var(--studio-accent);
   outline-offset: 2px;
 }
+
+.image-paint-fields > button,
+.image-paint-add > button {
+  width: 100%;
+  margin-top: 8px;
+}
+.image-paint-fields summary {
+  margin-block: 12px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.image-paint-import,
+.image-paint-add > label {
+  display: block;
+  font-size: 12px;
+  margin-top: 12px;
+}
+.image-paint-fields input[type="file"],
+.image-paint-add input[type="file"] {
+  font-size: 11px;
+}

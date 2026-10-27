@@ -25,8 +25,8 @@ Read-only `POST /api/handoff` и MCP `react_export` принимают `{pageId,
 Экран получает доверенную библиотеку явно:
 
 ```tsx
-import { Screen } from './Screen';
-import { trustedLibrary } from 'your-registered-runtime';
+import { Screen } from "./Screen";
+import { trustedLibrary } from "your-registered-runtime";
 
 <Screen library={trustedLibrary} />;
 ```
@@ -51,3 +51,30 @@ CSS declarations; stroke остаётся inset и не смещает пото�
 `npm test -- src/service/handoff-fixture.test.ts` создаёт отдельный temp-проект только из экспортированных файлов. В него как dependency отдельно устанавливается тестовый provider реальной зарегистрированной builtin-библиотеки; её код не находится в экспортируемом артефакте. Компонентный и scene fixtures собираются Vite, запускаются в Chromium, отображают настоящий Text/Button, затем сравнивают token value, DOM bounds, font-size и padding с browser inspect владельца. Paint fixture дополнительно сравнивает независимые ожидаемые RGB-пиксели и PNG владельца с отдельно собранным handoff: порядок/alpha, градиенты, background blend, тени, stroke и clipping. Scene fixture дополнительно проверяет координаты вложенного слоя при обводке 10 px и высоту контейнера; CSS fixture проверяет реальный перенос строки в `content: var(...)`.
 
 Ресурсы других проектов и приватный product checkout не используются. Проверка офлайн использует установленные development-зависимости студии. Ограничения: системные шрифты зависят от ОС; export — snapshot интеграции поддержанных семантик, а не генератор production-приложения. При смене runtime библиотеки требуется повторная проверка соответствия metadata и fixtures.
+
+## Переносимые заливки изображениями
+
+Image fills фрейма рисуются общим `compileFramePaintTree`; preview и экспорт
+адаптируют одно безопасное дерево. Cover/contain используют непрерывную привязку,
+crop/tile — матрицу из нормированных UV в local CSS px. URL ресурса разрешается
+единым runtime относительно доверенной директории, без использования `<base>`
+доверенной React-библиотеки. Порядок paint stack, inset stroke и тени сохраняются.
+
+Manifest и ZIP включают ссылки из scene paints, в том числе из материализованных
+экземпляров и скрытых/выключенных заливок, наряду с ресурсами props и шрифтами.
+Экспорт проверяет hash и допустимое содержимое изображения; отсутствующий или
+повреждённый файл даёт `supported:false` с `MISSING_ASSET`. Такой результат нельзя
+считать полным переносимым артефактом.
+
+Архив содержит `imageResources.ts`. API `waitForImageResources({baseURL?})`
+возвращает размеры декодированных изображений и предупреждения;
+`getImageResourceStatus()` показывает состояние ожидания. `Screen` принимает
+необязательный `assetBaseURL` в пределах того же origin; по умолчанию используется
+директория URL документа. Интеграционный screenshot должен дождаться этого API и
+проверить warnings. Для сборки Vite перенесите каталог архива `assets/` в
+`public/assets/`, чтобы файлы попали в dist; пример README в экспорте описывает шаг.
+
+`src/service/image-handoff-fixture.test.ts` распаковывает ZIP в чистую временную
+папку, собирает его Vite/minify и сравнивает реальные пиксели с `/api/render`.
+Проверяются четыре режима, SVG без asset dimensions, задержка декодирования и
+явные ошибки при повреждении/удалении ресурса, без записи в source project.

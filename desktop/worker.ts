@@ -1,4 +1,5 @@
 import { DesktopProjects } from "./project-manager";
+import { captureErrorFromReply } from "../src/service/capture";
 import { DesktopLibraries, type DesktopLibraryBundle } from "./libraries";
 import { join } from "node:path";
 import { existsSync } from "node:fs";
@@ -40,7 +41,7 @@ let queue = Promise.resolve();
 process.parentPort.on("message", ({ data }) => {
   if (data.renderId !== undefined) {
     const render = renders.get(data.renderId);
-    if (render) { clearTimeout(render.timer); renders.delete(data.renderId); data.error ? render.reject(new Error(data.error)) : render.resolve(data.result); }
+    if (render) { clearTimeout(render.timer); renders.delete(data.renderId); data.error ? render.reject(captureErrorFromReply(data)) : render.resolve(data.result); }
     return;
   }
   queue = queue.then(async () => {
