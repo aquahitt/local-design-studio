@@ -67,7 +67,6 @@ Finite animations завершаются, infinite отменяются в dispo
 
 Новый native transport сверяется с [Electron Debugger API](https://www.electronjs.org/docs/latest/api/debugger) и [CDP Page.captureScreenshot](https://chromedevtools.github.io/devtools-protocol/tot/Page/#method-captureScreenshot). Debugger подключается только к disposable snapshot window в main process и отсоединяется в finally; editor/preview IPC не расширяется.
 
-
 Скрытое desktop snapshot окно использует native `capturePage` для одного пикселя
 параллельно с CDP node capture: native capturer поддерживает отрисовку страницы,
 не показывая BrowserWindow и не меняя CSS viewport. Warm-up PNG отбрасывается;
@@ -100,3 +99,18 @@ React-компонента за пределами wrapper не получают
 Режим `affine` в `src/service/handoff-fixture.test.ts` собирает независимый React
 export, проверяет мировые bounds и реальные RGB для вложенных shear/reflection,
 неравномерного масштаба и clipping в service snapshot и export.
+
+## Готовность заливок изображениями
+
+Перед отметкой готовности snapshot renderer параллельно ждёт проектные шрифты и
+декодирование включённых image fills видимых слоёв, затем два кадра браузера.
+Размеры SVG берутся из декодера, метаданные asset index не заменяют эту проверку.
+Устаревшие revision/epoch не публикуют готовность нового превью. В UI предупреждение
+о недоступных изображениях располагается вне документа и не сдвигает bounds.
+
+Service и native Electron проверяют результат image barrier до PNG. Отсутствующие,
+повреждённые или недекодируемые ресурсы дают `IMAGE_RESOURCE_UNAVAILABLE` с
+ограниченным списком канонических ссылок, вместо успешного пустого снимка. Ревизия
+и исходный документ остаются неизменными; font fallback сохраняет свой контракт.
+Pixel fixtures проверяют общий рисунок cover/contain/crop/tile, SVG UV mapping,
+порядок заливок, обводку, скругления и отличия Resize от Scale.

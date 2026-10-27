@@ -7,10 +7,7 @@ const str = { type: "string", minLength: 1 };
 const number = { type: "number" };
 const integer = { type: "integer", minimum: 0 };
 const json = {};
-const object = (
-  properties: Record<string, unknown>,
-  required = Object.keys(properties),
-) => ({
+const object = (properties: Record<string, unknown>, required = Object.keys(properties)) => ({
   type: "object",
   properties,
   required,
@@ -31,8 +28,7 @@ const stops = {
   type: "array",
   minItems: 2,
   maxItems: 64,
-  description:
-    "Offsets must be nondecreasing (checked by the document parser).",
+  description: "Offsets must be nondecreasing (checked by the document parser).",
   items: object({ offset: unit, color: rgba }),
 };
 const paints = {
@@ -42,15 +38,40 @@ const paints = {
     "Top paint first; IDs must be unique within the list (checked by the document parser). Frame surfaces only.",
   items: {
     oneOf: [
-      object({ ...paintBase, kind: { const: "solid" }, color: rgba }, [
+      object(
+        {
+          ...paintBase,
+          kind: { const: "image" },
+          asset: { type: "string", pattern: "^assets/[a-f0-9]{64}\\.(png|svg)$" },
+          mapping: {
+            oneOf: [
+              object({
+                mode: { enum: ["cover", "contain"] },
+                anchor: object({ x: unit, y: unit }),
+              }),
+              object({
+                mode: { enum: ["crop", "tile"] },
+                imageToFrame: {
+                  type: "array",
+                  minItems: 6,
+                  maxItems: 6,
+                  items: coordinate,
+                  description:
+                    "UV unit rectangle to frame-local CSS pixels [a,b,c,d,e,f]. Parser checks invertibility and affine limits.",
+                },
+              }),
+            ],
+          },
+        },
+        ["id", "kind", "asset", "mapping"]
+      ),
+      object({ ...paintBase, kind: { const: "solid" }, color: rgba }, ["id", "kind", "color"]),
+      object({ ...paintBase, kind: { const: "linear" }, angle: number, stops }, [
         "id",
         "kind",
-        "color",
+        "angle",
+        "stops",
       ]),
-      object(
-        { ...paintBase, kind: { const: "linear" }, angle: number, stops },
-        ["id", "kind", "angle", "stops"],
-      ),
       object(
         {
           ...paintBase,
@@ -62,7 +83,7 @@ const paints = {
           }),
           stops,
         },
-        ["id", "kind", "center", "radius", "stops"],
+        ["id", "kind", "center", "radius", "stops"]
       ),
     ],
   },
@@ -84,7 +105,7 @@ const shadows = {
       blur: { type: "number", minimum: 0, maximum: 4096 },
       color: rgba,
     },
-    ["id", "kind", "x", "y", "spread", "blur", "color"],
+    ["id", "kind", "x", "y", "spread", "blur", "color"]
   ),
 };
 const framePaintConstraint = {
@@ -102,8 +123,7 @@ const fontLabel = {
   minLength: 1,
   maxLength: 160,
   pattern: "^[^\\u0000-\\u001f\\u007f-\\u009f]+$",
-  description:
-    "Trimmed, non-empty display metadata; never interpreted as CSS or a path.",
+  description: "Trimmed, non-empty display metadata; never interpreted as CSS or a path.",
 };
 const projectFont = object({
   id: fontId,
@@ -132,7 +152,7 @@ const textStyle = object(
     align: { enum: ["start", "center", "end", "justify"] },
     direction: { enum: ["ltr", "rtl", "auto"] },
   },
-  [],
+  []
 );
 const textStyleConstraint = {
   if: {
@@ -166,7 +186,7 @@ const geometry = {
       rotation: coordinate,
       linearTransform,
     },
-    ["x", "y", "width", "height"],
+    ["x", "y", "width", "height"]
   ),
   allOf: [transformConstraint],
   description:
@@ -200,9 +220,7 @@ const overrides = {
   type: "object",
   additionalProperties: { type: "object", additionalProperties: json },
 };
-const instance = object({ definitionId: str, variant: str, overrides }, [
-  "definitionId",
-]);
+const instance = object({ definitionId: str, variant: str, overrides }, ["definitionId"]);
 const node = object(
   {
     id: str,
@@ -218,7 +236,7 @@ const node = object(
     scene,
     instance,
   },
-  ["id", "type", "props", "slots"],
+  ["id", "type", "props", "slots"]
 );
 const componentDefinition = object(
   {
@@ -232,7 +250,7 @@ const componentDefinition = object(
       additionalProperties: object({ nodeId: str, prop: str, default: json }),
     },
   },
-  ["id", "name", "version", "nodes"],
+  ["id", "name", "version", "nodes"]
 );
 const designComponents = {
   type: "array",
@@ -267,7 +285,7 @@ const annotation = {
       proposalId: str,
       createdAt: { ...str, format: "date-time" },
     },
-    ["id", "text", "status", "createdAt"],
+    ["id", "text", "status", "createdAt"]
   ),
   dependentRequired: { x: ["y", "pageId"], y: ["x", "pageId"] },
 };
@@ -280,7 +298,7 @@ const page = object(
     nodes: { type: "array", items: { $ref: "#/$defs/node" } },
     provenance,
   },
-  ["screenId", "name", "viewport", "nodes"],
+  ["screenId", "name", "viewport", "nodes"]
 );
 const tokens = {
   type: "object",
@@ -290,7 +308,7 @@ const tokens = {
       value: json,
       themes: { type: "object", additionalProperties: json },
     },
-    ["type", "value"],
+    ["type", "value"]
   ),
 };
 const members = {
@@ -326,16 +344,7 @@ export const projectSchema = {
       annotations,
       fonts,
     },
-    [
-      "schemaVersion",
-      "projectId",
-      "name",
-      "revision",
-      "pages",
-      "library",
-      "theme",
-      "tokens",
-    ],
+    ["schemaVersion", "projectId", "name", "revision", "pages", "library", "theme", "tokens"]
   ),
   $schema: "https://json-schema.org/draft/2020-12/schema",
   $defs: { node, page, scene, componentDefinition },
@@ -343,7 +352,7 @@ export const projectSchema = {
 const op = (
   type: string,
   properties: Record<string, unknown>,
-  required = Object.keys(properties),
+  required = Object.keys(properties)
 ) => object({ type: { const: type }, ...properties }, ["type", ...required]);
 const destination = { pageId: str, parentId: str, slot: str, index: integer };
 export const batchSchema = {
@@ -368,14 +377,10 @@ export const batchSchema = {
                 locked: { type: "boolean" },
                 scene: {
                   ...object(sceneFields, []),
-                  allOf: [
-                    framePaintConstraint,
-                    textStyleConstraint,
-                    transformConstraint,
-                  ],
+                  allOf: [framePaintConstraint, textStyleConstraint, transformConstraint],
                 },
               },
-              ["nodeId"],
+              ["nodeId"]
             ),
             op("setNodeGeometry", { nodeId: str, geometry }),
             op("addProjectFont", { font: projectFont }),
@@ -388,16 +393,12 @@ export const batchSchema = {
               nodeId: str,
               props: { type: "object", additionalProperties: json },
             }),
-            op(
-              "insertNode",
-              { ...destination, node: { $ref: "#/$defs/node" } },
-              ["pageId", "index", "node"],
-            ),
-            op("moveNode", { ...destination, nodeId: str }, [
+            op("insertNode", { ...destination, node: { $ref: "#/$defs/node" } }, [
               "pageId",
               "index",
-              "nodeId",
+              "node",
             ]),
+            op("moveNode", { ...destination, nodeId: str }, ["pageId", "index", "nodeId"]),
             op("removeNode", { nodeId: str }),
             op(
               "setViewport",
@@ -407,7 +408,7 @@ export const batchSchema = {
                 height,
                 device: { anyOf: [device, { type: "null" }] },
               },
-              ["pageId", "width"],
+              ["pageId", "width"]
             ),
             op("addPage", { page: { $ref: "#/$defs/page" } }),
             op("removePage", { pageId: str }),
@@ -421,29 +422,22 @@ export const batchSchema = {
         },
       },
     },
-    ["requestId", "baseRevision", "operations"],
+    ["requestId", "baseRevision", "operations"]
   ),
   $defs: { node, page, scene, componentDefinition },
 };
-export function validateComponentProps(
-  project: Project,
-  metadata: unknown,
-): void {
+export function validateComponentProps(project: Project, metadata: unknown): void {
   if (!Array.isArray(metadata)) return;
   const library = (metadata as LibraryMetadata[]).find(
-    (l) => l.id === project.library.id && l.version === project.library.version,
+    (l) => l.id === project.library.id && l.version === project.library.version
   );
   if (!library) return;
   const modes = new Set([
     project.theme ?? "light",
     ...(library.themes ?? []).map((theme) => theme.id),
-    ...Object.values(project.tokens ?? {}).flatMap((token) =>
-      Object.keys(token.themes ?? {}),
-    ),
+    ...Object.values(project.tokens ?? {}).flatMap((token) => Object.keys(token.themes ?? {})),
   ]);
-  const resolvedModes = [...modes].map((mode) =>
-    resolveTokens(project.tokens ?? {}, mode),
-  );
+  const resolvedModes = [...modes].map((mode) => resolveTokens(project.tokens ?? {}, mode));
   const walk = (nodes: ProjectNode[]) => {
     for (const node of nodes) {
       const component = library.components[node.type];

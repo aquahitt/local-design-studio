@@ -12,6 +12,7 @@ import {
 import { spawn } from "node:child_process";
 import { desktopMcpArgs } from "./cli";
 import { captureDesktopSnapshot } from "./render";
+import { captureErrorReply } from "../src/service/capture";
 import type { DesktopLibraryBundle } from "./libraries";
 import { join, resolve } from "node:path";
 import {
@@ -189,7 +190,7 @@ function startDesktop() {
               (error) =>
                 worker?.postMessage({
                   renderId: message.renderId,
-                  error: error.message,
+                  ...captureErrorReply(error),
                 }),
             );
             return;

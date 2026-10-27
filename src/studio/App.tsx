@@ -1447,7 +1447,8 @@ export function StudioApp({
                         />
                         {node && (
                           <NodeLayoutInspector
-                            key={node.id + "-layout"}
+                            key={project.projectId + ":" + node.id + "-layout"}
+                            imageClient={client ?? undefined}
                             node={node}
                             project={project}
                             disabled={

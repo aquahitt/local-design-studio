@@ -1,3 +1,5 @@
+import { FramePaintLayer } from "./FramePaintLayer";
+import { collectImagePaintReferences } from "../core/image-paint";
 import { compileTextStyle } from "../core/text-style";
 import { validCanvasBounds, type CanvasBounds } from "./canvasCamera";
 import type { SceneView } from "../core/scene";
@@ -101,11 +103,18 @@ export function Preview({
   const { locale, t } = useI18n();
   const desktopLibrary = useContext(DesktopLibraryContext);
   const ref = useRef<HTMLIFrameElement>(null);
+  const imageAssets = new Set(
+    collectImagePaintReferences(
+      resolveSceneNodes(project, nodes ?? []),
+      "rendered",
+    ).map((ref) => ref.asset),
+  );
   const live = useRef({
     canvas,
     revision: project.revision,
     projectId: project.projectId,
     fonts: project.fonts,
+    imageAssets,
     nodes,
     onGeometry,
     onPick,
@@ -115,6 +124,7 @@ export function Preview({
     revision: project.revision,
     projectId: project.projectId,
     fonts: project.fonts,
+    imageAssets,
     nodes,
     onGeometry,
     onPick,
@@ -133,10 +143,11 @@ export function Preview({
   useEffect(() => setContentWidth(0), [component?.type, theme]);
   const [ready, setReady] = useState(false);
   const [fontWarnings, setFontWarnings] = useState<string[]>([]);
-  useEffect(
-    () => setFontWarnings([]),
-    [project.projectId, project.revision, nodes],
-  );
+  const [imageWarnings, setImageWarnings] = useState<string[]>([]);
+  useEffect(() => {
+    setFontWarnings([]);
+    setImageWarnings([]);
+  }, [project.projectId, project.revision, nodes]);
   const [measuredHeight, setMeasuredHeight] = useState(height);
   useEffect(() => {
     function receive(event: MessageEvent) {
@@ -165,6 +176,29 @@ export function Preview({
             (warning: { fontId: string }) => warning.fontId,
           ),
         );
+      if (
+        event.data?.type === "studio-preview-image-status" &&
+        event.data.projectId === live.current.projectId &&
+        event.data.revision === live.current.revision &&
+        (!live.current.canvas ||
+          (event.data.surfaceId === live.current.canvas.surfaceId &&
+            event.data.epoch === live.current.canvas.epoch)) &&
+        Array.isArray(event.data.warnings) &&
+        event.data.warnings.length <= 1000 &&
+        event.data.warnings.every(
+          (warning: { code?: unknown; asset?: unknown }) =>
+            warning?.code === "PROJECT_IMAGE_UNAVAILABLE" &&
+            typeof warning.asset === "string" &&
+            live.current.imageAssets.has(warning.asset),
+        )
+      )
+        setImageWarnings([
+          ...new Set<string>(
+            event.data.warnings.map(
+              (warning: { asset: string }) => warning.asset,
+            ),
+          ),
+        ]);
       if (
         live.current.canvas &&
         event.data?.surfaceId === live.current.canvas.surfaceId &&
@@ -336,7 +370,24 @@ export function Preview({
     </p>
   ) : null;
   return (
-    <div className="studio-preview-ui">
+    <div className="studio-preview-ui" style={{ position: "relative" }}>
+      {imageWarnings.length > 0 && (
+        <p
+          role="status"
+          className="preview-font-warning"
+          style={{
+            position: "absolute",
+            inset: "0 0 auto",
+            zIndex: 2,
+            margin: 0,
+            maxHeight: 80,
+            overflow: "auto",
+          }}
+        >
+          {t("Не удалось загрузить изображения проекта:")}{" "}
+          {imageWarnings.join(", ")}
+        </p>
+      )}
       {warning}
       {autoHeight ? (
         <div
@@ -459,6 +510,9 @@ export function Nodes({
                 } as CSSProperties
               }
             >
+              {node.scene?.kind === "frame" && (
+                <FramePaintLayer nodeId={node.id} scene={node.scene} />
+              )}
               {node.scene?.kind === "text" ? (
                 <div
                   style={compileTextStyle(node.scene, project) as CSSProperties}

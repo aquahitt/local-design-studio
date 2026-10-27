@@ -4,7 +4,11 @@ import {
   translateCaptureExpression,
   settleCaptureExpression,
   withCaptureTimeout,
+  assertImageResourcesReady,
+  imageResourceWarningsExpression,
 } from "../src/service/capture";
+import { collectImagePaintReferences } from "../src/core/image-paint";
+import { resolveSceneNodes } from "../src/core/design-components";
 import { computedStylesExpression } from "../src/service/computed-styles";
 import { BrowserWindow, nativeImage } from "electron";
 import type { Project } from "../src/core/project";
@@ -85,6 +89,11 @@ export async function captureDesktopSnapshot(
       }
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
+    mark("image-resources");
+    assertImageResourcesReady(
+      await withCaptureTimeout(window.webContents.executeJavaScript(imageResourceWarningsExpression)),
+      collectImagePaintReferences(resolveSceneNodes(input.project, input.page.nodes), "rendered").map(ref => ref.asset),
+    );
     mark("settle-animation");
     await withCaptureTimeout(
       window.webContents.executeJavaScript(settleCaptureExpression),

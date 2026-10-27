@@ -4,7 +4,11 @@ import {
   translateCaptureExpression,
   settleCaptureExpression,
   withCaptureTimeout,
+  assertImageResourcesReady,
+  imageResourceWarningsExpression,
 } from "./capture";
+import { collectImagePaintReferences } from "../core/image-paint";
+import { resolveSceneNodes } from "../core/design-components";
 import { computedStylesExpression } from "./computed-styles";
 import { createServer } from "node:http";
 import { once } from "node:events";
@@ -281,6 +285,10 @@ export async function renderSnapshot(
         String(revision),
       input.project.revision,
       { timeout: 15000 },
+    );
+    assertImageResourcesReady(
+      await withCaptureTimeout(page.evaluate(imageResourceWarningsExpression)),
+      collectImagePaintReferences(resolveSceneNodes(input.project, input.page.nodes), "rendered").map(ref => ref.asset),
     );
     await withCaptureTimeout(page.evaluate(settleCaptureExpression));
     const bounds = await page.locator("[data-node-id]").evaluateAll((nodes) =>

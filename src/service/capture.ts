@@ -1,6 +1,95 @@
 import { CoreError } from "../core/project";
 import type { RenderBounds } from "./render";
 
+export const imageResourceWarningsExpression = `(() => {
+  try { return JSON.parse(document.documentElement.dataset.studioPreviewImageWarnings ?? '[]'); }
+  catch { return null; }
+})()`;
+
+/** Fail before rasterization; only canonical assets in this snapshot may enter diagnostics. */
+export function assertImageResourcesReady(
+  warnings: unknown,
+  assets: readonly string[],
+): void {
+  if (!Array.isArray(warnings) || warnings.length > 1000)
+    throw new CoreError("IMAGE_RESOURCE_UNAVAILABLE");
+  const expected = new Set(assets);
+  const unavailable: string[] = [];
+  for (const warning of warnings) {
+    if (
+      !warning ||
+      typeof warning !== "object" ||
+      warning.code !== "PROJECT_IMAGE_UNAVAILABLE" ||
+      typeof warning.asset !== "string" ||
+      !/^assets\/[a-f0-9]{64}\.(png|svg)$/.test(warning.asset) ||
+      !expected.has(warning.asset)
+    )
+      throw new CoreError("IMAGE_RESOURCE_UNAVAILABLE");
+    unavailable.push(warning.asset);
+  }
+  if (unavailable.length) {
+    const canonical = [...new Set(unavailable)].sort();
+    throw new CoreError(
+      "IMAGE_RESOURCE_UNAVAILABLE",
+      canonical.join(", "),
+      canonical[0],
+    );
+  }
+}
+
+/** The native render channel only extends its existing message with this one typed error. */
+export function captureErrorReply(error: unknown): {
+  error: string;
+  errorCode?: "IMAGE_RESOURCE_UNAVAILABLE";
+  imageAssets?: string[];
+} {
+  if (
+    error instanceof CoreError &&
+    error.code === "IMAGE_RESOURCE_UNAVAILABLE"
+  ) {
+    const detail = error.message.slice("IMAGE_RESOURCE_UNAVAILABLE: ".length);
+    const imageAssets = detail
+      .split(", ")
+      .filter((asset) => /^assets\/[a-f0-9]{64}\.(png|svg)$/.test(asset))
+      .slice(0, 1000);
+    const safe = new CoreError(
+      "IMAGE_RESOURCE_UNAVAILABLE",
+      imageAssets.join(", "),
+    );
+    return {
+      error: safe.message,
+      errorCode: "IMAGE_RESOURCE_UNAVAILABLE",
+      imageAssets,
+    };
+  }
+  return { error: error instanceof Error ? error.message : "RENDER_FAILED" };
+}
+
+export function captureErrorFromReply(reply: {
+  error?: unknown;
+  errorCode?: unknown;
+  imageAssets?: unknown;
+}): Error {
+  if (
+    reply.errorCode === "IMAGE_RESOURCE_UNAVAILABLE" &&
+    Array.isArray(reply.imageAssets) &&
+    reply.imageAssets.length <= 1000 &&
+    reply.imageAssets.every(
+      (asset) =>
+        typeof asset === "string" &&
+        /^assets\/[a-f0-9]{64}\.(png|svg)$/.test(asset),
+    )
+  )
+    return new CoreError(
+      "IMAGE_RESOURCE_UNAVAILABLE",
+      reply.imageAssets.join(", "),
+      reply.imageAssets[0],
+    );
+  return new Error(
+    typeof reply.error === "string" ? reply.error : "RENDER_FAILED",
+  );
+}
+
 /** Raster allocation limits apply to output CSS pixels, not world coordinates. */
 export const RASTER_LIMITS = { maxSide: 8192, maxPixels: 16_777_216 } as const;
 

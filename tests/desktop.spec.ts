@@ -1,12 +1,14 @@
 import { test, expect, _electron as electron } from "@playwright/test";
-import { mkdtemp, readFile, rm, mkdir, realpath } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile, unlink, rm, mkdir, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { createHash } from "node:crypto";
 import { join, resolve } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { desktopRuntimeEnv, writeDesktopLibraryFixture, writeDesktopProjectFixture } from "./desktop-fixtures";
 import { execFileSync } from "node:child_process";
 import { closeOwnedNativeApp, finishNativeTest, nativeDeadline } from "./native-test-lifecycle";
+
 test("desktop creates, saves, reopens disk project and isolates preview", async () => {
   const temp = await mkdtemp(join(tmpdir(), "studio-desktop-e2e-"));
   const root = join(temp, "project");
@@ -676,5 +678,91 @@ test("desktop installed MCP survives owner replacement, trusted library restart 
       removeFixture: () => rm(temp, { recursive: true, force: true }),
     });
     mark("cleanup:done");
+  }
+});
+
+test("desktop image paints wait for decode and reject corrupt or missing immutable assets", async ({}, testInfo) => {
+  test.setTimeout(90000);
+  const temp = await mkdtemp(join(tmpdir(), "studio-desktop-image-")), root = join(temp, "project"), emptyPath = join(temp, "empty-path");
+  await Promise.all([mkdir(root), mkdir(emptyPath)]);
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100"><path fill="red" d="M0 0h100v100H0z"/><path fill="blue" d="M100 0h100v100H100z"/></svg>';
+  const asset = "assets/" + createHash("sha256").update(svg).digest("hex") + ".svg";
+  await mkdir(join(root, "assets"));
+  await writeFile(join(root, asset), svg);
+  await writeFile(join(root, "project.json"), JSON.stringify({ schemaVersion: 2, projectId: "native-image-paint", name: "Native image paint", revision: 3,
+    library: { id: "builtin", version: "1" }, theme: "light", tokens: {}, pages: [{ screenId: "home", name: "Home", viewport: { width: 390, height: 600 },
+      nodes: [{ id: "picture", type: "SceneFrame", props: {}, slots: {}, scene: { kind: "frame", x: 0, y: 0, width: 120, height: 80, stroke: "#123456", strokeWidth: 6,
+        fills: [{ id: "photo", kind: "image", asset, mapping: { mode: "crop", imageToFrame: [120, 0, 0, 80, 0, 0] } }] } }],
+    }] }));
+  let before = await readFile(join(root, "project.json"), "utf8");
+  const packaged = process.env.STUDIO_PACKAGED_EXECUTABLE;
+  if (!packaged) execFileSync(process.execPath, ["scripts/desktop/build.mjs"], { stdio: "pipe" });
+  const env = desktopRuntimeEnv(join(temp, "settings"), emptyPath);
+  let app: Awaited<ReturnType<typeof electron.launch>> | undefined, primaryError: unknown, logs = "";
+  const client = new Client({ name: "native-image-acceptance", version: "1" });
+  try {
+    app = await electron.launch({ ...(packaged ? { executablePath: packaged } : { args: [resolve(".")] }), chromiumSandbox: process.platform === "linux", env });
+    app.process().stderr?.on("data", chunk => { logs = (logs + String(chunk)).slice(-12000); });
+    const page = await app.firstWindow();
+    await app.evaluate(({ dialog }, root) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [root] }); }, root);
+    await page.getByRole("button", { name: "Открыть проект", exact: true }).click();
+    await expect(page.getByText("Native image paint", { exact: true }).first()).toBeVisible();
+    // Owner initialization canonicalizes a fixture file; snapshot operations below must not change it.
+    before = await readFile(join(root, "project.json"), "utf8");
+    expect(JSON.parse(before).revision).toBe(3);
+    await app.evaluate(({ app }) => {
+      (globalThis as any).__nativeDelayedImageDecodes = 0;
+      app.on("web-contents-created", (_event, contents) => {
+        contents.on("console-message", details => {
+          if (details.message === "Studio test image decoded") (globalThis as any).__nativeDelayedImageDecodes++;
+        });
+        contents.on("dom-ready", () => {
+          if (!contents.getURL().startsWith("studio://preview/preview")) return;
+          void contents.executeJavaScript(`(() => {const decode=HTMLImageElement.prototype.decode;HTMLImageElement.prototype.decode=async function(){await decode.call(this);await new Promise(resolve=>setTimeout(resolve,220));console.info('Studio test image decoded')}})()`);
+        });
+      });
+    });
+    const executable = packaged ?? await app.evaluate(() => process.execPath);
+    await client.connect(new StdioClientTransport({ command: executable, args: [...(packaged ? [] : [resolve(".")]), "--studio-mcp", "--project", root], env, stderr: "inherit" }));
+    const started = Date.now();
+    const result = await client.callTool({ name: "document_render", arguments: { pageId: "home", revision: 3, nodeId: "picture" } });
+    expect(result.isError, JSON.stringify(result.content)).not.toBe(true);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(200);
+    await expect.poll(() => app!.evaluate(() => (globalThis as any).__nativeDelayedImageDecodes)).toBeGreaterThan(0);
+    const content = result.content as { type: string; text?: string; data?: string }[];
+    const metadata = JSON.parse(content.find(row => row.type === "text")!.text!);
+    expect(metadata.warnings).toEqual([]);
+    const png = Buffer.from(content.find(row => row.type === "image")!.data!, "base64");
+    expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([120, 80]);
+    const pixels = await page.evaluate(async data => {
+      const image = new Image(); image.src = "data:image/png;base64," + data; await image.decode();
+      const canvas = document.createElement("canvas"); canvas.width = image.naturalWidth; canvas.height = image.naturalHeight;
+      const context = canvas.getContext("2d")!; context.drawImage(image, 0, 0);
+      return [3, 30, 90].map(x => Array.from(context.getImageData(x, 40, 1, 1).data));
+    }, content.find(row => row.type === "image")!.data!);
+    // Native PNG retains the display color profile; allow the same two-channel-unit
+    // tolerance as the existing desktop gradient checks when decoding its stroke.
+    for (const [channel, expected] of [18, 52, 86].entries()) expect(Math.abs(pixels[0][channel] - expected)).toBeLessThanOrEqual(2);
+    expect(pixels[0][3]).toBe(255);
+    expect(pixels.slice(1)).toEqual([[255, 0, 0, 255], [0, 0, 255, 255]]);
+    // Only this private asset fixture is damaged; the active document is never rewritten.
+    await writeFile(join(root, asset), svg.replace("red", "green"));
+    for (const name of ["document_render", "inspect_read"]) {
+      if (name === "inspect_read") await unlink(join(root, asset));
+      const failure = await client.callTool({ name, arguments: { pageId: "home", revision: 3, nodeId: "picture" } });
+      expect(failure.isError).toBe(true);
+      const error = JSON.parse((failure.content as { type: string; text: string }[]).find(row => row.type === "text")!.text);
+      expect(error.error).toBe("IMAGE_RESOURCE_UNAVAILABLE");
+    }
+    expect(await readFile(join(root, "project.json"), "utf8")).toBe(before);
+  } catch (error) { primaryError = error; throw error; }
+  finally {
+    await finishNativeTest({ primaryError,
+      attach: () => testInfo.attach("desktop-image-diagnostics", { body: logs, contentType: "text/plain" }),
+      diagnostics: async () => {},
+      closeClients: () => client.close(),
+      closeApp: async () => { if (app) await closeOwnedNativeApp(app); },
+      removeFixture: () => rm(temp, { recursive: true, force: true }),
+    });
   }
 });
