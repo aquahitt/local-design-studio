@@ -1,3 +1,4 @@
+import type { PageGuide } from "../core/guides";
 import { resolveSceneNodes } from "../core/design-components";
 import type { ProjectFont } from "../core/fonts";
 import { usedTextFontIds } from "../core/text-style";
@@ -107,4 +108,26 @@ export function buildProposalPreview(
       error: "Не удалось построить превью: " + (e as Error).message,
     };
   }
+}
+
+/** Detached editor metadata; never mutates either proposal document. */
+export function guideProposalChanges(
+  before: readonly PageGuide[] = [],
+  after: readonly PageGuide[] = [],
+) {
+  const old = new Map(before.map((guide) => [guide.id, guide]));
+  const next = new Map(after.map((guide) => [guide.id, guide]));
+  return [...new Set([...old.keys(), ...next.keys()])].flatMap((id) => {
+    const a = old.get(id),
+      b = next.get(id);
+    return stableStringify(a ?? null) === stableStringify(b ?? null)
+      ? []
+      : [
+          {
+            id,
+            ...(a ? { before: { ...a } } : {}),
+            ...(b ? { after: { ...b } } : {}),
+          },
+        ];
+  });
 }

@@ -1,3 +1,4 @@
+import { parseGuides } from "../core/guides";
 import { createImageResourceLoader } from "../library/image-resource-runtime";
 import { collectImagePaintReferences } from "../core/image-paint";
 import { resolveSceneNodes } from "../core/design-components";
@@ -124,8 +125,17 @@ export function PreviewApp() {
             event.data.project,
             event.data.nodes,
           ))
-      )
-        setInput(event.data);
+      ) {
+        try {
+          const editorGuides =
+            event.data.editorGuides === undefined
+              ? undefined
+              : parseGuides(event.data.editorGuides);
+          setInput({ ...event.data, editorGuides });
+        } catch {
+          /* Reject malformed editor-only metadata. */
+        }
+      }
     }
     window.addEventListener("message", receive);
     document.documentElement.dataset.studioPreviewListening = "true";
@@ -365,13 +375,15 @@ export function PreviewApp() {
                 p.nodes.some((n) => input.nodes?.some((i) => i.id === n.id)),
               )?.viewport.width
             : undefined,
-          minHeight: input.nodes?.some((node) => node.scene)
-            ? (input.project.pages.find((page) =>
-                page.nodes.some((node) =>
-                  input.nodes?.some((current) => current.id === node.id),
-                ),
-              )?.viewport.height ?? 850)
-            : undefined,
+          minHeight:
+            input.editorGuides !== undefined ||
+            input.nodes?.some((node) => node.scene)
+              ? (input.project.pages.find((page) =>
+                  page.nodes.some((node) =>
+                    input.nodes?.some((current) => current.id === node.id),
+                  ),
+                )?.viewport.height ?? 850)
+              : undefined,
         }}
       >
         <RenderBoundary
@@ -400,6 +412,35 @@ export function PreviewApp() {
             />
           )}
         </RenderBoundary>
+        {input.editorGuides !== undefined && (
+          <svg
+            aria-hidden="true"
+            data-proposal-guide-overlay="true"
+            style={{
+              position: "absolute",
+              inset: 0,
+              width: "100%",
+              height: "100%",
+              pointerEvents: "none",
+              overflow: "hidden",
+            }}
+          >
+            {input.editorGuides.map((guide) => (
+              <line
+                key={guide.id}
+                data-proposal-guide-axis={guide.axis}
+                data-proposal-guide-position={guide.position}
+                x1={guide.axis === "x" ? guide.position : 0}
+                x2={guide.axis === "x" ? guide.position : "100%"}
+                y1={guide.axis === "y" ? guide.position : 0}
+                y2={guide.axis === "y" ? guide.position : "100%"}
+                stroke="#3b82f6"
+                strokeWidth="1"
+                strokeDasharray={guide.locked ? "3 3" : undefined}
+              />
+            ))}
+          </svg>
+        )}
       </div>
     </I18nProvider>
   );

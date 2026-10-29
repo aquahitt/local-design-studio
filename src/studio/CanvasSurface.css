@@ -100,3 +100,36 @@
   font: inherit;
   font-variant-numeric: tabular-nums;
 }
+
+.canvas-snap-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 4;
+}
+.canvas-snap-line {
+  position: absolute;
+  pointer-events: none;
+}
+.canvas-snap-line.axis-x {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  border-left: 1px dashed var(--studio-accent);
+}
+.canvas-snap-line.axis-y {
+  left: 0;
+  right: 0;
+  height: 1px;
+  border-top: 1px dashed var(--studio-accent);
+}
+.canvas-surface > .canvas-guide-overlay {
+  z-index: 3;
+}
+.canvas-surface > .canvas-rulers {
+  z-index: 6;
+}
+.canvas-surface > .canvas-transform-handles {
+  z-index: 5;
+}

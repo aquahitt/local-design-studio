@@ -72,6 +72,11 @@ const anchors: Record<TransformHandle, Point> = {
   sw: { x: 0, y: 1 },
   w: { x: 0, y: 0.5 },
 };
+/** Shared handle coordinates; callers receive a copy, never the private table. */
+export function transformHandleAnchor(handle: TransformHandle): Point {
+  if (!Object.hasOwn(anchors, handle)) throw new CoreError("INVALID_TRANSFORM");
+  return { ...anchors[handle] };
+}
 function finite(point: Point): boolean {
   return Number.isFinite(point.x) && Number.isFinite(point.y);
 }

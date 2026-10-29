@@ -1,3 +1,4 @@
+import { parseGuides, type PageGuide } from "./guides";
 import { hasLockedSceneDescendant } from "./scene-locks";
 import { validateProjectFont, type ProjectFont } from "./fonts";
 import {
@@ -24,6 +25,10 @@ import {
   type Tokens,
 } from "./project";
 export type Operation =
+  | { type: "addGuide"; pageId: string; guide: PageGuide }
+  | { type: "moveGuide"; pageId: string; guideId: string; position: number }
+  | { type: "removeGuide"; pageId: string; guideId: string }
+  | { type: "setGuideLocked"; pageId: string; guideId: string; locked: boolean }
   | { type: "setNodeGeometry"; nodeId: string; geometry: SceneGeometry }
   | { type: "addProjectFont"; font: ProjectFont }
   | { type: "updateProjectFont"; fontId: string; font: ProjectFont }
@@ -111,6 +116,10 @@ export function applyBatch(project: Project, batch: Batch): Project {
   )
     throw new CoreError("INVALID_BATCH");
   const operationFields: Record<Operation["type"], string[]> = {
+    addGuide: ["pageId", "guide"],
+    moveGuide: ["pageId", "guideId", "position"],
+    removeGuide: ["pageId", "guideId"],
+    setGuideLocked: ["pageId", "guideId", "locked"],
     addProjectFont: ["font"],
     updateProjectFont: ["fontId", "font"],
     removeProjectFont: ["fontId"],
@@ -239,6 +248,30 @@ export function applyBatch(project: Project, batch: Batch): Project {
   }
   for (const op of batch.operations) {
     switch (op.type) {
+      case "addGuide": {
+        const target = page(op.pageId),
+          guide = parseGuides([op.guide], "guide")[0];
+        if (target.guides?.some((existing) => existing.id === guide.id))
+          throw new CoreError("DUPLICATE_GUIDE");
+        (target.guides ??= []).push(guide);
+        break;
+      }
+      case "moveGuide":
+      case "removeGuide":
+      case "setGuideLocked": {
+        const target = page(op.pageId),
+          index =
+            target.guides?.findIndex((guide) => guide.id === op.guideId) ?? -1;
+        if (index < 0) throw new CoreError("GUIDE_NOT_FOUND");
+        const guide = target.guides![index];
+        if (op.type === "setGuideLocked") guide.locked = op.locked;
+        else {
+          if (guide.locked) throw new CoreError("GUIDE_LOCKED");
+          if (op.type === "moveGuide") guide.position = op.position;
+          else target.guides!.splice(index, 1);
+        }
+        break;
+      }
       case "addProjectFont": {
         const font = validateProjectFont(op.font, "operation.font");
         if (next.fonts?.some((f) => f.id === font.id))

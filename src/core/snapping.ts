@@ -1,7 +1,14 @@
 import { CoreError } from "./tokens";
 import { sceneLayers, transformPoint, type Point } from "./scene";
 import type { ProjectNode } from "./project";
-import type { TransformGesture } from "./transform-gesture";
+import {
+  updateTransformGesture,
+  transformHandleAnchor,
+  type TransformGesture,
+  type TransformGestureResult,
+  type TransformRotationState,
+} from "./transform-gesture";
+import { transformFramePivot } from "./affine-geometry";
 
 export const SNAP_THRESHOLDS = Object.freeze({ enter: 6, release: 9 });
 type Axis = "x" | "y";
@@ -21,10 +28,11 @@ export type SnapIndex = Readonly<{
   y: readonly SnapLine[];
   byId: Readonly<Record<string, SnapLine | undefined>>;
 }>;
+type SourceFeature = Feature | "handle";
 export type SnapState = Readonly<
-  Partial<Record<Axis, Readonly<{ targetId: string; feature: Feature }>>>
+  Partial<Record<Axis, Readonly<{ targetId: string; feature: SourceFeature }>>>
 >;
-export type SnapMatch = SnapLine & { feature: Feature };
+export type SnapMatch = SnapLine & { feature: SourceFeature };
 const features: Feature[] = ["start", "center", "end"];
 const compareIds = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
@@ -78,7 +86,8 @@ export function buildSnapIndex(
       });
     }
   }
-  const guides = options.guides === undefined ? [] : options.guides;
+  const guides =
+    options.guides === undefined ? (page.guides ?? []) : options.guides;
   if (!Array.isArray(guides) || guides.length > 1000)
     throw new CoreError("INVALID_SNAP_INPUT");
   const ids = new Set<string>();
@@ -146,7 +155,8 @@ export function solveMoveSnapping(
   )
     throw new CoreError("INVALID_SNAP_INPUT");
   const pointer = { ...rawPointer },
-    state: Partial<Record<Axis, { targetId: string; feature: Feature }>> = {},
+    state: Partial<Record<Axis, { targetId: string; feature: SourceFeature }>> =
+      {},
     guides: SnapMatch[] = [];
   const delta = {
     x: rawPointer.x - gesture.startPointer.x,
@@ -166,7 +176,11 @@ export function solveMoveSnapping(
     let chosen:
       { line: SnapLine; feature: Feature; distance: number } | undefined;
     const latch = options.state?.[axis];
-    if (latch && features.includes(latch.feature)) {
+    if (
+      latch &&
+      latch.feature !== "handle" &&
+      features.includes(latch.feature)
+    ) {
       const line = index.byId[latch.targetId];
       if (line?.axis === axis) {
         const distance =
@@ -213,4 +227,207 @@ export function solveMoveSnapping(
     }
   }
   return { pointer, guides, state };
+}
+
+type TransformSnapOptions = {
+  zoom: number;
+  bypass?: boolean;
+  state?: SnapState;
+  altKey?: boolean;
+  shiftKey?: boolean;
+  rotationState?: TransformRotationState;
+};
+export type SnappedTransform = {
+  pointer: Point;
+  guides: SnapMatch[];
+  state: SnapState;
+  result: TransformGestureResult;
+};
+/** Snap changes a pointer, never a geometry patch. Shared transform math validates
+ * every reachable target, so fixed anchors/affine content retain one authority. */
+export function solveTransformSnapping(
+  gesture: TransformGesture,
+  index: SnapIndex,
+  rawPointer: Point,
+  options: TransformSnapOptions,
+): SnappedTransform {
+  if (index.source !== gesture) throw new CoreError("SNAP_SNAPSHOT_MISMATCH");
+  const zoom = options.zoom;
+  if (
+    ![rawPointer.x, rawPointer.y, zoom].every(Number.isFinite) ||
+    zoom <= 0 ||
+    !Number.isFinite(SNAP_THRESHOLDS.release / zoom)
+  )
+    throw new CoreError("INVALID_SNAP_INPUT");
+  const modifiers = { altKey: options.altKey, shiftKey: options.shiftKey };
+  const raw = updateTransformGesture(
+    gesture,
+    rawPointer,
+    modifiers,
+    options.rotationState,
+  );
+  const unchanged: SnappedTransform = {
+    pointer: { ...rawPointer },
+    guides: [],
+    state: {},
+    result: raw,
+  };
+  if (
+    !raw.valid ||
+    options.bypass ||
+    (rawPointer.x === gesture.startPointer.x &&
+      rawPointer.y === gesture.startPointer.y) ||
+    gesture.tool === "rotate"
+  )
+    return unchanged;
+  if (gesture.tool === "move") {
+    const snap = solveMoveSnapping(gesture, index, rawPointer, options);
+    if (!snap.guides.length) return unchanged;
+    const result =
+      snap.pointer.x === rawPointer.x && snap.pointer.y === rawPointer.y
+        ? raw
+        : updateTransformGesture(
+            gesture,
+            snap.pointer,
+            modifiers,
+            options.rotationState,
+          );
+    if (!result.valid) return unchanged;
+    const fractions = { start: 0, center: 0.5, end: 1 };
+    if (
+      snap.guides.some((line) => {
+        if (line.feature === "handle") return true;
+        const bounds = result.frame.bounds;
+        const actual =
+          bounds[line.axis] +
+          (line.axis === "x" ? bounds.width : bounds.height) *
+            fractions[line.feature];
+        return Math.abs(actual - line.position) * zoom > 1e-6;
+      })
+    )
+      return unchanged;
+    return { ...snap, result };
+  }
+  const anchor = transformHandleAnchor(gesture.handle!);
+  const handle = transformFramePivot(raw.frame, anchor);
+  const free = anchor.x !== 0.5 && anchor.y !== 0.5 && !options.shiftKey;
+  const start = transformFramePivot(gesture.frame, anchor);
+  const length = Math.hypot(start.x - raw.pivot.x, start.y - raw.pivot.y);
+  if (!length || !Number.isFinite(length)) return unchanged;
+  const direction = {
+    x: (start.x - raw.pivot.x) / length,
+    y: (start.y - raw.pivot.y) / length,
+  };
+  type Choice = {
+    line: SnapLine;
+    pointer: Point;
+    distance: number;
+    retained: boolean;
+  };
+  const unique = new Map<string, Choice>();
+  const rank = (a: Choice, b: Choice) => {
+    const retained = Number(b.retained) - Number(a.retained);
+    const kind =
+      (a.line.kind === "guide" ? 0 : 1) - (b.line.kind === "guide" ? 0 : 1);
+    const distance = a.distance - b.distance;
+    return (
+      retained ||
+      kind ||
+      (Math.abs(distance) > 1e-9 ? distance : compareIds(a.line.id, b.line.id))
+    );
+  };
+  function consider(line: SnapLine, retained: boolean) {
+    const axis = line.axis,
+      delta = line.position - handle[axis];
+    if (!free && Math.abs(direction[axis]) < 32 * Number.EPSILON) return;
+    const correction = free
+      ? axis === "x"
+        ? { x: delta, y: 0 }
+        : { x: 0, y: delta }
+      : {
+          x: (direction.x * delta) / direction[axis],
+          y: (direction.y * delta) / direction[axis],
+        };
+    const distance = Math.hypot(correction.x, correction.y) * zoom;
+    if (
+      !Number.isFinite(distance) ||
+      distance >
+        (retained ? SNAP_THRESHOLDS.release : SNAP_THRESHOLDS.enter) + 1e-9
+    )
+      return;
+    const choice: Choice = {
+      line,
+      pointer: {
+        x: rawPointer.x + correction.x,
+        y: rawPointer.y + correction.y,
+      },
+      distance,
+      retained,
+    };
+    const key = JSON.stringify([axis, line.position]),
+      previous = unique.get(key);
+    if (!previous || rank(choice, previous) < 0) unique.set(key, choice);
+  }
+  for (const axis of ["x", "y"] as const) {
+    const latch = options.state?.[axis],
+      line =
+        latch?.feature === "handle" ? index.byId[latch.targetId] : undefined;
+    if (line?.axis === axis) consider(line, true);
+    const radius = SNAP_THRESHOLDS.enter / zoom,
+      lines = index[axis];
+    for (
+      let i = lowerBound(lines, handle[axis] - radius - 1e-9 / zoom);
+      i < lines.length &&
+      lines[i].position <= handle[axis] + radius + 1e-9 / zoom;
+      i++
+    )
+      consider(lines[i], false);
+  }
+  const choices = [...unique.values()].sort(rank);
+  function attempt(
+    pointer: Point,
+    lines: SnapLine[],
+  ): SnappedTransform | undefined {
+    const result =
+      pointer.x === rawPointer.x && pointer.y === rawPointer.y
+        ? raw
+        : updateTransformGesture(
+            gesture,
+            pointer,
+            modifiers,
+            options.rotationState,
+          );
+    if (!result.valid) return;
+    const actual = transformFramePivot(result.frame, anchor);
+    if (
+      lines.some(
+        (line) => Math.abs(actual[line.axis] - line.position) * zoom > 1e-6,
+      )
+    )
+      return;
+    const state: Partial<
+      Record<Axis, { targetId: string; feature: "handle" }>
+    > = {};
+    const guides = lines.map((line) => {
+      state[line.axis] = { targetId: line.id, feature: "handle" };
+      return { ...line, feature: "handle" as const };
+    });
+    return { pointer, guides, state, result };
+  }
+  if (free) {
+    const x = choices.find((choice) => choice.line.axis === "x"),
+      y = choices.find((choice) => choice.line.axis === "y");
+    if (x && y) {
+      const both = attempt({ x: x.pointer.x, y: y.pointer.y }, [
+        x.line,
+        y.line,
+      ]);
+      if (both) return both;
+    }
+  }
+  for (const choice of choices) {
+    const result = attempt(choice.pointer, [choice.line]);
+    if (result) return result;
+  }
+  return unchanged;
 }

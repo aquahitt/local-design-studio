@@ -1,3 +1,5 @@
+import { CanvasGuidePanel, type GuideContextScope } from "./CanvasGuides";
+import type { PageGuide } from "../core/guides";
 import { CanvasSurface, type CanvasContext } from "./CanvasSurface";
 import {
   canonicalCanvasBounds,
@@ -132,6 +134,32 @@ function proposalChanges(
         JSON.stringify(value),
     );
   }
+  if (operation.type === "addGuide")
+    return [
+      t("Добавить направляющую {0}: {1} = {2}", {
+        0: operation.guide.id,
+        1: operation.guide.axis.toUpperCase(),
+        2: operation.guide.position,
+      }),
+    ];
+  if (operation.type === "moveGuide")
+    return [
+      t("Переместить направляющую {0}: {1} px", {
+        0: operation.guideId,
+        1: operation.position,
+      }),
+    ];
+  if (operation.type === "removeGuide")
+    return [t("Удалить направляющую {0}", { 0: operation.guideId })];
+  if (operation.type === "setGuideLocked")
+    return [
+      t(
+        operation.locked
+          ? "Заблокировать направляющую {0}"
+          : "Разблокировать направляющую {0}",
+        { 0: operation.guideId },
+      ),
+    ];
   if (operation.type === "setGroups")
     return [
       "Группы: " +
@@ -228,7 +256,14 @@ export function StudioApp({
     propsDirty || layoutDirty || definitionDirty || transformDirty;
   const [viewportDirty, setViewportDirty] = useState(false);
   const viewportPageSnapshot = useRef<ProjectPage | null>(null);
-  const dirty = inspectorDirty || viewportDirty;
+  const [guideDirty, setGuideDirty] = useState(false);
+  const [guideSession, setGuideSession] = useState<{
+    projectId: string;
+    pageId: string;
+    guides: PageGuide[];
+    initialCreate?: { axis: PageGuide["axis"]; position: number };
+  } | null>(null);
+  const dirty = inspectorDirty || viewportDirty || guideDirty;
   const [groupFilter, setGroupFilter] = useState("");
   const [shade, setShade] = useState(false);
   const [deviceControlsOpen, setDeviceControlsOpen] = useState(false);
@@ -544,6 +579,20 @@ export function StudioApp({
       setError((e as Error).message);
       throw e;
     }
+  }
+  async function mutateGuide(
+    scope: GuideContextScope,
+    operation: Operation,
+    description: string,
+  ) {
+    const now = current.current;
+    if (
+      !now ||
+      now.projectId !== scope.projectId ||
+      !now.pages.some((page) => page.screenId === scope.pageId)
+    )
+      throw new Error("GUIDE_CONTEXT_UNAVAILABLE");
+    await mutate([operation], description, scope.revision);
   }
   function select(id: string, additive = false) {
     if (dirty && id !== selected) {
@@ -1368,6 +1417,14 @@ export function StudioApp({
                             disabled={dirty}
                             mutate={mutate}
                             onContext={receiveCanvasContext}
+                            onManageGuides={(initialCreate) =>
+                              setGuideSession({
+                                projectId: project.projectId,
+                                pageId: page.screenId,
+                                guides: structuredClone(page.guides ?? []),
+                                ...(initialCreate ? { initialCreate } : {}),
+                              })
+                            }
                             onOpenTransformControls={() => {
                               const panel =
                                 transformPanel.current?.querySelector<HTMLDetailsElement>(
@@ -1703,6 +1760,77 @@ export function StudioApp({
             </div>
           </div>
         </div>
+        {guideSession && (
+          <CanvasGuidePanel
+            open
+            onClose={() => setGuideSession(null)}
+            guides={
+              project.projectId === guideSession.projectId &&
+              project.pages.some(
+                (page) => page.screenId === guideSession.pageId,
+              )
+                ? (project.pages.find(
+                    (page) => page.screenId === guideSession.pageId,
+                  )!.guides ?? [])
+                : guideSession.guides
+            }
+            contextScope={{
+              projectId: project.projectId,
+              pageId: guideSession.pageId,
+              revision: project.revision,
+            }}
+            available={
+              project.projectId === guideSession.projectId &&
+              project.pages.some(
+                (page) => page.screenId === guideSession.pageId,
+              )
+            }
+            disabled={inspectorDirty || viewportDirty}
+            initialCreate={guideSession.initialCreate}
+            onDirtyChange={setGuideDirty}
+            onCreate={(guide, scope) =>
+              mutateGuide(
+                scope,
+                {
+                  type: "addGuide",
+                  pageId: scope.pageId,
+                  guide: { ...guide, id: crypto.randomUUID() },
+                },
+                t("Создать направляющую"),
+              )
+            }
+            onMove={(guideId, position, scope) =>
+              mutateGuide(
+                scope,
+                { type: "moveGuide", pageId: scope.pageId, guideId, position },
+                t("Переместить направляющую"),
+              )
+            }
+            onRemove={(guideId, scope) =>
+              mutateGuide(
+                scope,
+                { type: "removeGuide", pageId: scope.pageId, guideId },
+                t("Удалить направляющую"),
+              )
+            }
+            onLock={(guideId, locked, scope) =>
+              mutateGuide(
+                scope,
+                {
+                  type: "setGuideLocked",
+                  pageId: scope.pageId,
+                  guideId,
+                  locked,
+                },
+                t(
+                  locked
+                    ? "Заблокировать направляющую"
+                    : "Разблокировать направляющую",
+                ),
+              )
+            }
+          />
+        )}
       </main>
     </DesktopLibraryContext.Provider>
   );

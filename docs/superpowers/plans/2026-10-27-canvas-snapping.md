@@ -37,24 +37,41 @@
 
 ### 2. Constrained Resize/Scale + integration
 
-- [ ] RED расширение solver tests: all handles, affine/reflected/sheared parents, Shift/Alt toggles, incompatible constraints, invalid final, anchor preservation. Compare actual output через transform helper, expected аналитические углы/прямые.
-- [ ] Solver dispatch для move/resize/scale; rotate сохраняет существующий angle snap. Только достоверные guide hints после проверки final geometry.
-- [ ] `src/studio/CanvasSurface.tsx`: per-gesture index/latch, Ctrl/Meta state в pointer/keyboard, один final recompute, existing cancel/token guards. Новый небольшой `SnapOverlay.tsx`, локальные настройки и RU/EN keys. Не расширять iframe geometry protocol произвольными props.
-- [ ] Browser actual pointer: один/несколько слоёв, transformed parents, zoom/pan, модификатор во время held pointer, cancel/revision/delete/lock, one batch/Undo/reopen. No stale overlay/context write.
+- [x] RED расширение solver tests: all handles, affine/reflected/sheared parents, Shift/Alt toggles, incompatible constraints, invalid final, anchor preservation. Compare actual output через transform helper, expected аналитические углы/прямые.
+- [x] Solver dispatch для move/resize/scale; rotate сохраняет существующий angle snap. Только достоверные guide hints после проверки final geometry.
+- [x] `src/studio/CanvasSurface.tsx`: per-gesture index/latch, Ctrl/Meta state в pointer/keyboard, один final recompute, existing cancel/token guards. Новый небольшой `SnapOverlay.tsx`, локальные настройки и RU/EN keys. Не расширять iframe geometry protocol произвольными props.
+- [x] Browser actual pointer: один/несколько слоёв, transformed parents, zoom/pan, модификатор во время held pointer, cancel/revision/delete/lock, one batch/Undo/reopen. No stale overlay/context write.
 
 ### 3. Portable page guides
 
-- [ ] Новый `src/core/guides.ts`/tests; ProjectPage/parser, operations, service schema, ADR JSON schema, read capabilities. Closed structures, duplicates/limits, atomic invalid-last-op rollback, locks, no silent legacy rewrite.
-- [ ] Добавить guide targets в тот же index. Agent HTTP/MCP create/propose/approve/apply/Undo/reopen uses common store. Metadata read pagination не теряет guides.
-- [ ] `src/studio/CanvasGuides.tsx`, guide management fields: ruler drag create; transient guide drag → one captured batch; numeric entry, keyboard move/delete, visible focus, meaningful lock errors. Guide preview не превращается в source node или экспортируемый UI.
+- [x] Новый `src/core/guides.ts`/tests; ProjectPage/parser, operations, service schema, ADR JSON schema, read capabilities. Closed structures, duplicates/limits, atomic invalid-last-op rollback, locks, no silent legacy rewrite.
+- [x] Добавить guide targets в тот же index. Agent HTTP/MCP create/propose/approve/apply/Undo/reopen uses common store. Metadata read pagination не теряет guides.
+- [x] `src/studio/CanvasGuides.tsx`, guide management fields: ruler drag create; transient guide drag → one captured batch; numeric entry, keyboard move/delete, visible focus, meaningful lock errors. Guide preview не превращается в source node или экспортируемый UI.
 
 ### 4. Rulers / docs / final acceptance
 
-- [ ] `src/studio/rulerGeometry.ts`/test: bounded tick generation, nice intervals, negative coordinates, zoom extremes, screen-fixed tick appearance; no hundreds of accessible labels.
+- [x] `src/studio/rulerGeometry.ts`/test: bounded tick generation, nice intervals, negative coordinates, zoom extremes, screen-fixed tick appearance; no hundreds of accessible labels.
 - [ ] Rulers and preferences integrate without changing document origin/geometry; fresh canonical bounds epoch after surface measurement. Mobile overflow/reduced motion/RU/EN/light/dark.
 - [ ] Update docs/canvas.md, canvas-transforms.md, project-format.md and actual capabilities. Review overlays/cancellation/solver separately. Preserve #9 partial until all original criteria and these checkpoints pass.
 - [ ] Root gates sequentially: typecheck, full npm test, build, browser, external library, demo, accessibility, fresh desktop package/native, MCP clean smoke, performance budgets, git diff --check. Only then PR Refs #9; no release tags/manual gates closure.
 
-Опрос о layout/visual capture bounds для будущих внешних strokes ожидает ответа. Этот этап использует model bounds и от него не зависит.
+Пользователь выбрал layout/visual capture bounds для будущих внешних strokes: новые UI-экспорты включают оформление, старые API сохраняют layout по умолчанию. Этот этап использует model bounds и от него не зависит.
 
 Checkpoint1: 11 snapping tests + existing gesture/geometry tests =69 passed; typecheck и diffcheck green. Solver пока не подключён к UI; Resize/Scale, rulers/guides canonical model ещё не реализованы.
+
+
+Checkpoint 2026-10-30: constrained solver, canonical guides/MCP, rulers and UI integrated.
+15/15 targeted Chromium cases passed, including proposal before/after + reject without writes,
+source-page deletion draft preservation and affine parent Move. SSR regression covers guides
+carried by addPage/duplicatePage/removePage. Independent math/UI review: no unresolved P1/P2.
+Full gates remain in progress; issue #9 stays open. Decorative grid has no snapping;
+explicit fixed-spacing grid remains a separate optional extension, not an implicit camera grid.
+
+
+Local validation 2026-10-30: 683 unit passed /5 skipped; typecheck/build;
+initial complete browser92 passed /8 skipped, background-only pixel fixture updated
+for new ruler chrome and corrected transforms+snapping22 passed; accessibility13 passed
+plus final themed input polish4 passed; external1, demo2; fresh macOS ARM64 package4 native
+passed; release tooling7 passed; MCP clean smoke and 1k/10k/50k budgets passed.
+Ruler CSS cascade regression independently reproduced40px→fixed24px and verified.
+Final full browser/remote CI still required before integration. No release published.

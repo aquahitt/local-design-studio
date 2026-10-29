@@ -1,0 +1,96 @@
+.canvas-rulers {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.ds-studio .canvas-ruler-axis,
+.ds-studio .canvas-ruler-corner {
+  position: absolute;
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--studio-surface, #fff);
+  color: var(--studio-secondary, #53627a);
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+}
+.ds-studio .canvas-ruler-axis {
+  overflow: hidden;
+  text-align: left;
+  cursor: crosshair;
+}
+.canvas-ruler-top {
+  left: var(--canvas-ruler-size);
+  top: 0;
+  width: calc(100% - var(--canvas-ruler-size));
+  height: var(--canvas-ruler-size);
+  box-shadow: inset 0 -1px var(--studio-border, #d8dfe8);
+}
+.canvas-ruler-left {
+  left: 0;
+  top: var(--canvas-ruler-size);
+  width: var(--canvas-ruler-size);
+  height: calc(100% - var(--canvas-ruler-size));
+  box-shadow: inset -1px 0 var(--studio-border, #d8dfe8);
+}
+.ds-studio .canvas-ruler-axis > svg {
+  position: absolute;
+  pointer-events: none;
+  display: block;
+}
+.canvas-ruler-top > svg {
+  left: calc(-1 * var(--canvas-ruler-size));
+  top: 0;
+}
+.canvas-ruler-left > svg {
+  left: 0;
+  top: calc(-1 * var(--canvas-ruler-size));
+}
+.ds-studio .canvas-ruler-axis line {
+  stroke: currentColor;
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+.canvas-ruler-minor line {
+  opacity: 0.5;
+}
+.ds-studio .canvas-ruler-axis text {
+  fill: currentColor;
+  font:
+    10px system-ui,
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+.ds-studio .canvas-ruler-corner {
+  left: 0;
+  top: 0;
+  width: var(--canvas-ruler-size);
+  height: var(--canvas-ruler-size);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  box-shadow: inset -1px -1px var(--studio-border, #d8dfe8);
+}
+.ds-studio .canvas-ruler-axis:focus-visible,
+.ds-studio .canvas-ruler-corner:focus-visible {
+  outline: 2px solid var(--studio-accent, #4673e8);
+  outline-offset: -2px;
+}
+.ds-studio .canvas-ruler-axis:disabled,
+.ds-studio .canvas-ruler-corner:disabled {
+  cursor: default;
+}
+
+.ds-studio .canvas-ruler-axis,
+.ds-studio .canvas-ruler-corner {
+  transition: none;
+}
+.ds-studio .canvas-ruler-axis:active,
+.ds-studio .canvas-ruler-corner:active {
+  transform: none;
+}

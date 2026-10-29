@@ -1,3 +1,11 @@
+import { GUIDE_LIMITS } from "../core/guides";
+export const GUIDE_CAPABILITIES = Object.freeze({
+  scope: "page",
+  coordinates: "world-css-pixels",
+  exported: false,
+  limits: GUIDE_LIMITS,
+  operations: ["addGuide", "moveGuide", "removeGuide", "setGuideLocked"],
+});
 import { AFFINE_LIMITS } from "../core/affine-validation";
 export const PAINT_CAPABILITIES = Object.freeze({
   frameOnly: true,
@@ -28,16 +36,22 @@ interface FlatNode extends Omit<ProjectNode, "slots"> {
   index: number;
 }
 /** Stable preorder paging. Partial page trees and flat relationship rows share the same selected IDs. */
-export function readProjectPage(project: Project, options: ReadOptions = {}, includeTokens = true) {
+export function readProjectPage(
+  project: Project,
+  options: ReadOptions = {},
+  includeTokens = true,
+) {
   const offset = Math.max(0, Math.floor(options.offset ?? 0)),
     limit = Math.min(500, Math.max(1, Math.floor(options.limit ?? 100)));
-  const pages = project.pages.filter((page) => !options.pageId || page.screenId === options.pageId),
+  const pages = project.pages.filter(
+      (page) => !options.pageId || page.screenId === options.pageId,
+    ),
     flat: FlatNode[] = [];
   const walk = (
     nodes: ProjectNode[],
     pageId: string,
     parentId: string | null = null,
-    slot: string | null = null
+    slot: string | null = null,
   ) => {
     nodes.forEach((node, index) => {
       if (!options.nodeId || node.id === options.nodeId)
@@ -46,7 +60,7 @@ export function readProjectPage(project: Project, options: ReadOptions = {}, inc
           slots: Object.fromEntries(
             Object.keys(node.slots)
               .sort()
-              .map((name) => [name, node.slots[name].map((child) => child.id)])
+              .map((name) => [name, node.slots[name].map((child) => child.id)]),
           ),
           pageId,
           parentId,
@@ -66,10 +80,11 @@ export function readProjectPage(project: Project, options: ReadOptions = {}, inc
       const slots = Object.fromEntries(
         Object.keys(node.slots)
           .sort()
-          .map((name) => [name, partial(node.slots[name])])
+          .map((name) => [name, partial(node.slots[name])]),
       );
       if (selected.has(node.id)) result.push({ ...node, slots });
-      else for (const children of Object.values(slots)) result.push(...children);
+      else
+        for (const children of Object.values(slots)) result.push(...children);
     }
     return result;
   };
@@ -81,7 +96,8 @@ export function readProjectPage(project: Project, options: ReadOptions = {}, inc
       total: flat.length,
       offset,
       limit,
-      nextOffset: offset + rows.length < flat.length ? offset + rows.length : null,
+      nextOffset:
+        offset + rows.length < flat.length ? offset + rows.length : null,
       truncated: rows.length < flat.length,
     },
   };
@@ -106,12 +122,18 @@ export function readPages(project: Project) {
 
 export function readComponents(
   libraries: LibraryMetadata[],
-  options: Record<string, unknown> = {}
+  options: Record<string, unknown> = {},
 ) {
-  const offset = typeof options.offset === "number" ? Math.max(0, Math.floor(options.offset)) : 0;
+  const offset =
+    typeof options.offset === "number"
+      ? Math.max(0, Math.floor(options.offset))
+      : 0;
   const limit =
-    typeof options.limit === "number" ? Math.min(500, Math.max(1, Math.floor(options.limit))) : 100;
-  const query = typeof options.query === "string" ? options.query.toLowerCase() : "";
+    typeof options.limit === "number"
+      ? Math.min(500, Math.max(1, Math.floor(options.limit)))
+      : 100;
+  const query =
+    typeof options.query === "string" ? options.query.toLowerCase() : "";
   const components = libraries
     .filter((library) => !options.libraryId || library.id === options.libraryId)
     .flatMap((library) =>
@@ -121,14 +143,14 @@ export function readComponents(
         name: component.name,
         category: component.category ?? null,
         fields: Object.keys(component.fields),
-      }))
+      })),
     )
     .filter(
       (component) =>
         (!options.category || component.category === options.category) &&
         (!query ||
           component.name.toLowerCase().includes(query) ||
-          component.id.toLowerCase().includes(query))
+          component.id.toLowerCase().includes(query)),
     );
   const rows = components.slice(offset, offset + limit);
   return {
@@ -137,16 +159,23 @@ export function readComponents(
       total: components.length,
       offset,
       limit,
-      nextOffset: offset + rows.length < components.length ? offset + rows.length : null,
+      nextOffset:
+        offset + rows.length < components.length ? offset + rows.length : null,
       truncated: rows.length < components.length,
     },
   };
 }
 
-export function readComponent(libraries: LibraryMetadata[], libraryId: string, id: string) {
+export function readComponent(
+  libraries: LibraryMetadata[],
+  libraryId: string,
+  id: string,
+) {
   const library = libraries.find((library) => library.id === libraryId);
   const component =
-    library && Object.hasOwn(library.components, id) ? library.components[id] : undefined;
+    library && Object.hasOwn(library.components, id)
+      ? library.components[id]
+      : undefined;
   if (!component) throw new Error("COMPONENT_NOT_FOUND");
   return { ...component, libraryId, id };
 }
