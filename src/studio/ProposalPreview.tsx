@@ -5,7 +5,10 @@ import type { Project } from "../core/project";
 import { resolveTokens } from "../core/tokens";
 import { libraryMetadata, type ComponentLibrary } from "../library/sdk";
 import type { Proposal } from "./client";
-import { buildProposalPreview } from "./proposalSimulation";
+import {
+  buildProposalPreview,
+  guideProposalChanges,
+} from "./proposalSimulation";
 import { Preview } from "./Preview";
 
 export function ProposalPreview({
@@ -37,6 +40,11 @@ export function ProposalPreview({
   const id = result.pageIds.includes(chosen) ? chosen : result.pageIds[0];
   const beforePage = project.pages.find((p) => p.screenId === id);
   const afterPage = after.pages.find((p) => p.screenId === id);
+  const guideChanges = guideProposalChanges(
+    beforePage?.guides,
+    afterPage?.guides,
+  );
+  const showsGuides = guideChanges.length > 0;
   const oldTokens = resolveTokens(project.tokens, project.theme);
   const newTokens = resolveTokens(after.tokens, after.theme);
   const tokenNames = [
@@ -101,6 +109,9 @@ export function ProposalPreview({
                           title={label + " · " + page.name}
                           height={size.height}
                           nodes={page.nodes}
+                          editorGuides={
+                            showsGuides ? (page.guides ?? []) : undefined
+                          }
                         />
                       )}
                     </DeviceFrame>
@@ -115,6 +126,36 @@ export function ProposalPreview({
               )}
             </section>
           ))}
+        </div>
+      )}
+      {showsGuides && (
+        <div className="proposal-token-changes">
+          <p>
+            {t("Направляющие показаны поверх макета и не войдут в экспорт.")}
+          </p>
+          <table>
+            <thead>
+              <tr>
+                <th>{t("Направляющие")}</th>
+                <th>{t("Сейчас")}</th>
+                <th>{t("После принятия")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {guideChanges.map((change, index) => (
+                <tr key={change.id} data-guide-change={change.id}>
+                  <th>{index + 1}</th>
+                  {[change.before, change.after].map((guide, side) => (
+                    <td key={side}>
+                      {guide
+                        ? `${guide.axis.toUpperCase()} · ${guide.position}px · ${guide.locked ? t("Заблокирована") : t("Разблокирована")}`
+                        : t("Нет направляющей")}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
       {!!result.fontChanges.length && (

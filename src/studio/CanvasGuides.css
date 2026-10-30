@@ -1,0 +1,190 @@
+.canvas-guide-overlay,
+.canvas-guide-lines {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.canvas-guide-lines line {
+  stroke: var(--studio-accent);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.canvas-guide-lines line.is-locked {
+  stroke: var(--studio-muted);
+  stroke-dasharray: 4 3;
+}
+.ds-studio .canvas-guide-handle {
+  position: absolute;
+  min-width: 24px;
+  min-height: 24px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  pointer-events: auto;
+  touch-action: none;
+  transition: none;
+}
+.ds-studio .canvas-guide-handle.axis-x {
+  width: 24px;
+  cursor: ew-resize;
+}
+.ds-studio .canvas-guide-handle.axis-y {
+  height: 24px;
+  cursor: ns-resize;
+}
+.ds-studio .canvas-guide-handle:hover,
+.ds-studio .canvas-guide-handle:active {
+  background: transparent;
+  transform: none;
+}
+.ds-studio .canvas-guide-handle:disabled {
+  pointer-events: none;
+}
+.ds-studio .canvas-guide-handle:focus-visible {
+  outline: 2px solid var(--studio-accent);
+  outline-offset: -2px;
+}
+.canvas-guide-dialog {
+  width: min(640px, calc(100vw - 32px));
+  max-height: calc(100dvh - 48px);
+  padding: 20px;
+  border: 1px solid var(--studio-border);
+  border-radius: 16px;
+  background: var(--studio-surface);
+  color: var(--studio-text);
+  box-shadow: 0 16px 48px #0003;
+  overflow: auto;
+}
+.canvas-guide-dialog::backdrop {
+  background: #0006;
+}
+.canvas-guide-dialog header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.canvas-guide-dialog h2 {
+  margin: 0;
+  font-size: 18px;
+  text-wrap: balance;
+}
+.canvas-guide-dialog header button,
+.canvas-guide-list button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 7px;
+  flex-shrink: 0;
+}
+.canvas-guide-create {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(100px, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+.canvas-guide-create label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+.canvas-guide-dialog input {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  font-variant-numeric: tabular-nums;
+}
+.canvas-guide-dialog input[readonly] {
+  background: var(--studio-bg);
+  cursor: text;
+}
+.canvas-guide-list {
+  list-style: none;
+  padding: 0;
+  margin: 20px 0;
+  max-height: min(40vh, 360px);
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+.canvas-guide-list li {
+  display: grid;
+  grid-template-columns: minmax(60px, 1fr) minmax(100px, 150px) auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--studio-border);
+}
+.canvas-guide-id {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--studio-muted);
+}
+.canvas-guide-dialog footer {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-top: 1px solid var(--studio-border);
+  padding-top: 12px;
+}
+.canvas-guide-dialog footer p {
+  width: 100%;
+  margin: 0;
+  color: var(--studio-muted);
+  font-size: 12px;
+}
+.canvas-guide-notice,
+.canvas-guide-error {
+  padding: 10px 12px;
+  background: var(--studio-bg);
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.canvas-guide-error {
+  color: var(--studio-error-text);
+  background: var(--studio-error-bg);
+}
+.canvas-guide-empty {
+  padding: 16px 0;
+  color: var(--studio-muted);
+}
+.canvas-guide-dialog :is(button, input):focus-visible {
+  outline: 2px solid var(--studio-accent);
+  outline-offset: 2px;
+}
+@media (max-width: 560px) {
+  .canvas-guide-dialog {
+    padding: 16px;
+  }
+  .canvas-guide-create {
+    grid-template-columns: 1fr 1fr;
+  }
+  .canvas-guide-create > button {
+    grid-column: 1/-1;
+  }
+  .canvas-guide-list li {
+    grid-template-columns: minmax(40px, 1fr) minmax(80px, 110px) auto auto;
+    gap: 4px;
+  }
+}
+.ds-studio .canvas-guide-dialog input {
+  min-height: 40px;
+  border: 1px solid var(--studio-border);
+  border-radius: 8px;
+  background: var(--studio-bg);
+  color: var(--studio-text);
+  padding: 8px 10px;
+  font-variant-numeric: tabular-nums;
+}
+.ds-studio .canvas-guide-dialog input:disabled {
+  color: var(--studio-muted);
+}

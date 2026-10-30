@@ -1,3 +1,4 @@
+import { guidesEnglish } from "./en-guides";
 import { imagesEnglish } from "./en-images";
 import { transformsEnglish } from "./en-transforms";
 import { fontsEnglish } from "./en-fonts";
@@ -138,5 +139,6 @@ export const english: Record<string, string> = {
   ...fontsEnglish,
   ...editorEnglish,
   ...imagesEnglish,
+  ...guidesEnglish,
   ...desktopEnglish,
 };

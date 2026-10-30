@@ -1,3 +1,4 @@
+import { parseGuides, type PageGuide } from "./guides";
 import { validateProjectFonts, type ProjectFont } from "./fonts";
 import {
   parseAnnotations,
@@ -42,6 +43,7 @@ export type ProjectPage = {
   viewport: Viewport;
   nodes: ProjectNode[];
   provenance?: PageProvenance;
+  guides?: PageGuide[];
 };
 export type ProjectGroup = {
   id: string;
@@ -336,7 +338,14 @@ export function parseProject(input: unknown): Project {
   const pageIds = new Set<string>();
   const pages = p.pages.map((raw, index) => {
     const page = object(raw);
-    exact(page, ["screenId", "name", "viewport", "nodes", "provenance"]);
+    exact(page, [
+      "screenId",
+      "name",
+      "viewport",
+      "nodes",
+      "provenance",
+      "guides",
+    ]);
     const id = string(page.screenId);
     if (pageIds.has(id)) throw new CoreError("DUPLICATE_PAGE");
     pageIds.add(id);
@@ -346,6 +355,9 @@ export function parseProject(input: unknown): Project {
       name: string(page.name),
       viewport,
       nodes: nodes(page.nodes, `pages[${index}].nodes`),
+      ...(page.guides !== undefined
+        ? { guides: parseGuides(page.guides, `pages[${index}].guides`) }
+        : {}),
       ...(page.provenance !== undefined
         ? { provenance: parsePageProvenance(page.provenance) }
         : {}),

@@ -287,3 +287,103 @@ it("includes family metadata changes so preview can display exact-byte validatio
   expect(result.pageIds).toEqual(["home", "instance-page"]);
   expect(result.fontChanges[0].after?.family).toBe("Different claimed family");
 });
+
+it("guide proposal preview compares metadata without changing the source document", async () => {
+  const { guideProposalChanges } = await import("./proposalSimulation");
+  const before = [{ id: "g", axis: "x" as const, position: 20 }];
+  const after = [
+    { id: "g", axis: "x" as const, position: 40, locked: true },
+    { id: "new", axis: "y" as const, position: 80 },
+  ];
+  const changes = guideProposalChanges(before, after);
+  expect(changes).toEqual([
+    { id: "g", before: before[0], after: after[0] },
+    { id: "new", after: after[1] },
+  ]);
+  changes[0].before!.position = 100;
+  expect(before[0].position).toBe(20);
+  const source = structuredClone(project);
+  const batch = {
+    requestId: "guide-preview",
+    baseRevision: source.revision,
+    operations: [
+      {
+        type: "addGuide" as const,
+        pageId: "home",
+        guide: { id: "g", axis: "x" as const, position: 40 },
+      },
+    ],
+  };
+  const proposed = buildProposalPreview(source, batch);
+  expect(proposed.pageIds).toEqual(["home"]);
+  expect(source.pages[0]).not.toHaveProperty("guides");
+  const html = renderToStaticMarkup(
+    createElement(ProposalPreview, {
+      project: source,
+      proposal: {
+        id: "guide",
+        description: "Guide",
+        status: "pending",
+        createdAt: "now",
+        batch,
+      },
+      library: builtinLibrary,
+    }),
+  );
+  expect(html).toContain(
+    "Направляющие показаны поверх макета и не войдут в экспорт.",
+  );
+  expect(html).toContain("data-guide-change");
+});
+
+it("reviews guides carried by page creation, duplication and deletion", () => {
+  const source = structuredClone(project);
+  source.pages[0].guides = [
+    { id: "page-guide", axis: "y", position: 83, locked: true },
+  ];
+  source.pages.push({
+    screenId: "retained",
+    name: "Retained",
+    viewport: { width: 390 },
+    nodes: [],
+  });
+  const operations: import("../core/operations").Operation[] = [
+    {
+      type: "addPage",
+      page: {
+        ...structuredClone(source.pages[0]),
+        screenId: "new-page",
+        nodes: [],
+      },
+    },
+    {
+      type: "duplicatePage",
+      pageId: "home",
+      newPageId: "copy-page",
+      name: "Copy",
+    },
+    { type: "removePage", pageId: "home" },
+  ];
+  for (const operation of operations) {
+    const html = renderToStaticMarkup(
+      createElement(ProposalPreview, {
+        project: source,
+        library: builtinLibrary,
+        proposal: {
+          id: "page-guides",
+          description: "Page guides",
+          status: "pending",
+          createdAt: "now",
+          batch: {
+            requestId: operation.type,
+            baseRevision: source.revision,
+            operations: [operation],
+          },
+        },
+      }),
+    );
+    expect(html).toContain('data-guide-change="page-guide"');
+    expect(html).toContain("Y · 83px · Заблокирована");
+    expect(html).toContain("Нет направляющей");
+  }
+});

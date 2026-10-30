@@ -1,6 +1,10 @@
-import { PAINT_CAPABILITIES } from "./read";
+import { PAINT_CAPABILITIES, GUIDE_CAPABILITIES } from "./read";
 import { AFFINE_LIMITS } from "../core/scene";
-import { readProjectAsset, projectAssetMediaType, requestedFontFace } from "./project-assets";
+import {
+  readProjectAsset,
+  projectAssetMediaType,
+  requestedFontFace,
+} from "./project-assets";
 import { writeFontAsset } from "./font-assets";
 import { inspectDocument } from "./inspect";
 import { exportReactHandoff } from "./handoff";
@@ -192,8 +196,16 @@ export async function createStudioServer(options: StudioOptions) {
         if (req.method === "GET") {
           if (path.startsWith("/api/assets/")) {
             const assetName = path.slice(12);
-            const face = requestedFontFace(assetName, new URL(req.url ?? "", "http://localhost").search);
-            const bytes = await readProjectAsset(options.root, assetName, store.read().fonts, face);
+            const face = requestedFontFace(
+              assetName,
+              new URL(req.url ?? "", "http://localhost").search,
+            );
+            const bytes = await readProjectAsset(
+              options.root,
+              assetName,
+              store.read().fonts,
+              face,
+            );
             res.writeHead(200, {
               "Content-Type": projectAssetMediaType(path.slice(12))!,
               "Content-Security-Policy": "default-src 'none'; sandbox",
@@ -234,6 +246,7 @@ export async function createStudioServer(options: StudioOptions) {
               contextTTL: 15000,
               allowedOrigins: origins,
               paints: PAINT_CAPABILITIES,
+              guides: GUIDE_CAPABILITIES,
               geometry: {
                 affine: true,
                 format: "linearTransform",
@@ -259,7 +272,9 @@ export async function createStudioServer(options: StudioOptions) {
           throw new HttpError(405, "METHOD_NOT_ALLOWED");
         const data = await body(
           req,
-          ["/api/assets", "/api/fonts"].includes(path) ? 12 * 1024 * 1024 : 1024 * 1024,
+          ["/api/assets", "/api/fonts"].includes(path)
+            ? 12 * 1024 * 1024
+            : 1024 * 1024,
         );
         const task = serial.then(async () => {
           if (path === "/api/inspect") {
@@ -279,7 +294,8 @@ export async function createStudioServer(options: StudioOptions) {
               Array.isArray(options.libraryMetadata)
                 ? (options.libraryMetadata as LibraryMetadata[])
                 : [],
-              (name) => readProjectAsset(options.root, name, store.read().fonts),
+              (name) =>
+                readProjectAsset(options.root, name, store.read().fonts),
             );
           }
           if (path === "/api/render") {
@@ -290,7 +306,11 @@ export async function createStudioServer(options: StudioOptions) {
             return options.renderSnapshot(snapshot, data);
           }
           if (path === "/api/fonts") {
-            if (!origin || !origins.includes(origin) || !equal(String(req.headers["x-studio-ui-token"] ?? ""), uiToken))
+            if (
+              !origin ||
+              !origins.includes(origin) ||
+              !equal(String(req.headers["x-studio-ui-token"] ?? ""), uiToken)
+            )
               throw new HttpError(403, "UI_AUTHORIZATION_REQUIRED");
             return writeFontAsset(options.root, data);
           }
@@ -302,7 +322,13 @@ export async function createStudioServer(options: StudioOptions) {
             )
               throw new HttpError(403, "UI_AUTHORIZATION_REQUIRED");
             return data.svg !== undefined
-              ? writeImageAsset(options.root, { data: Buffer.from(String(data.svg), "utf8").toString("base64"), name: "Imported SVG", mediaType: "image/svg+xml" })
+              ? writeImageAsset(options.root, {
+                  data: Buffer.from(String(data.svg), "utf8").toString(
+                    "base64",
+                  ),
+                  name: "Imported SVG",
+                  mediaType: "image/svg+xml",
+                })
               : writeImageAsset(options.root, data);
           }
           if (path === "/api/assets-delete") {

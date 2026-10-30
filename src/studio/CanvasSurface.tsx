@@ -1,3 +1,15 @@
+import {
+  buildSnapIndex,
+  solveTransformSnapping,
+  type SnapIndex,
+  type SnapState,
+  type SnapMatch,
+} from "../core/snapping";
+import { GUIDE_LIMITS, type PageGuide } from "../core/guides";
+import { SnapOverlay } from "./SnapOverlay";
+import { CanvasRulers } from "./CanvasRulers";
+import { CanvasGuideOverlay } from "./CanvasGuides";
+import { RULER_THICKNESS } from "./rulerGeometry";
 import { measuredCanvasContext, type CanvasContext } from "./canvasContext";
 import {
   useCallback,
@@ -15,7 +27,6 @@ import {
 } from "../core/affine-geometry";
 import {
   createTransformGesture,
-  updateTransformGesture,
   type TransformGesture,
   type TransformHandle,
   type TransformRotationState,
@@ -70,6 +81,11 @@ type Gesture = {
   picked: boolean;
   shiftKey: boolean;
   altKey: boolean;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  snapIndex?: SnapIndex;
+  snapState?: SnapState;
+  snapLines?: SnapMatch[];
   transform?: TransformGesture;
   rotation?: TransformRotationState;
   blocked?: boolean;
@@ -88,6 +104,7 @@ export function CanvasSurface({
   mutate,
   onContext,
   onOpenTransformControls,
+  onManageGuides,
 }: {
   project: Project;
   page: ProjectPage;
@@ -102,6 +119,10 @@ export function CanvasSurface({
   ) => Promise<void>;
   onContext?: (context: CanvasContext) => void;
   onOpenTransformControls?: () => void;
+  onManageGuides?: (initial?: {
+    axis: PageGuide["axis"];
+    position: number;
+  }) => void;
 }) {
   const { t, locale } = useI18n();
   const surface = useRef<HTMLDivElement>(null);
@@ -133,6 +154,40 @@ export function CanvasSurface({
     [hand, setHand] = useState(false),
     [space, setSpace] = useState(false),
     [error, setError] = useState("");
+  const readPreference = (name: string, fallback: boolean) => {
+    try {
+      const value = localStorage.getItem(key + ":" + name);
+      return value === null ? fallback : value !== "off";
+    } catch {
+      return fallback;
+    }
+  };
+  const [snapEnabled, setSnapEnabled] = useState(() =>
+    readPreference("snapping", true),
+  );
+  const [rulers, setRulers] = useState(() => readPreference("rulers", true));
+  const [guidesVisible, setGuidesVisible] = useState(() =>
+    readPreference("guides", true),
+  );
+  const [snapLines, setSnapLines] = useState<SnapMatch[]>([]);
+  type GuideGesture = {
+    pointer: number;
+    projectId: string;
+    pageId: string;
+    revision: number;
+    view: SceneView;
+    size: typeof size;
+    locale: string;
+    guide: PageGuide;
+    isNew: boolean;
+    from: Point;
+    last: Point;
+    position: number;
+    token: number;
+  };
+  const guideGesture = useRef<GuideGesture | null>(null);
+  const guideRaf = useRef<number | null>(null);
+  const [guidePreview, setGuidePreview] = useState<PageGuide | null>(null);
   const [geometry, setGeometry] = useState<SceneGeometryMap>({});
   const [gestureTransient, setTransient] = useState(false);
   const [commitBusy, setCommitBusy] = useState(false);
@@ -194,6 +249,8 @@ export function CanvasSurface({
     pageId: page.screenId,
     hand,
     space,
+    snapEnabled,
+    guidesVisible,
   });
   latest.current = {
     project,
@@ -208,6 +265,8 @@ export function CanvasSurface({
     pageId: page.screenId,
     hand,
     space,
+    snapEnabled,
+    guidesVisible,
   };
   const fitted = useRef(!!initial.current);
   const viewRef = useRef(view);
@@ -258,6 +317,15 @@ export function CanvasSurface({
       /* optional storage */
     }
   }, [key, grid]);
+  useEffect(() => {
+    try {
+      localStorage.setItem(key + ":snapping", snapEnabled ? "on" : "off");
+      localStorage.setItem(key + ":rulers", rulers ? "on" : "off");
+      localStorage.setItem(key + ":guides", guidesVisible ? "on" : "off");
+    } catch {
+      /* optional preferences */
+    }
+  }, [key, snapEnabled, rulers, guidesVisible]);
   useEffect(() => {
     const element = surface.current;
     if (!element) return;
@@ -327,6 +395,11 @@ export function CanvasSurface({
   const cancel = useCallback(() => {
     ++lifetime.current;
     gesture.current = null;
+    guideGesture.current = null;
+    if (guideRaf.current !== null) cancelAnimationFrame(guideRaf.current);
+    guideRaf.current = null;
+    setGuidePreview(null);
+    setSnapLines([]);
     if (raf.current !== null) cancelAnimationFrame(raf.current);
     raf.current = null;
     setPick(undefined);
@@ -398,7 +471,7 @@ export function CanvasSurface({
     if (!element) return;
     const wheel = (e: WheelEvent) => {
       e.preventDefault();
-      if (gesture.current) return;
+      if (gesture.current || guideGesture.current) return;
       const scale =
         e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? size.height : 1;
       if (e.ctrlKey || e.metaKey) {
@@ -425,14 +498,27 @@ export function CanvasSurface({
   }
   function result(g: Gesture) {
     if (!g.transform) return null;
-    const value = updateTransformGesture(
+    const c = latest.current;
+    const index = (g.snapIndex ??= buildSnapIndex(g.transform, {
+      guides: c.guidesVisible ? undefined : [],
+    }));
+    const solved = solveTransformSnapping(
       g.transform,
+      index,
       world(g.last, g.view),
-      { shiftKey: g.shiftKey, altKey: g.altKey },
-      g.rotation,
+      {
+        zoom: g.view.zoom,
+        bypass: !c.snapEnabled || g.ctrlKey || g.metaKey,
+        shiftKey: g.shiftKey,
+        altKey: g.altKey,
+        state: g.snapState,
+        rotationState: g.rotation,
+      },
     );
-    g.rotation = value.rotationState;
-    return value;
+    g.rotation = solved.result.rotationState;
+    g.snapState = solved.state;
+    g.snapLines = solved.guides;
+    return solved.result;
   }
   function finish(g: Gesture) {
     if (!currentGesture(g)) {
@@ -500,6 +586,7 @@ export function CanvasSurface({
       return;
     const value = result(g);
     if (!value?.valid) {
+      setSnapLines([]);
       setGeometry((current) => (Object.keys(current).length ? {} : current));
       setGestureFrame(null);
       setError(t("Преобразование недопустимо. Изменения отменены."));
@@ -514,6 +601,7 @@ export function CanvasSurface({
       );
       setGeometry(next.geometry);
       setGestureFrame(value.frame);
+      setSnapLines(g.snapLines ?? []);
       setError("");
     } catch {
       setError(t("Преобразование недопустимо. Изменения отменены."));
@@ -620,6 +708,8 @@ export function CanvasSurface({
       picked: pan,
       shiftKey: e.shiftKey,
       altKey: e.altKey,
+      ctrlKey: e.ctrlKey,
+      metaKey: e.metaKey,
     };
     gesture.current = g;
     if (!pan) setTransient(true);
@@ -669,6 +759,217 @@ export function CanvasSurface({
     } catch {
       /* Locked or non-scene selection. */
     }
+  }
+  function guideCurrent(g: GuideGesture) {
+    const c = latest.current;
+    return (
+      guideGesture.current === g &&
+      g.token === lifetime.current &&
+      c.project.projectId === g.projectId &&
+      c.pageId === g.pageId &&
+      c.project.revision === g.revision &&
+      c.view === g.view &&
+      c.size === g.size &&
+      c.locale === g.locale &&
+      !c.disabled &&
+      !committing.current
+    );
+  }
+  useEffect(() => {
+    const g = guideGesture.current;
+    if (g && !guideCurrent(g)) {
+      cancel();
+      setError(t("Документ или контекст изменился. Направляющая отменена."));
+    }
+  }, [
+    project.projectId,
+    project.revision,
+    page.screenId,
+    view,
+    size,
+    locale,
+    disabled,
+    cancel,
+    t,
+  ]);
+  function startGuide(
+    e: PointerEvent<HTMLButtonElement>,
+    axis: PageGuide["axis"],
+    id?: string,
+  ) {
+    if (e.button !== 0 || hand || space || e.ctrlKey || e.metaKey) return;
+    e.stopPropagation();
+    e.preventDefault();
+    if (disabled || committing.current) return;
+    const existing = id
+      ? page.guides?.find((guide) => guide.id === id)
+      : undefined;
+    if (existing?.locked) return;
+    if (!existing && (page.guides?.length ?? 0) >= GUIDE_LIMITS.count) {
+      setError(
+        t("Достигнут лимит направляющих: {count}.", {
+          count: GUIDE_LIMITS.count,
+        }),
+      );
+      return;
+    }
+    cancel();
+    setError("");
+    surface.current?.focus({ preventScroll: true });
+    surface.current?.setPointerCapture(e.pointerId);
+    const from = point(e),
+      coordinate = world(from, view)[axis];
+    const guide = existing ?? {
+      id: crypto.randomUUID(),
+      axis,
+      position: coordinate,
+    };
+    const g: GuideGesture = {
+      pointer: e.pointerId,
+      projectId: project.projectId,
+      pageId: page.screenId,
+      revision: project.revision,
+      view,
+      size,
+      locale,
+      guide,
+      isNew: !existing,
+      from,
+      last: from,
+      position: guide.position,
+      token: ++lifetime.current,
+    };
+    guideGesture.current = g;
+    setGuidePreview({ ...guide });
+  }
+  function updateGuidePointer(e: PointerEvent, final: boolean) {
+    const g = guideGesture.current;
+    if (!g || g.pointer !== e.pointerId) return false;
+    if (!guideCurrent(g)) {
+      cancel();
+      return true;
+    }
+    g.last = point(e);
+    const coordinate = world(g.last, g.view)[g.guide.axis],
+      origin = world(g.from, g.view)[g.guide.axis];
+    const position = g.isNew
+      ? coordinate
+      : g.guide.position + coordinate - origin;
+    g.position = position;
+    if (final) {
+      const inset = rulers ? RULER_THICKNESS : 0;
+      const inside =
+        g.last.x >= inset &&
+        g.last.y >= inset &&
+        g.last.x <= g.size.width &&
+        g.last.y <= g.size.height;
+      const valid =
+        Number.isFinite(position) &&
+        Math.abs(position) <= GUIDE_LIMITS.position;
+      const changed = g.isNew || Math.abs(position - g.guide.position) > 1e-9;
+      const moved = Math.hypot(g.last.x - g.from.x, g.last.y - g.from.y) >= 3;
+      cancel();
+      if (!inside || !valid || !changed || !moved) return true;
+      committing.current = true;
+      setCommitBusy(true);
+      const operation: Operation = g.isNew
+        ? {
+            type: "addGuide",
+            pageId: g.pageId,
+            guide: { ...g.guide, position },
+          }
+        : {
+            type: "moveGuide",
+            pageId: g.pageId,
+            guideId: g.guide.id,
+            position,
+          };
+      void latest.current
+        .mutate(
+          [operation],
+          t(g.isNew ? "Создать направляющую" : "Переместить направляющую"),
+          g.revision,
+        )
+        .catch((error) => setError(error.message))
+        .finally(() => {
+          committing.current = false;
+          setCommitBusy(false);
+        });
+    } else if (guideRaf.current === null)
+      guideRaf.current = requestAnimationFrame(() => {
+        guideRaf.current = null;
+        if (guideCurrent(g))
+          setGuidePreview({ ...g.guide, position: g.position });
+      });
+    return true;
+  }
+  function guideKey(
+    e: import("react").KeyboardEvent<HTMLButtonElement>,
+    id: string,
+  ) {
+    const guide = page.guides?.find((guide) => guide.id === id);
+    if (!guide) return;
+    if (e.key === " ") {
+      e.preventDefault();
+      e.stopPropagation();
+      cancel();
+      setSpace(true);
+      return;
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      e.stopPropagation();
+      cancel();
+      onManageGuides?.();
+      return;
+    }
+    if (
+      ![
+        "ArrowLeft",
+        "ArrowRight",
+        "ArrowUp",
+        "ArrowDown",
+        "Delete",
+        "Backspace",
+      ].includes(e.key)
+    )
+      return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (disabled || guide.locked || committing.current) return;
+    const delta =
+      guide.axis === "x"
+        ? e.key === "ArrowLeft"
+          ? -1
+          : e.key === "ArrowRight"
+            ? 1
+            : 0
+        : e.key === "ArrowUp"
+          ? -1
+          : e.key === "ArrowDown"
+            ? 1
+            : 0;
+    if (!delta && e.key !== "Delete" && e.key !== "Backspace") return;
+    const operation: Operation = delta
+      ? {
+          type: "moveGuide",
+          pageId: page.screenId,
+          guideId: id,
+          position: guide.position + delta * (e.shiftKey ? 10 : 1),
+        }
+      : { type: "removeGuide", pageId: page.screenId, guideId: id };
+    committing.current = true;
+    setCommitBusy(true);
+    void mutate(
+      [operation],
+      t(delta ? "Переместить направляющую" : "Удалить направляющую"),
+      project.revision,
+    )
+      .catch((error) => setError(error.message))
+      .finally(() => {
+        committing.current = false;
+        setCommitBusy(false);
+      });
   }
   function applyZoom() {
     const value = Number(zoomDraft);
@@ -801,6 +1102,50 @@ export function CanvasSurface({
         >
           <CanvasIcon path="M3 3h18v18H3zM3 9h18M3 15h18M9 3v18M15 3v18" />
         </button>
+        <button
+          type="button"
+          aria-label={t("Умные привязки")}
+          title={t("Умные привязки · Ctrl/⌘ временно отключает")}
+          aria-pressed={snapEnabled}
+          onClick={() => {
+            cancel();
+            setSnapEnabled((value) => !value);
+          }}
+        >
+          <CanvasIcon path="M6 3v9a6 6 0 0012 0V3h-4v9a2 2 0 01-4 0V3zM6 7h4M14 7h4" />
+        </button>
+        <button
+          type="button"
+          aria-label={t("Линейки")}
+          aria-pressed={rulers}
+          onClick={() => {
+            cancel();
+            setRulers((value) => !value);
+          }}
+        >
+          <CanvasIcon path="M3 6h18v12H3zM7 6v4M11 6v6M15 6v4" />
+        </button>
+        <button
+          type="button"
+          aria-label={t("Показать направляющие")}
+          aria-pressed={guidesVisible}
+          onClick={() => {
+            cancel();
+            setGuidesVisible((value) => !value);
+          }}
+        >
+          <CanvasIcon path="M8 2v20M2 8h20M3 3h3M18 3h3M3 18v3" />
+        </button>
+        <button
+          type="button"
+          aria-label={t("Направляющие")}
+          onClick={() => {
+            cancel();
+            onManageGuides?.();
+          }}
+        >
+          <CanvasIcon path="M4 8h16M4 16h16M8 4v16M16 4v16" />
+        </button>
       </div>
       <div
         ref={surface}
@@ -824,35 +1169,59 @@ export function CanvasSurface({
         }
         onPointerDown={down}
         onPointerMove={(e) => {
+          if (updateGuidePointer(e, false)) return;
           const g = gesture.current;
           if (g && g.pointer === e.pointerId) {
             g.last = point(e);
             g.shiftKey = e.shiftKey;
             g.altKey = e.altKey;
+            g.ctrlKey = e.ctrlKey;
+            g.metaKey = e.metaKey;
             move(g);
           }
         }}
         onPointerUp={(e) => {
+          if (updateGuidePointer(e, true)) return;
           const g = gesture.current;
           if (g && g.pointer === e.pointerId) {
             g.last = point(e);
             g.shiftKey = e.shiftKey;
             g.altKey = e.altKey;
+            g.ctrlKey = e.ctrlKey;
+            g.metaKey = e.metaKey;
             g.ended = true;
             finish(g);
           }
         }}
         onPointerCancel={cancel}
         onLostPointerCapture={() => {
-          if (gesture.current && !gesture.current.ended) cancel();
+          if (
+            (gesture.current && !gesture.current.ended) ||
+            guideGesture.current
+          )
+            cancel();
         }}
         onKeyDown={(e) => {
           if (
             e.nativeEvent.isComposing ||
             (e.target instanceof HTMLElement &&
-              e.target.closest("input,textarea,select,[contenteditable=true]"))
+              e.target.closest(
+                "input,textarea,select,button,a,[contenteditable=true]",
+              ))
           )
             return;
+          const active = gesture.current;
+          if (
+            active &&
+            !active.pan &&
+            ["Control", "Meta", "Shift", "Alt"].includes(e.key)
+          ) {
+            active.ctrlKey = e.ctrlKey;
+            active.metaKey = e.metaKey;
+            active.shiftKey = e.shiftKey;
+            active.altKey = e.altKey;
+            move(active);
+          }
           const toolKey =
             e.code === "KeyV"
               ? "v"
@@ -945,6 +1314,18 @@ export function CanvasSurface({
           }
         }}
         onKeyUp={(e) => {
+          const active = gesture.current;
+          if (
+            active &&
+            !active.pan &&
+            ["Control", "Meta", "Shift", "Alt"].includes(e.key)
+          ) {
+            active.ctrlKey = e.ctrlKey;
+            active.metaKey = e.metaKey;
+            active.shiftKey = e.shiftKey;
+            active.altKey = e.altKey;
+            move(active);
+          }
           if (e.key === " ") setSpace(false);
         }}
         onBlur={(e) => {
@@ -954,7 +1335,7 @@ export function CanvasSurface({
           )
             return;
           setSpace(false);
-          if (gesture.current) cancel();
+          if (gesture.current || guideGesture.current) cancel();
         }}
       >
         <div className="canvas-frame">
@@ -986,6 +1367,52 @@ export function CanvasSurface({
                 }}
               />
             ))}{" "}
+        <SnapOverlay view={view} lines={snapLines} />
+        {guidesVisible && (
+          <CanvasGuideOverlay
+            view={view}
+            size={size}
+            guides={
+              guidePreview &&
+              !page.guides?.some((g) => g.id === guidePreview.id)
+                ? [...(page.guides ?? []), guidePreview]
+                : (page.guides ?? [])
+            }
+            transientPositions={
+              guidePreview
+                ? new Map([[guidePreview.id, guidePreview.position]])
+                : undefined
+            }
+            disabled={disabled || commitBusy}
+            onGuidePointerDown={(event, id) => {
+              const guide = page.guides?.find((guide) => guide.id === id);
+              if (guide) startGuide(event, guide.axis, id);
+            }}
+            onGuideKeyDown={guideKey}
+          />
+        )}
+        {rulers && (
+          <CanvasRulers
+            view={view}
+            size={size}
+            disabled={disabled || commitBusy}
+            onGuideCreateStart={(event, axis) => startGuide(event, axis)}
+            onGuideCreate={(axis) => {
+              cancel();
+              onManageGuides?.({
+                axis,
+                position: world(
+                  { x: size.width / 2, y: size.height / 2 },
+                  view,
+                )[axis],
+              });
+            }}
+            onManageGuides={() => {
+              cancel();
+              onManageGuides?.();
+            }}
+          />
+        )}
         {!hand && !space && (gestureFrame ?? frame) && (
           <TransformHandles
             frame={(gestureFrame ?? frame)!}

@@ -1257,6 +1257,42 @@
             "sourceRevision"
           ],
           "additionalProperties": false
+        },
+        "guides": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "pattern": "\\S"
+              },
+              "axis": {
+                "enum": [
+                  "x",
+                  "y"
+                ]
+              },
+              "position": {
+                "type": "number",
+                "minimum": -1000000,
+                "maximum": 1000000
+              },
+              "locked": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "axis",
+              "position"
+            ],
+            "additionalProperties": false
+          },
+          "description": "Page-local stable IDs must be unique; positions are world CSS pixels. Editor aids, excluded from drawable scene/export."
         }
       },
       "required": [

@@ -1,3 +1,4 @@
+import type { PageGuide } from "../core/guides";
 import { FramePaintLayer } from "./FramePaintLayer";
 import { collectImagePaintReferences } from "../core/image-paint";
 import { compileTextStyle } from "../core/text-style";
@@ -64,6 +65,7 @@ export type CanvasPreview = {
   pick?: { requestId: number; x: number; y: number };
 };
 export interface PreviewInput {
+  editorGuides?: readonly PageGuide[];
   canvas?: CanvasPreview;
   onGeometry?: (
     bounds: CanvasBounds[],
@@ -99,6 +101,7 @@ export function Preview({
   canvas,
   onGeometry,
   onPick,
+  editorGuides,
 }: PreviewInput) {
   const { locale, t } = useI18n();
   const desktopLibrary = useContext(DesktopLibraryContext);
@@ -274,6 +277,7 @@ export function Preview({
           theme,
           component,
           autoHeight,
+          editorGuides,
           nodes,
           selected,
           selectedIds,
@@ -291,6 +295,7 @@ export function Preview({
       );
   }, [
     ready,
+    editorGuides,
     project,
     library,
     theme,

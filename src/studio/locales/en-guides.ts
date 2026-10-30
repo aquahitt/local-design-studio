@@ -1,0 +1,65 @@
+export const guidesEnglish: Record<string, string> = {
+  "Направляющие показаны поверх макета и не войдут в экспорт.":
+    "Guides are shown over the design and will not be exported.",
+  Заблокирована: "Locked",
+  Разблокирована: "Unlocked",
+  "Нет направляющей": "No guide",
+  "Умные привязки": "Smart snapping",
+  "Умные привязки · Ctrl/⌘ временно отключает":
+    "Smart snapping · hold Ctrl/⌘ to bypass",
+  Линейки: "Rulers",
+  Направляющие: "Guides",
+  "Показать направляющие": "Show guides",
+  "Горизонтальная линейка": "Horizontal ruler",
+  "Вертикальная линейка": "Vertical ruler",
+  "Перетащи направляющую с линейки. Enter или пробел — точная координата.":
+    "Drag a guide from the ruler. Enter or Space opens exact coordinates.",
+  "Управление направляющими": "Manage guides",
+  "Направляющие страницы": "Page guides",
+  "Закрыть направляющие": "Close guides",
+  "Направляющих пока нет": "No guides yet",
+  "Ось направляющей": "Guide axis",
+  "Вертикальная (X)": "Vertical (X)",
+  "Горизонтальная (Y)": "Horizontal (Y)",
+  "Позиция направляющей": "Guide position",
+  "Создать направляющую": "Create guide",
+  "Переместить направляющую": "Move guide",
+  "Удалить направляющую": "Delete guide",
+  "Заблокировать направляющую": "Lock guide",
+  "Разблокировать направляющую": "Unlock guide",
+  "Позиция направляющей {index}": "Guide {index} position",
+  "Заблокировать направляющую {index}": "Lock guide {index}",
+  "Разблокировать направляющую {index}": "Unlock guide {index}",
+  "Удалить направляющую {index}": "Delete guide {index}",
+  "Направляющая {index}: {axis}, {position} px":
+    "Guide {index}: {axis}, {position} px",
+  Вертикальная: "Vertical",
+  Горизонтальная: "Horizontal",
+  "Изменения направляющей": "Guide changes",
+  "Сохранить позицию": "Save position",
+  "Отменить ввод": "Cancel input",
+  "Страница изменилась. Ввод сохранён. Отмените ввод и проверьте актуальную страницу.":
+    "The page changed. Your input is preserved. Cancel input and review the current page.",
+  "Введите число от −1000000 до 1000000.":
+    "Enter a number between −1000000 and 1000000.",
+  "Заблокированную направляющую сначала нужно разблокировать.":
+    "Unlock this guide before changing it.",
+  "Сначала сохраните или отмените ввод.": "Save or cancel the input first.",
+  "Достигнут лимит направляющих: {count}.": "Guide limit reached: {count}.",
+  "Страница недоступна. Ввод сохранён.":
+    "The page is unavailable. Your input is preserved.",
+  "Документ или контекст изменился. Направляющая отменена.":
+    "The document or context changed. Guide movement was cancelled.",
+  GUIDE_CONTEXT_UNAVAILABLE: "The guide's page is unavailable.",
+  GUIDE_LOCKED: "Unlock the guide before changing it.",
+  GUIDE_NOT_FOUND: "The guide no longer exists.",
+  INVALID_GUIDE: "Check the guide axis and position.",
+  GUIDE_LIMIT: "The page has reached the guide limit.",
+  DUPLICATE_GUIDE: "A guide with this ID already exists.",
+
+  "Добавить направляющую {0}: {1} = {2}": "Add guide {0}: {1} = {2}",
+  "Переместить направляющую {0}: {1} px": "Move guide {0}: {1} px",
+  "Удалить направляющую {0}": "Delete guide {0}",
+  "Заблокировать направляющую {0}": "Lock guide {0}",
+  "Разблокировать направляющую {0}": "Unlock guide {0}",
+};
