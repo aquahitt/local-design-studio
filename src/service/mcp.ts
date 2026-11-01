@@ -144,6 +144,8 @@ const tools = [
         nodeId: str,
         theme: str,
         viewport: projectSchema.$defs.page.properties.viewport,
+        boundsMode: { type: "string", enum: ["layout", "visual"] },
+        captureMode: { type: "string", enum: ["scene", "isolated"] },
       },
       ["pageId", "revision"],
     ),

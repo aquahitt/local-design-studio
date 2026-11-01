@@ -1,3 +1,7 @@
+import {
+  compileFrameDecorationTree,
+  frameContentClipStyle,
+} from "./frame-paint";
 import { compileTextStyle, usedTextFontIds } from "./text-style";
 import { fontAssetPath, projectFontFamily } from "./fonts";
 import {
@@ -12,7 +16,7 @@ import { resolveSceneNodes, definitionNodes } from "./design-components";
 import type { LibraryMetadata } from "../library/sdk";
 import { handoffRuntime } from "./handoff-runtime";
 import { compileFramePaint, hasLayeredFramePaint } from "./paint";
-import { collectImagePaintReferences, compileFramePaintTree } from "./image-paint";
+import { collectImagePaintReferences } from "./image-paint";
 import { createImageResourceLoader } from "../library/image-resource-runtime";
 export type HandoffOptions = { pageId: string; revision: number };
 export type HandoffDiagnostic = {
@@ -34,7 +38,10 @@ export function layerStyle(node: ProjectNode): Record<string, string | number> {
     };
   const paintStyle = compileFramePaint(s);
   const strokeShadow =
-    s.stroke && s.kind !== "vector" && !hasLayeredFramePaint(s)
+    s.stroke &&
+    s.strokes === undefined &&
+    s.kind !== "vector" &&
+    !hasLayeredFramePaint(s)
       ? `inset 0 0 0 ${s.strokeWidth ?? 1}px ${s.stroke}`
       : undefined;
   return Object.fromEntries(
@@ -50,7 +57,9 @@ export function layerStyle(node: ProjectNode): Record<string, string | number> {
         : `rotate(${s.rotation ?? 0}deg)`,
       transformOrigin: "0 0",
       opacity: s.opacity ?? 1,
-      overflow: s.clip ? "hidden" : "visible",
+      overflow: s.clip && !frameContentClipStyle(s) ? "hidden" : "visible",
+      isolation:
+        s.kind === "frame" && s.strokes !== undefined ? "isolate" : undefined,
       background:
         s.kind === "text" || s.fills !== undefined ? undefined : s.fill,
       color: s.kind === "text" ? s.fill : undefined,
@@ -191,7 +200,7 @@ export function createReactHandoff(
     )
       target.add(value);
     else if (value && typeof value === "object")
-      Object.values(value).forEach(row => assets(row, target));
+      Object.values(value).forEach((row) => assets(row, target));
   }
   function map(nodes: ProjectNode[], parentVisible = true): unknown[] {
     return nodes.map((node) => {
@@ -233,20 +242,30 @@ export function createReactHandoff(
         ...node,
         props,
         style: layerStyle(node),
-        ...(node.scene ? { paintTree: compileFramePaintTree(node.id, node.scene) } : {}),
+        ...(node.scene
+          ? {
+              paintTree: compileFrameDecorationTree(node.id, node.scene),
+              contentClipStyle: frameContentClipStyle(node.scene),
+            }
+          : {}),
         ...(node.scene?.kind === "text"
           ? { contentStyle: compileTextStyle(node.scene, snapshot) }
           : {}),
         slots: Object.fromEntries(
-          Object.entries(node.slots).map(([slot, rows]) => [slot, map(rows, visible)]),
+          Object.entries(node.slots).map(([slot, rows]) => [
+            slot,
+            map(rows, visible),
+          ]),
         ),
       };
     });
   }
   const resolvedNodes = resolveSceneNodes(snapshot, page.nodes);
   const nodes = map(resolvedNodes);
-  for (const ref of collectImagePaintReferences(resolvedNodes, "all")) assetPaths.add(ref.asset);
-  for (const ref of collectImagePaintReferences(resolvedNodes, "rendered")) renderedImagePaths.add(ref.asset);
+  for (const ref of collectImagePaintReferences(resolvedNodes, "all"))
+    assetPaths.add(ref.asset);
+  for (const ref of collectImagePaintReferences(resolvedNodes, "rendered"))
+    renderedImagePaths.add(ref.asset);
   const fonts = usedTextFontIds(resolvedNodes).flatMap((id) => {
     const font = snapshot.fonts?.find((font) => font.id === id);
     if (!font) {
@@ -330,7 +349,7 @@ export function createReactHandoff(
   const files: Record<string, string> = {
     "Screen.tsx": `import { useEffect, useState } from "react";\nimport { waitForImageResources } from "./imageResources";\nimport { RenderNodes, type HandoffNode, type RegisteredLibrary } from "./Runtime";\nimport "./styles.css";\nimport "./tokens.css";\nimport "./fonts.css";\nconst nodes=${JSON.stringify(nodes)} as HandoffNode[];\nconst expected=${JSON.stringify(snapshot.library)};\nconst variables=${JSON.stringify(cssVariables)};\nconst theme=${JSON.stringify(theme ?? {})} as {className?:string;attributes?:Record<string,string>};\nexport function Screen({library,assetBaseURL}:{library:RegisteredLibrary;assetBaseURL?:string}){\n  const [imageStatus,setImageStatus]=useState("pending");\n  useEffect(()=>{let active=true;setImageStatus("pending");void waitForImageResources({baseURL:assetBaseURL}).then(result=>{if(active)setImageStatus(result.warnings.length?"unavailable":"ready")});return()=>{active=false}},[assetBaseURL]);\n  useEffect(()=>{document.documentElement.className=theme.className??"";for(const [key,value] of Object.entries((theme as {attributes?:Record<string,string>}).attributes??{}))document.documentElement.setAttribute(key,value);for(const [key,value] of Object.entries(variables))document.body.style.setProperty(key,value)},[]);\n  return <main className="studio-handoff" data-image-resource-status={imageStatus}${sceneMinHeight === undefined ? "" : ` style={{minHeight:${sceneMinHeight}}}`}><RenderNodes nodes={nodes} library={library} expected={expected} assetBaseURL={assetBaseURL}/></main>;\n}\n`,
     "Runtime.tsx": handoffRuntime,
-    "imageResources.ts": `// Generated closed browser runtime; no project-controlled code.\n// @ts-nocheck\nexport const createImageResourceLoader=${createImageResourceLoader.toString()};\nconst input=${JSON.stringify({projectId:snapshot.projectId,revision:snapshot.revision,assets:[...renderedImagePaths].sort()})};\nlet owner;let loader;let status={pending:true,dimensions:{},warnings:[]};let epoch=0;\nexport function getImageResourceStatus(){return status}\nfunction resourceLoader(){if(owner!==document){loader?.dispose();owner=document;loader=createImageResourceLoader(owner)}return loader}\nexport function resolveImageAsset(asset,baseURL){if(!/^assets\\/[a-f0-9]{64}\\.(png|svg)$/.test(asset))return asset;const url=resourceLoader().resolveAssetURL(asset,baseURL??new URL(".",document.location.href).href);if(!url)throw new Error("IMAGE_RESOURCE_BASE_UNAVAILABLE");return url}\nexport async function waitForImageResources(options={}){const loader=resourceLoader();const current=++epoch;status={pending:true,dimensions:{},warnings:[]};const result=await loader.load({...input,baseURL:options.baseURL??new URL(".",document.location.href).href});await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));if(current===epoch)status={pending:false,...result};return result}\n` ,
+    "imageResources.ts": `// Generated closed browser runtime; no project-controlled code.\n// @ts-nocheck\nexport const createImageResourceLoader=${createImageResourceLoader.toString()};\nconst input=${JSON.stringify({ projectId: snapshot.projectId, revision: snapshot.revision, assets: [...renderedImagePaths].sort() })};\nlet owner;let loader;let status={pending:true,dimensions:{},warnings:[]};let epoch=0;\nexport function getImageResourceStatus(){return status}\nfunction resourceLoader(){if(owner!==document){loader?.dispose();owner=document;loader=createImageResourceLoader(owner)}return loader}\nexport function resolveImageAsset(asset,baseURL){if(!/^assets\\/[a-f0-9]{64}\\.(png|svg)$/.test(asset))return asset;const url=resourceLoader().resolveAssetURL(asset,baseURL??new URL(".",document.location.href).href);if(!url)throw new Error("IMAGE_RESOURCE_BASE_UNAVAILABLE");return url}\nexport async function waitForImageResources(options={}){const loader=resourceLoader();const current=++epoch;status={pending:true,dimensions:{},warnings:[]};const result=await loader.load({...input,baseURL:options.baseURL??new URL(".",document.location.href).href});await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));if(current===epoch)status={pending:false,...result};return result}\n`,
     "styles.css":
       "html,body{margin:0;min-height:100vh;box-sizing:border-box;background:var(--bg,#fff);color:var(--text-primary,#17202c);font-family:system-ui,sans-serif}body{padding:20px}.studio-handoff{display:flow-root;position:relative}\n",
     "fonts.css": fontCSS ? fontCSS + "\n" : "",

@@ -119,3 +119,11 @@
 .image-paint-add input[type="file"] {
   font-size: 11px;
 }
+
+/* Inspector columns are narrower than the general toolbar select minimum. */
+.paint-fields .studio-select {
+  min-width: 0;
+}
+.paint-fields .stroke-geometry {
+  grid-template-columns: minmax(0, 1fr);
+}

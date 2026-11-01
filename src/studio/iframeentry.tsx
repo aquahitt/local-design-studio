@@ -1,7 +1,7 @@
+import { previewResourceScope } from "./previewResources";
 import { parseGuides } from "../core/guides";
 import { createImageResourceLoader } from "../library/image-resource-runtime";
 import { collectImagePaintReferences } from "../core/image-paint";
-import { resolveSceneNodes } from "../core/design-components";
 import { createProjectFontLoader } from "./projectFonts";
 import { I18nProvider, translate } from "./i18n";
 import { observePreviewSize } from "./previewSizing";
@@ -131,6 +131,13 @@ export function PreviewApp() {
             event.data.editorGuides === undefined
               ? undefined
               : parseGuides(event.data.editorGuides);
+          // Validate the internal hint before accepting it; canonical IDs only.
+          if (event.data.resourceNodeId !== undefined)
+            previewResourceScope(
+              event.data.project,
+              event.data.nodes ?? [],
+              event.data.resourceNodeId,
+            );
           setInput({ ...event.data, editorGuides });
         } catch {
           /* Reject malformed editor-only metadata. */
@@ -159,16 +166,20 @@ export function PreviewApp() {
       second = 0;
     const images = (imageLoader.current ??=
       createImageResourceLoader(document));
+    const resources = previewResourceScope(
+      input.project,
+      input.nodes ?? [],
+      input.resourceNodeId,
+    );
     const assets = [
       ...new Set(
-        collectImagePaintReferences(
-          resolveSceneNodes(input.project, input.nodes ?? []),
-          "rendered",
-        ).map((ref) => ref.asset),
+        collectImagePaintReferences(resources.imageNodes, "rendered").map(
+          (ref) => ref.asset,
+        ),
       ),
     ];
     void Promise.all([
-      loader.load(input.project, input.nodes ?? []),
+      loader.load(input.project, resources.fontNodes),
       images.load({
         projectId: input.project.projectId,
         revision: input.project.revision,

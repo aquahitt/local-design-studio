@@ -1,5 +1,7 @@
 import {
   captureRectangle,
+  resolveCaptureBounds,
+  assertCaptureDiagnostics,
   validatePhysicalCapture,
   translateCaptureExpression,
   settleCaptureExpression,
@@ -8,7 +10,19 @@ import {
   imageResourceWarningsExpression,
 } from "../src/service/capture";
 import { collectImagePaintReferences } from "../src/core/image-paint";
-import { resolveSceneNodes } from "../src/core/design-components";
+import {
+  definitionNodes,
+  resolveSceneNodes,
+} from "../src/core/design-components";
+import {
+  isolateCaptureExpression,
+  type CaptureIsolationResult,
+} from "../src/service/capture-isolation";
+import {
+  captureMeasurementExpression,
+  type CaptureMeasurement,
+} from "../src/service/capture-dom";
+import { previewResourceScope } from "../src/studio/previewResources";
 import { computedStylesExpression } from "../src/service/computed-styles";
 import { BrowserWindow, nativeImage } from "electron";
 import type { Project } from "../src/core/project";
@@ -26,6 +40,13 @@ export async function captureDesktopSnapshot(
   desktopLibrary?: DesktopLibrary,
 ): Promise<RenderResult> {
   const input = prepareRenderSnapshot(project, options);
+  const resolvedNodes = resolveSceneNodes(input.project, input.page.nodes);
+  const canonicalNodes = definitionNodes(resolvedNodes);
+  const resourceNodes = previewResourceScope(
+    input.project,
+    input.page.nodes,
+    input.captureMode === "isolated" ? input.nodeId : undefined,
+  ).imageNodes;
   const started = Date.now();
   let stage = "create-window";
   const mark = (next: string) => {
@@ -47,6 +68,9 @@ export async function captureDesktopSnapshot(
     width: input.viewport.width,
     height: input.viewport.height,
     useContentSize: true,
+    ...(input.captureMode === "isolated"
+      ? { backgroundColor: "#00000000" }
+      : {}),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -66,6 +90,9 @@ export async function captureDesktopSnapshot(
       theme: input.theme,
       nodes: input.page.nodes,
       desktopLibrary,
+      ...(input.captureMode === "isolated"
+        ? { resourceNodeId: input.nodeId }
+        : {}),
     });
     const deadline = Date.now() + 15000;
     // Wait for React's listener, then deliver once. Repeated delivery creates a
@@ -91,8 +118,12 @@ export async function captureDesktopSnapshot(
     }
     mark("image-resources");
     assertImageResourcesReady(
-      await withCaptureTimeout(window.webContents.executeJavaScript(imageResourceWarningsExpression)),
-      collectImagePaintReferences(resolveSceneNodes(input.project, input.page.nodes), "rendered").map(ref => ref.asset),
+      await withCaptureTimeout(
+        window.webContents.executeJavaScript(imageResourceWarningsExpression),
+      ),
+      collectImagePaintReferences(resourceNodes, "rendered").map(
+        (ref) => ref.asset,
+      ),
     );
     mark("settle-animation");
     await withCaptureTimeout(
@@ -114,16 +145,61 @@ export async function captureDesktopSnapshot(
       : undefined;
     if (input.nodeId && (!bound || bound.width <= 0 || bound.height <= 0))
       throw new Error("NODE_NOT_VISIBLE");
+    let measurement: CaptureMeasurement | undefined;
+    const nodeIds = [...canonicalNodes.keys()];
+    if (input.captureMode === "isolated" && input.nodeId) {
+      mark("isolate-node");
+      const isolation = (await withCaptureTimeout(
+        window.webContents.executeJavaScript(
+          isolateCaptureExpression({ nodeId: input.nodeId, nodeIds }),
+        ),
+      )) as CaptureIsolationResult;
+      assertCaptureDiagnostics(isolation.diagnostics);
+    }
+    if (input.exposeCaptureMetadata) {
+      mark("measure-paint");
+      measurement = (await withCaptureTimeout(
+        window.webContents.executeJavaScript(
+          captureMeasurementExpression({
+            nodeId: input.nodeId,
+            nodeIds,
+            visual: input.boundsMode === "visual",
+          }),
+        ),
+      )) as CaptureMeasurement;
+      assertCaptureDiagnostics(measurement.diagnostics);
+    }
+    const captureBounds = bound
+      ? resolveCaptureBounds(
+          bound,
+          measurement?.visualBounds.find((row) => row.id === input.nodeId),
+          input.boundsMode,
+        )
+      : {
+          x: 0,
+          y: 0,
+          width: input.viewport.width,
+          height: input.viewport.height,
+        };
     let png: Buffer;
     if (bound) {
-      const rectangle = captureRectangle(bound);
+      const rectangle = captureRectangle(captureBounds);
       mark("translate-node");
       const pixelRatio = await withCaptureTimeout(
-        window.webContents.executeJavaScript(translateCaptureExpression(bound)),
+        window.webContents.executeJavaScript(
+          translateCaptureExpression(captureBounds),
+        ),
       );
       validatePhysicalCapture(rectangle, pixelRatio);
       window.webContents.debugger.attach("1.3");
       try {
+        if (input.captureMode === "isolated")
+          await withCaptureTimeout(
+            window.webContents.debugger.sendCommand(
+              "Emulation.setDefaultBackgroundColorOverride",
+              { color: { r: 0, g: 0, b: 0, a: 0 } },
+            ),
+          );
         mark("cdp-screenshot");
         // Electron's native capturer makes a hidden page paint without showing
         // its BrowserWindow. CDP alone can wait forever for that frame on Linux
@@ -139,7 +215,12 @@ export async function captureDesktopSnapshot(
             }),
             Promise.resolve().then(async () => {
               mark("native-prime");
-              const image = await window.webContents.capturePage({x:0,y:0,width:1,height:1});
+              const image = await window.webContents.capturePage({
+                x: 0,
+                y: 0,
+                width: 1,
+                height: 1,
+              });
               mark("cdp-after-prime");
               return image;
             }),
@@ -192,7 +273,17 @@ export async function captureDesktopSnapshot(
       bounds,
       computedStyles,
       text: result.text,
-      warnings: result.warnings,
+      warnings: [...result.warnings, ...(measurement?.warnings ?? [])],
+      ...(input.exposeCaptureMetadata
+        ? {
+            boundsMode: input.boundsMode,
+            captureMode: input.captureMode,
+            captureBounds,
+            visualBounds: measurement?.visualBounds ?? [],
+            visualBoundsStatus: "conservative" as const,
+            visualBoundsPolicy: measurement!.policy,
+          }
+        : {}),
     };
   } catch (error) {
     console.error("Studio capture failed", {

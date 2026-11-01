@@ -20,6 +20,7 @@ export function ImagePaintFields({
   disabled,
   onChange,
   onImport,
+  usage = "fills",
 }: {
   paint: ImagePaint;
   width: number;
@@ -30,6 +31,7 @@ export function ImagePaintFields({
   disabled: boolean;
   onChange: (paint: ImagePaint) => void;
   onImport?: (file: File) => Promise<ImageAsset>;
+  usage?: "fills" | "strokes";
 }) {
   const { t } = useI18n();
   const [dimensions, setDimensions] = useState<{
@@ -124,7 +126,9 @@ export function ImagePaintFields({
   return (
     <div className="image-paint-fields">
       <StudioSelect
-        label={t("Изображение заливки")}
+        label={t(
+          usage === "strokes" ? "Изображение обводки" : "Изображение заливки",
+        )}
         value={paint.asset}
         disabled={disabled || busy}
         fallback={paint.asset}
@@ -140,10 +144,18 @@ export function ImagePaintFields({
       />
       {onImport && (
         <label className="image-paint-import">
-          {t("Импортировать изображение для заливки")}
+          {t(
+            usage === "strokes"
+              ? "Импортировать изображение для обводки"
+              : "Импортировать изображение для заливки",
+          )}
           <input
             type="file"
-            aria-label={t("Импортировать изображение для заливки")}
+            aria-label={t(
+              usage === "strokes"
+                ? "Импортировать изображение для обводки"
+                : "Импортировать изображение для заливки",
+            )}
             accept="image/png,image/jpeg,image/webp,image/svg+xml"
             disabled={disabled || busy}
             onChange={(event) => {

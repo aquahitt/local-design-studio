@@ -11,30 +11,48 @@ import { CoreError } from "./tokens";
 import type { SceneMetadata, Matrix } from "./scene";
 import type { ProjectNode } from "./project";
 export { hasLayeredFramePaint } from "./paint";
-export type ImagePaintReference = { nodeId: string; paintId: string; asset: string };
+export type ImagePaintReference = {
+  nodeId: string;
+  paintId: string;
+  asset: string;
+};
 export type FramePaintTree = {
-  tag: "div" | "img" | "svg" | "defs" | "pattern" | "image" | "rect";
+  tag:
+    | "div"
+    | "img"
+    | "svg"
+    | "defs"
+    | "pattern"
+    | "image"
+    | "rect"
+    | "path"
+    | "clipPath";
   props: Record<string, string | number | Record<string, string | number>>;
   children: FramePaintTree[];
 };
 const branch = (
   tag: FramePaintTree["tag"],
   props: FramePaintTree["props"],
-  children: FramePaintTree[] = []
+  children: FramePaintTree[] = [],
 ): FramePaintTree => ({ tag, props, children });
 export function imageMappingMatrix(
   mapping: ImageMapping,
   decoded: { width: number; height: number },
-  frame: { width: number; height: number }
+  frame: { width: number; height: number },
 ): Matrix {
   validateImageMapping(mapping, "mapping");
   if ("imageToFrame" in mapping) return [...mapping.imageToFrame];
-  for (const value of [decoded.width, decoded.height, frame.width, frame.height])
+  for (const value of [
+    decoded.width,
+    decoded.height,
+    frame.width,
+    frame.height,
+  ])
     if (!Number.isFinite(value) || value <= 0)
       throw new CoreError("INVALID_SCENE", "mapping", "mapping");
   const scale = (mapping.mode === "cover" ? Math.max : Math.min)(
     frame.width / decoded.width,
-    frame.height / decoded.height
+    frame.height / decoded.height,
   );
   const width = decoded.width * scale,
     height = decoded.height * scale;
@@ -47,7 +65,11 @@ export function imageMappingMatrix(
     (frame.height - height) * mapping.anchor.y,
   ];
   validateAffineLinear(result.slice(0, 4), "mapping");
-  if (result.some((n) => !Number.isFinite(n) || Math.abs(n) > AFFINE_LIMITS.maxCoefficient))
+  if (
+    result.some(
+      (n) => !Number.isFinite(n) || Math.abs(n) > AFFINE_LIMITS.maxCoefficient,
+    )
+  )
     throw new CoreError("INVALID_SCENE", "mapping", "mapping");
   return result;
 }
@@ -60,7 +82,7 @@ function uniqueId(nodeId: string, paintId: string): string {
 }
 export function compileFramePaintTree(
   nodeId: string,
-  scene: SceneMetadata
+  scene: SceneMetadata,
 ): FramePaintTree | undefined {
   validateFramePaint(scene, "scene");
   if (!hasLayeredFramePaint(scene)) return undefined;
@@ -82,8 +104,12 @@ export function compileFramePaintTree(
     if (paint.kind !== "image") {
       children.push(
         branch("div", {
-          style: { ...style, opacity: 1, backgroundImage: compilePaintGradient(paint) },
-        })
+          style: {
+            ...style,
+            opacity: 1,
+            backgroundImage: compilePaintGradient(paint),
+          },
+        }),
       );
       continue;
     }
@@ -102,7 +128,7 @@ export function compileFramePaintTree(
               objectPosition: `${mapping.anchor.x * 100}% ${mapping.anchor.y * 100}%`,
             },
           }),
-        ])
+        ]),
       );
       continue;
     }
@@ -128,7 +154,7 @@ export function compileFramePaintTree(
                   height: 1,
                   patternTransform: matrix,
                 },
-                [image]
+                [image],
               ),
             ]),
             branch("rect", {
@@ -145,41 +171,72 @@ export function compileFramePaintTree(
             xmlns: "http://www.w3.org/2000/svg",
             viewBox: `0 0 ${scene.width} ${scene.height}`,
             preserveAspectRatio: "none",
-            style: { display: "block", width: "100%", height: "100%", overflow: "hidden" },
+            style: {
+              display: "block",
+              width: "100%",
+              height: "100%",
+              overflow: "hidden",
+            },
           },
-          svgChildren
+          svgChildren,
         ),
-      ])
+      ]),
     );
   }
   const effects = compileFrameInsetEffects(scene);
   if (Object.keys(effects).length)
-    children.push(branch("div", { style: { ...full, borderRadius: "inherit", ...effects } }));
+    children.push(
+      branch("div", {
+        style: { ...full, borderRadius: "inherit", ...effects },
+      }),
+    );
   return branch(
     "div",
     {
-      style: { ...full, isolation: "isolate", overflow: "hidden", borderRadius: scene.radius ?? 0 },
+      style: {
+        ...full,
+        isolation: "isolate",
+        overflow: "hidden",
+        borderRadius: scene.radius ?? 0,
+      },
     },
-    children
+    children,
   );
 }
 export function collectImagePaintReferences(
   nodes: readonly ProjectNode[],
-  mode: "all" | "rendered" = "rendered"
+  mode: "all" | "rendered" = "rendered",
 ): ImagePaintReference[] {
   const refs: ImagePaintReference[] = [],
     seen = new Set<string>();
   function walk(nodes: readonly ProjectNode[]) {
     for (const node of nodes) {
       if (mode === "rendered" && node.hidden) continue;
-      for (const paint of node.scene?.fills ?? [])
-        if (paint.kind === "image" && (mode === "all" || paint.enabled !== false)) {
-          const key = JSON.stringify([node.id, paint.id, paint.asset]);
-          if (!seen.has(key)) {
-            seen.add(key);
-            refs.push({ nodeId: node.id, paintId: paint.id, asset: paint.asset });
+      for (const [stack, paints] of [
+        ["fill", node.scene?.fills],
+        ["stroke", node.scene?.strokes],
+      ] as const)
+        for (const paint of paints ?? [])
+          if (
+            paint.kind === "image" &&
+            (mode === "all" ||
+              (paint.enabled !== false &&
+                (stack !== "stroke" ||
+                  ("width" in paint &&
+                    typeof paint.width === "number" &&
+                    paint.width > 0 &&
+                    paint.opacity !== 0))))
+          ) {
+            const key = JSON.stringify([node.id, stack, paint.id, paint.asset]);
+            if (!seen.has(key)) {
+              seen.add(key);
+              refs.push({
+                nodeId: node.id,
+                paintId: paint.id,
+                asset: paint.asset,
+              });
+            }
           }
-        }
       for (const slot of Object.keys(node.slots).sort()) walk(node.slots[slot]);
     }
   }

@@ -1,6 +1,8 @@
 import { isProjectAssetPath, projectAssetMediaType } from "./project-assets";
 import {
   captureRectangle,
+  resolveCaptureBounds,
+  assertCaptureDiagnostics,
   translateCaptureExpression,
   settleCaptureExpression,
   withCaptureTimeout,
@@ -8,7 +10,16 @@ import {
   imageResourceWarningsExpression,
 } from "./capture";
 import { collectImagePaintReferences } from "../core/image-paint";
-import { resolveSceneNodes } from "../core/design-components";
+import {
+  captureMeasurementExpression,
+  type CaptureMeasurement,
+} from "./capture-dom";
+import {
+  isolateCaptureExpression,
+  type CaptureIsolationResult,
+} from "./capture-isolation";
+import { definitionNodes, resolveSceneNodes } from "../core/design-components";
+import { previewResourceScope } from "../studio/previewResources";
 import { computedStylesExpression } from "./computed-styles";
 import { createServer } from "node:http";
 import { once } from "node:events";
@@ -24,12 +35,17 @@ import {
 } from "../core/project";
 import { parseViewport, type Viewport } from "../core/viewport";
 
+export type CaptureBoundsMode = "layout" | "visual";
+export type CaptureMode = "scene" | "isolated";
+
 export interface RenderOptions {
   pageId: string;
   revision: number;
   nodeId?: string;
   viewport?: Viewport;
   theme?: string;
+  boundsMode?: CaptureBoundsMode;
+  captureMode?: CaptureMode;
 }
 export interface RenderBounds {
   id: string;
@@ -55,6 +71,12 @@ export interface RenderResult {
   warnings: string[];
   text: string;
   computedStyles?: RenderComputedStyles[];
+  boundsMode?: CaptureBoundsMode;
+  captureMode?: CaptureMode;
+  captureBounds?: { x: number; y: number; width: number; height: number };
+  visualBounds?: RenderBounds[];
+  visualBoundsStatus?: "conservative";
+  visualBoundsPolicy?: string;
 }
 export interface RenderRuntime {
   sourceRoot?: string;
@@ -73,10 +95,31 @@ export function prepareRenderSnapshot(
     Array.isArray(options) ||
     Object.keys(options).some(
       (key) =>
-        !["pageId", "revision", "nodeId", "viewport", "theme"].includes(key),
+        ![
+          "pageId",
+          "revision",
+          "nodeId",
+          "viewport",
+          "theme",
+          "boundsMode",
+          "captureMode",
+        ].includes(key),
     )
   )
     throw new CoreError("INVALID_RENDER_OPTIONS");
+  if (
+    (options.boundsMode !== undefined &&
+      options.boundsMode !== "layout" &&
+      options.boundsMode !== "visual") ||
+    (options.captureMode !== undefined &&
+      options.captureMode !== "scene" &&
+      options.captureMode !== "isolated")
+  )
+    throw new CoreError("INVALID_RENDER_OPTIONS");
+  const boundsMode = options.boundsMode ?? "layout";
+  const captureMode = options.captureMode ?? "scene";
+  const exposeCaptureMetadata =
+    options.boundsMode !== undefined || options.captureMode !== undefined;
   if (
     !Number.isInteger(options.revision) ||
     options.revision !== project.revision
@@ -104,12 +147,17 @@ export function prepareRenderSnapshot(
     (typeof options.nodeId !== "string" || !find(page.nodes))
   )
     throw new CoreError("NODE_NOT_FOUND");
+  if (captureMode === "isolated" && options.nodeId === undefined)
+    throw new CoreError("INVALID_RENDER_OPTIONS");
   return {
     project: snapshot,
     page,
     viewport: fullViewport,
     theme,
     nodeId: options.nodeId,
+    boundsMode,
+    captureMode,
+    exposeCaptureMetadata,
   };
 }
 
@@ -277,6 +325,9 @@ export async function renderSnapshot(
         library: input.project.library,
         theme: input.theme,
         nodes: input.page.nodes,
+        ...(input.captureMode === "isolated"
+          ? { resourceNodeId: input.nodeId }
+          : {}),
       }),
     );
     await page.waitForFunction(
@@ -286,9 +337,18 @@ export async function renderSnapshot(
       input.project.revision,
       { timeout: 15000 },
     );
+    const resolvedNodes = resolveSceneNodes(input.project, input.page.nodes);
+    const canonicalNodes = definitionNodes(resolvedNodes);
+    const resourceNodes = previewResourceScope(
+      input.project,
+      input.page.nodes,
+      input.captureMode === "isolated" ? input.nodeId : undefined,
+    ).imageNodes;
     assertImageResourcesReady(
       await withCaptureTimeout(page.evaluate(imageResourceWarningsExpression)),
-      collectImagePaintReferences(resolveSceneNodes(input.project, input.page.nodes), "rendered").map(ref => ref.asset),
+      collectImagePaintReferences(resourceNodes, "rendered").map(
+        (ref) => ref.asset,
+      ),
     );
     await withCaptureTimeout(page.evaluate(settleCaptureExpression));
     const bounds = await page.locator("[data-node-id]").evaluateAll((nodes) =>
@@ -318,17 +378,55 @@ export async function renderSnapshot(
         );
       })),
     );
+    if (input.captureMode === "isolated") {
+      const isolation = await withCaptureTimeout(
+        page.evaluate<CaptureIsolationResult>(
+          isolateCaptureExpression({
+            nodeId: input.nodeId!,
+            nodeIds: [...canonicalNodes.keys()],
+          }),
+        ),
+      );
+      assertCaptureDiagnostics(isolation.diagnostics);
+    }
+    const measurement = input.exposeCaptureMetadata
+      ? await withCaptureTimeout(
+          page.evaluate<CaptureMeasurement>(
+            captureMeasurementExpression({
+              nodeId: input.nodeId,
+              nodeIds: [...canonicalNodes.keys()],
+              visual: input.boundsMode === "visual",
+            }),
+          ),
+        )
+      : undefined;
+    if (measurement) assertCaptureDiagnostics(measurement.diagnostics);
+    const layoutBound = input.nodeId
+      ? bounds.find((bound) => bound.id === input.nodeId)
+      : { x: 0, y: 0, ...input.viewport };
+    if (!layoutBound) throw new CoreError("NODE_NOT_VISIBLE");
+    const captureBounds = resolveCaptureBounds(
+      layoutBound,
+      input.nodeId
+        ? measurement?.visualBounds.find((bound) => bound.id === input.nodeId)
+        : layoutBound,
+      input.boundsMode,
+    );
     let bytes: Buffer;
     if (input.nodeId) {
       const index = bounds.findIndex((bound) => bound.id === input.nodeId);
       if (index < 0 || bounds[index].width <= 0 || bounds[index].height <= 0)
         throw new CoreError("NODE_NOT_VISIBLE");
-      const clip = captureRectangle(bounds[index]);
+      const clip = captureRectangle(captureBounds);
       await withCaptureTimeout(
-        page.evaluate(translateCaptureExpression(bounds[index])),
+        page.evaluate(translateCaptureExpression(captureBounds)),
       );
       const session = await page.context().newCDPSession(page);
       try {
+        if (input.captureMode === "isolated")
+          await session.send("Emulation.setDefaultBackgroundColorOverride", {
+            color: { r: 0, g: 0, b: 0, a: 0 },
+          });
         const capture = await withCaptureTimeout(
           session.send("Page.captureScreenshot", {
             format: "png",
@@ -359,6 +457,16 @@ export async function renderSnapshot(
       theme: input.theme,
       bounds,
       computedStyles,
+      ...(input.exposeCaptureMetadata
+        ? {
+            boundsMode: input.boundsMode,
+            captureMode: input.captureMode,
+            captureBounds,
+            visualBounds: measurement?.visualBounds ?? [],
+            visualBoundsStatus: "conservative" as const,
+            visualBoundsPolicy: measurement!.policy,
+          }
+        : {}),
       warnings,
       text,
     };

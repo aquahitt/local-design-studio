@@ -53,7 +53,14 @@ export class StudioClient {
       body: data === undefined ? undefined : JSON.stringify(data),
       signal: options.signal,
     });
-    const result = (await readJsonResponse(response, options)) as T & {
+    const result = (await readJsonResponse(response, {
+      ...options,
+      // Base64 PNG for the maximum raster can exceed the project JSON budget.
+      // Keep all other endpoints (including error replies) at the default limit.
+      ...(path === "render" && response.ok
+        ? { maxBytes: 100 * 1024 * 1024 }
+        : {}),
+    })) as T & {
       error?: string;
     };
     if (!response.ok)

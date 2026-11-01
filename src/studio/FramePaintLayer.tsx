@@ -1,8 +1,9 @@
 import { createElement, useMemo, type ReactNode } from "react";
+import { type FramePaintTree } from "../core/image-paint";
 import {
-  compileFramePaintTree,
-  type FramePaintTree,
-} from "../core/image-paint";
+  compileFrameDecorationTree,
+  frameContentClipStyle,
+} from "../core/frame-paint";
 import { createImageResourceLoader } from "../library/image-resource-runtime";
 import type { SceneMetadata } from "../core/scene";
 /** Rendering only: tag names/props come from the validated pure compiler, never document code. */
@@ -20,7 +21,7 @@ export function FramePaintLayer({
         : createImageResourceLoader(document),
     [],
   );
-  const tree = compileFramePaintTree(nodeId, scene);
+  const tree = compileFrameDecorationTree(nodeId, scene);
   function render(branch: FramePaintTree, key: number): ReactNode {
     const props = { ...branch.props };
     const sourceKey =
@@ -47,4 +48,15 @@ export function FramePaintLayer({
         render(tree, 0),
       )
     : null;
+}
+
+export function FrameContentClip({
+  scene,
+  children,
+}: {
+  scene: SceneMetadata | undefined;
+  children: ReactNode;
+}) {
+  const style = frameContentClipStyle(scene);
+  return style ? <div style={style}>{children}</div> : <>{children}</>;
 }

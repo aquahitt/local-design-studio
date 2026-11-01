@@ -550,6 +550,15 @@ for (const locale of ["ru", "en"] as const)
                         y: 0,
                         width: 200,
                         height: 200,
+                        strokes: [
+                          {
+                            id: "stroke",
+                            kind: "solid",
+                            color: { r: 30, g: 100, b: 200, a: 0.7 },
+                            width: 4,
+                            alignment: "outside",
+                          },
+                        ],
                         fills: [
                           {
                             id: "fill",
@@ -614,13 +623,62 @@ for (const locale of ["ru", "en"] as const)
       await expect(
         paint.getByLabel(t("Угол заливки {0}", { 0: 1 }), { exact: true }),
       ).toBeVisible();
+      const strokes = inspector.getByRole("group", {
+        name: t("Обводки фрейма"),
+        exact: true,
+      });
+      await expect(strokes).toBeVisible();
+      await paint
+        .getByRole("button", { name: t("Добавить тень"), exact: true })
+        .focus();
+      await page.keyboard.press("Tab");
+      const hideStroke = strokes.getByRole("button", {
+        name: t("Скрыть обводку {0}", { 0: 1 }),
+        exact: true,
+      });
+      await expect(hideStroke).toBeFocused();
+      await page.keyboard.press("Enter");
+      await expect(
+        strokes.getByRole("button", {
+          name: t("Показать обводку {0}", { 0: 1 }),
+          exact: true,
+        }),
+      ).toBeFocused();
+      await page.keyboard.press("Enter");
+      await page.keyboard.press("Tab");
+      await page.keyboard.press("Tab");
+      const strokeWidth = strokes.getByLabel(
+        t("Ширина обводки {0}", { 0: 1 }),
+        { exact: true },
+      );
+      await expect(strokeWidth).toBeFocused();
+      await page.keyboard.press("ControlOrMeta+a");
+      await page.keyboard.insertText("1e");
+      await expect(strokeWidth).toHaveValue("1e");
+      await expect(
+        inspector.getByRole("button", {
+          name: t("Применить слой"),
+          exact: true,
+        }),
+      ).toBeDisabled();
+      await page.keyboard.press("ControlOrMeta+a");
+      await page.keyboard.insertText("4");
+      await expect(
+        inspector.getByRole("button", {
+          name: t("Применить слой"),
+          exact: true,
+        }),
+      ).toBeEnabled();
+      await strokes.screenshot({
+        path: testInfo.outputPath(`strokes-${locale}-${theme}.png`),
+      });
       const audit = await new AxeBuilder({ page })
         .include(".layout-inspector")
         .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
         .analyze();
       expect(audit.violations).toEqual([]);
-      const undersized = await paint
-        .locator("input,button")
+      const undersized = await inspector
+        .locator(".paint-fields input,.paint-fields button")
         .evaluateAll((elements) =>
           elements
             .filter((el) => {
@@ -634,6 +692,24 @@ for (const locale of ["ru", "en"] as const)
             .map((el) => el.getAttribute("aria-label")),
         );
       expect(undersized).toEqual([]);
+      const overflow = await inspector
+        .locator(".paint-row")
+        .evaluateAll((rows) =>
+          rows.flatMap((row) => {
+            const outer = row.getBoundingClientRect();
+            return [...row.querySelectorAll("input,button")]
+              .filter((control) => {
+                const rect = control.getBoundingClientRect();
+                return (
+                  rect.width > 0 &&
+                  rect.height > 0 &&
+                  (rect.left < outer.left - 1 || rect.right > outer.right + 1)
+                );
+              })
+              .map((control) => control.getAttribute("aria-label"));
+          }),
+        );
+      expect(overflow).toEqual([]);
       await paint.screenshot({
         path: testInfo.outputPath(`paint-${locale}-${theme}.png`),
       });

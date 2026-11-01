@@ -14,6 +14,13 @@ it("publishes portable image paint units and limits through the real capabilitie
     expect(response.status).toBe(200);
     const data = await response.json();
     expect(data.paints).toEqual(PAINT_CAPABILITIES);
+    expect(data.paints.strokes).toMatchObject({
+      maxStrokes: 16,
+      alignments: ["inside", "center", "outside"],
+      width: { min: 0, max: 4096 },
+      imageMappingBox: "outer-stroke-bounds",
+      snapshotBounds: "layout",
+    });
     expect(data.paints.image).toMatchObject({
       modes: ["cover", "contain", "crop", "tile"],
       matrixUnits: "UV-to-frame-css-pixels",

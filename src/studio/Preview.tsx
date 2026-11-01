@@ -1,5 +1,5 @@
 import type { PageGuide } from "../core/guides";
-import { FramePaintLayer } from "./FramePaintLayer";
+import { FramePaintLayer, FrameContentClip } from "./FramePaintLayer";
 import { collectImagePaintReferences } from "../core/image-paint";
 import { compileTextStyle } from "../core/text-style";
 import { validCanvasBounds, type CanvasBounds } from "./canvasCamera";
@@ -65,6 +65,8 @@ export type CanvasPreview = {
   pick?: { requestId: number; x: number; y: number };
 };
 export interface PreviewInput {
+  /** Internal disposable-capture readiness scope; never filters rendered nodes. */
+  resourceNodeId?: string;
   editorGuides?: readonly PageGuide[];
   canvas?: CanvasPreview;
   onGeometry?: (
@@ -102,6 +104,7 @@ export function Preview({
   onGeometry,
   onPick,
   editorGuides,
+  resourceNodeId,
 }: PreviewInput) {
   const { locale, t } = useI18n();
   const desktopLibrary = useContext(DesktopLibraryContext);
@@ -278,6 +281,7 @@ export function Preview({
           component,
           autoHeight,
           editorGuides,
+          resourceNodeId,
           nodes,
           selected,
           selectedIds,
@@ -296,6 +300,7 @@ export function Preview({
   }, [
     ready,
     editorGuides,
+    resourceNodeId,
     project,
     library,
     theme,
@@ -556,22 +561,24 @@ export function Nodes({
                   }}
                 />
               ) : node.scene?.kind === "frame" || node.type === "SceneFrame" ? (
-                Object.entries(node.slots).map(([slot, children]) => (
-                  <Nodes
-                    key={slot}
-                    {...{
-                      nodes: children,
-                      inheritedLocked: inheritedLocked || !!node.locked,
-                      materializedNodes: true,
-                      geometry,
-                      library,
-                      project,
-                      selected,
-                      selectedIds,
-                      onSelect,
-                    }}
-                  />
-                ))
+                <FrameContentClip scene={node.scene}>
+                  {Object.entries(node.slots).map(([slot, children]) => (
+                    <Nodes
+                      key={slot}
+                      {...{
+                        nodes: children,
+                        inheritedLocked: inheritedLocked || !!node.locked,
+                        materializedNodes: true,
+                        geometry,
+                        library,
+                        project,
+                        selected,
+                        selectedIds,
+                        onSelect,
+                      }}
+                    />
+                  ))}
+                </FrameContentClip>
               ) : definition ? (
                 <RenderBoundary
                   resetKey={node.type + JSON.stringify(node.props)}

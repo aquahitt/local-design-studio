@@ -1,6 +1,8 @@
 import { expect, it, vi } from "vitest";
 import {
   captureRectangle,
+  resolveCaptureBounds,
+  assertCaptureDiagnostics,
   validatePhysicalCapture,
   withCaptureTimeout,
   settleCaptureExpression,
@@ -76,4 +78,37 @@ it("bounds native allocation before Retina normalization", () => {
   expect(() =>
     validatePhysicalCapture({ width: 8192, height: 1 }, 2.1),
   ).toThrow("RENDER_RASTER_LIMIT");
+});
+
+it("rounds visual edges outward while retaining legacy layout origins and raster limits", () => {
+  const layout = { x: 10.7, y: -2.2, width: 100.1, height: 80.1 };
+  expect(resolveCaptureBounds(layout, undefined, "layout")).toEqual({
+    x: 10.7,
+    y: -2.2,
+    width: 101,
+    height: 81,
+  });
+  expect(
+    resolveCaptureBounds(
+      layout,
+      { x: 0.2, y: -10.3, width: 120.1, height: 100.4 },
+      "visual",
+    ),
+  ).toEqual({ x: 0, y: -11, width: 121, height: 102 });
+  expect(() => resolveCaptureBounds(layout, undefined, "visual")).toThrow(
+    "VISUAL_BOUNDS_UNSUPPORTED",
+  );
+  expect(() =>
+    resolveCaptureBounds(
+      layout,
+      { x: 0, y: 0, width: 8192.1, height: 1 },
+      "visual",
+    ),
+  ).toThrow("RENDER_RASTER_LIMIT");
+  expect(() =>
+    assertCaptureDiagnostics([
+      { code: "VISUAL_BOUNDS_UNSUPPORTED", feature: "filter" },
+    ]),
+  ).toThrow("VISUAL_BOUNDS_UNSUPPORTED");
+  expect(() => assertCaptureDiagnostics([])).not.toThrow();
 });
