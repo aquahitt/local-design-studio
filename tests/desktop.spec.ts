@@ -683,85 +683,467 @@ test("desktop installed MCP survives owner replacement, trusted library restart 
 
 test("desktop image paints wait for decode and reject corrupt or missing immutable assets", async ({}, testInfo) => {
   test.setTimeout(90000);
-  const temp = await mkdtemp(join(tmpdir(), "studio-desktop-image-")), root = join(temp, "project"), emptyPath = join(temp, "empty-path");
+  const temp = await mkdtemp(join(tmpdir(), "studio-desktop-image-")),
+    root = join(temp, "project"),
+    emptyPath = join(temp, "empty-path");
   await Promise.all([mkdir(root), mkdir(emptyPath)]);
-  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100"><path fill="red" d="M0 0h100v100H0z"/><path fill="blue" d="M100 0h100v100H100z"/></svg>';
-  const asset = "assets/" + createHash("sha256").update(svg).digest("hex") + ".svg";
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100"><path fill="red" d="M0 0h100v100H0z"/><path fill="blue" d="M100 0h100v100H100z"/></svg>';
+  const asset =
+    "assets/" + createHash("sha256").update(svg).digest("hex") + ".svg";
   await mkdir(join(root, "assets"));
   await writeFile(join(root, asset), svg);
-  await writeFile(join(root, "project.json"), JSON.stringify({ schemaVersion: 2, projectId: "native-image-paint", name: "Native image paint", revision: 3,
-    library: { id: "builtin", version: "1" }, theme: "light", tokens: {}, pages: [{ screenId: "home", name: "Home", viewport: { width: 390, height: 600 },
-      nodes: [{ id: "picture", type: "SceneFrame", props: {}, slots: {}, scene: { kind: "frame", x: 0, y: 0, width: 120, height: 80, stroke: "#123456", strokeWidth: 6,
-        fills: [{ id: "photo", kind: "image", asset, mapping: { mode: "crop", imageToFrame: [120, 0, 0, 80, 0, 0] } }] } }],
-    }] }));
+  const stroked = {
+    id: "stroked",
+    type: "SceneFrame",
+    props: {},
+    slots: {
+      content: [
+        {
+          id: "stroke-child",
+          type: "SceneFrame",
+          props: {},
+          slots: {},
+          scene: {
+            kind: "frame",
+            x: 95,
+            y: 20,
+            width: 30,
+            height: 30,
+            fill: "#0000ff",
+          },
+        },
+      ],
+    },
+    scene: {
+      kind: "frame",
+      x: 200,
+      y: 100,
+      width: 100,
+      height: 80,
+      fill: "#ffffff",
+      radius: 12,
+      clip: true,
+      strokes: [
+        {
+          id: "outside",
+          kind: "solid",
+          color: { r: 255, g: 0, b: 0, a: 1 },
+          width: 10,
+          alignment: "outside",
+        },
+        {
+          id: "inside",
+          kind: "solid",
+          color: { r: 0, g: 255, b: 0, a: 1 },
+          width: 5,
+          alignment: "inside",
+        },
+        {
+          id: "zero-width",
+          kind: "image",
+          asset: "assets/" + "0".repeat(64) + ".png",
+          mapping: { mode: "cover", anchor: { x: 0.5, y: 0.5 } },
+          width: 0,
+          alignment: "outside",
+        },
+        {
+          id: "zero-opacity",
+          kind: "image",
+          asset: "assets/" + "1".repeat(64) + ".png",
+          mapping: { mode: "cover", anchor: { x: 0.5, y: 0.5 } },
+          width: 10,
+          opacity: 0,
+          alignment: "outside",
+        },
+      ],
+    },
+  };
+  await writeFile(
+    join(root, "project.json"),
+    JSON.stringify({
+      schemaVersion: 2,
+      projectId: "native-image-paint",
+      name: "Native image paint",
+      revision: 3,
+      library: { id: "builtin", version: "1" },
+      theme: "light",
+      tokens: {},
+      pages: [
+        {
+          screenId: "home",
+          name: "Home",
+          viewport: { width: 390, height: 600 },
+          nodes: [
+            {
+              id: "picture",
+              type: "SceneFrame",
+              props: {},
+              slots: {},
+              scene: {
+                kind: "frame",
+                x: 0,
+                y: 0,
+                width: 120,
+                height: 80,
+                stroke: "#123456",
+                strokeWidth: 6,
+                fills: [
+                  {
+                    id: "photo",
+                    kind: "image",
+                    asset,
+                    mapping: {
+                      mode: "crop",
+                      imageToFrame: [120, 0, 0, 80, 0, 0],
+                    },
+                  },
+                ],
+              },
+            },
+            stroked,
+          ],
+        },
+      ],
+    }),
+  );
   let before = await readFile(join(root, "project.json"), "utf8");
   const packaged = process.env.STUDIO_PACKAGED_EXECUTABLE;
-  if (!packaged) execFileSync(process.execPath, ["scripts/desktop/build.mjs"], { stdio: "pipe" });
+  if (!packaged)
+    execFileSync(process.execPath, ["scripts/desktop/build.mjs"], {
+      stdio: "pipe",
+    });
   const env = desktopRuntimeEnv(join(temp, "settings"), emptyPath);
-  let app: Awaited<ReturnType<typeof electron.launch>> | undefined, primaryError: unknown, logs = "";
+  let app: Awaited<ReturnType<typeof electron.launch>> | undefined,
+    primaryError: unknown,
+    logs = "";
   const client = new Client({ name: "native-image-acceptance", version: "1" });
   try {
-    app = await electron.launch({ ...(packaged ? { executablePath: packaged } : { args: [resolve(".")] }), chromiumSandbox: process.platform === "linux", env });
-    app.process().stderr?.on("data", chunk => { logs = (logs + String(chunk)).slice(-12000); });
+    app = await electron.launch({
+      ...(packaged ? { executablePath: packaged } : { args: [resolve(".")] }),
+      chromiumSandbox: process.platform === "linux",
+      env,
+    });
+    app.process().stderr?.on("data", (chunk) => {
+      logs = (logs + String(chunk)).slice(-12000);
+    });
     const page = await app.firstWindow();
-    await app.evaluate(({ dialog }, root) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [root] }); }, root);
-    await page.getByRole("button", { name: "Открыть проект", exact: true }).click();
-    await expect(page.getByText("Native image paint", { exact: true }).first()).toBeVisible();
+    await app.evaluate(({ dialog }, root) => {
+      dialog.showOpenDialog = async () => ({
+        canceled: false,
+        filePaths: [root],
+      });
+    }, root);
+    await page
+      .getByRole("button", { name: "Открыть проект", exact: true })
+      .click();
+    await expect(
+      page.getByText("Native image paint", { exact: true }).first(),
+    ).toBeVisible();
     // Owner initialization canonicalizes a fixture file; snapshot operations below must not change it.
     before = await readFile(join(root, "project.json"), "utf8");
     expect(JSON.parse(before).revision).toBe(3);
     await app.evaluate(({ app }) => {
       (globalThis as any).__nativeDelayedImageDecodes = 0;
       app.on("web-contents-created", (_event, contents) => {
-        contents.on("console-message", details => {
-          if (details.message === "Studio test image decoded") (globalThis as any).__nativeDelayedImageDecodes++;
+        contents.on("console-message", (details) => {
+          if (details.message === "Studio test image decoded")
+            (globalThis as any).__nativeDelayedImageDecodes++;
         });
         contents.on("dom-ready", () => {
           if (!contents.getURL().startsWith("studio://preview/preview")) return;
-          void contents.executeJavaScript(`(() => {const decode=HTMLImageElement.prototype.decode;HTMLImageElement.prototype.decode=async function(){await decode.call(this);await new Promise(resolve=>setTimeout(resolve,220));console.info('Studio test image decoded')}})()`);
+          void contents.executeJavaScript(
+            `(() => {const decode=HTMLImageElement.prototype.decode;HTMLImageElement.prototype.decode=async function(){await decode.call(this);await new Promise(resolve=>setTimeout(resolve,220));console.info('Studio test image decoded')}})()`,
+          );
         });
       });
     });
-    const executable = packaged ?? await app.evaluate(() => process.execPath);
-    await client.connect(new StdioClientTransport({ command: executable, args: [...(packaged ? [] : [resolve(".")]), "--studio-mcp", "--project", root], env, stderr: "inherit" }));
+    const executable = packaged ?? (await app.evaluate(() => process.execPath));
+    await client.connect(
+      new StdioClientTransport({
+        command: executable,
+        args: [
+          ...(packaged ? [] : [resolve(".")]),
+          "--studio-mcp",
+          "--project",
+          root,
+        ],
+        env,
+        stderr: "inherit",
+      }),
+    );
     const started = Date.now();
-    const result = await client.callTool({ name: "document_render", arguments: { pageId: "home", revision: 3, nodeId: "picture" } });
+    const result = await client.callTool({
+      name: "document_render",
+      arguments: { pageId: "home", revision: 3, nodeId: "picture" },
+    });
     expect(result.isError, JSON.stringify(result.content)).not.toBe(true);
     expect(Date.now() - started).toBeGreaterThanOrEqual(200);
-    await expect.poll(() => app!.evaluate(() => (globalThis as any).__nativeDelayedImageDecodes)).toBeGreaterThan(0);
-    const content = result.content as { type: string; text?: string; data?: string }[];
-    const metadata = JSON.parse(content.find(row => row.type === "text")!.text!);
+    await expect
+      .poll(() =>
+        app!.evaluate(() => (globalThis as any).__nativeDelayedImageDecodes),
+      )
+      .toBeGreaterThan(0);
+    const content = result.content as {
+      type: string;
+      text?: string;
+      data?: string;
+    }[];
+    const metadata = JSON.parse(
+      content.find((row) => row.type === "text")!.text!,
+    );
     expect(metadata.warnings).toEqual([]);
-    const png = Buffer.from(content.find(row => row.type === "image")!.data!, "base64");
+    const png = Buffer.from(
+      content.find((row) => row.type === "image")!.data!,
+      "base64",
+    );
     expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([120, 80]);
-    const pixels = await page.evaluate(async data => {
-      const image = new Image(); image.src = "data:image/png;base64," + data; await image.decode();
-      const canvas = document.createElement("canvas"); canvas.width = image.naturalWidth; canvas.height = image.naturalHeight;
-      const context = canvas.getContext("2d")!; context.drawImage(image, 0, 0);
-      return [3, 30, 90].map(x => Array.from(context.getImageData(x, 40, 1, 1).data));
-    }, content.find(row => row.type === "image")!.data!);
+    const pixels = await page.evaluate(
+      async (data) => {
+        const image = new Image();
+        image.src = "data:image/png;base64," + data;
+        await image.decode();
+        const canvas = document.createElement("canvas");
+        canvas.width = image.naturalWidth;
+        canvas.height = image.naturalHeight;
+        const context = canvas.getContext("2d")!;
+        context.drawImage(image, 0, 0);
+        return [3, 30, 90].map((x) =>
+          Array.from(context.getImageData(x, 40, 1, 1).data),
+        );
+      },
+      content.find((row) => row.type === "image")!.data!,
+    );
     // Native PNG retains the display color profile; allow the same two-channel-unit
     // tolerance as the existing desktop gradient checks when decoding its stroke.
-    for (const [channel, expected] of [18, 52, 86].entries()) expect(Math.abs(pixels[0][channel] - expected)).toBeLessThanOrEqual(2);
+    for (const [channel, expected] of [18, 52, 86].entries())
+      expect(Math.abs(pixels[0][channel] - expected)).toBeLessThanOrEqual(2);
     expect(pixels[0][3]).toBe(255);
-    expect(pixels.slice(1)).toEqual([[255, 0, 0, 255], [0, 0, 255, 255]]);
+    expect(pixels.slice(1)).toEqual([
+      [255, 0, 0, 255],
+      [0, 0, 255, 255],
+    ]);
+    const strokeNode = await client.callTool({
+      name: "document_render",
+      arguments: { pageId: "home", revision: 3, nodeId: "stroked" },
+    });
+    expect(strokeNode.isError, JSON.stringify(strokeNode.content)).not.toBe(
+      true,
+    );
+    const strokeContent = strokeNode.content as {
+      type: string;
+      text?: string;
+      data?: string;
+    }[];
+    const strokeMeta = JSON.parse(
+      strokeContent.find((row) => row.type === "text")!.text!,
+    );
+    expect(strokeMeta.warnings).toEqual([]);
+    expect(
+      strokeMeta.bounds.find((row: any) => row.id === "stroked"),
+    ).toMatchObject({ width: 100, height: 80 });
+    const decodePixels = async (data: string, points: number[][]) =>
+      page.evaluate(
+        async ({ data, points }) => {
+          const image = new Image();
+          image.src = "data:image/png;base64," + data;
+          await image.decode();
+          const canvas = document.createElement("canvas");
+          canvas.width = image.naturalWidth;
+          canvas.height = image.naturalHeight;
+          const ctx = canvas.getContext("2d")!;
+          ctx.drawImage(image, 0, 0);
+          return {
+            width: image.naturalWidth,
+            height: image.naturalHeight,
+            colors: points.map(([x, y]) =>
+              Array.from(ctx.getImageData(x, y, 1, 1).data),
+            ),
+          };
+        },
+        { data, points },
+      );
+    // Native PNG retains the display ICC profile. Match the existing two-unit
+    // color tolerance above; geometry, alpha and crop dimensions remain exact.
+    const expectNativePixels = (
+      actual: { width: number; height: number; colors: number[][] },
+      width: number,
+      height: number,
+      expected: number[][],
+    ) => {
+      expect([actual.width, actual.height]).toEqual([width, height]);
+      expect(actual.colors).toHaveLength(expected.length);
+      expected.forEach((color, index) => {
+        for (let channel = 0; channel < 3; channel++)
+          expect(
+            Math.abs(actual.colors[index][channel] - color[channel]),
+          ).toBeLessThanOrEqual(2);
+        expect(actual.colors[index][3]).toBe(color[3]);
+      });
+    };
+    expectNativePixels(
+      await decodePixels(
+        strokeContent.find((row) => row.type === "image")!.data!,
+        [
+          [2, 30],
+          [97, 30],
+        ],
+      ),
+      100,
+      80,
+      [
+        [0, 255, 0, 255],
+        [0, 0, 255, 255],
+      ],
+    );
+    const fullStroke = await client.callTool({
+      name: "document_render",
+      arguments: { pageId: "home", revision: 3 },
+    });
+    expect(fullStroke.isError, JSON.stringify(fullStroke.content)).not.toBe(
+      true,
+    );
+    const fullContent = fullStroke.content as {
+      type: string;
+      text?: string;
+      data?: string;
+    }[];
+    const fullMeta = JSON.parse(
+      fullContent.find((row) => row.type === "text")!.text!,
+    );
+    const strokeBounds = fullMeta.bounds.find(
+      (row: any) => row.id === "stroked",
+    );
+    expectNativePixels(
+      await decodePixels(
+        fullContent.find((row) => row.type === "image")!.data!,
+        [
+          [strokeBounds.x - 5, strokeBounds.y + 30],
+          [strokeBounds.x + 105, strokeBounds.y + 30],
+        ],
+      ),
+      390,
+      600,
+      [
+        [255, 0, 0, 255],
+        [255, 0, 0, 255],
+      ],
+    );
+    expect(strokeMeta).not.toHaveProperty("captureMode");
+    expect(strokeMeta).not.toHaveProperty("captureBounds");
+    for (const captureMode of ["scene", "isolated"] as const) {
+      const snapshot = await client.callTool({
+        name: "document_render",
+        arguments: {
+          pageId: "home",
+          revision: 3,
+          nodeId: "stroked",
+          boundsMode: "visual",
+          captureMode,
+        },
+      });
+      expect(snapshot.isError, JSON.stringify(snapshot.content)).not.toBe(true);
+      const rows = snapshot.content as {
+        type: string;
+        text?: string;
+        data?: string;
+      }[];
+      const meta = JSON.parse(rows.find((row) => row.type === "text")!.text!);
+      expect(meta).toMatchObject({
+        boundsMode: "visual",
+        captureMode,
+        captureBounds: {
+          x: strokeBounds.x - 10,
+          y: strokeBounds.y - 10,
+          width: 120,
+          height: 100,
+        },
+        visualBoundsStatus: "conservative",
+      });
+      expect(meta.visualBoundsPolicy).toBeTruthy();
+      const sampled = await decodePixels(
+        rows.find((row) => row.type === "image")!.data!,
+        [
+          [0, 0],
+          [5, 40],
+          [107, 40],
+          [115, 40],
+        ],
+      );
+      expectNativePixels(
+        { ...sampled, colors: sampled.colors.slice(1) },
+        120,
+        100,
+        [
+          [255, 0, 0, 255],
+          [0, 0, 255, 255],
+          [255, 0, 0, 255],
+        ],
+      );
+      expect(sampled.colors[0][3]).toBe(captureMode === "isolated" ? 0 : 255);
+    }
     // Only this private asset fixture is damaged; the active document is never rewritten.
     await writeFile(join(root, asset), svg.replace("red", "green"));
     for (const name of ["document_render", "inspect_read"]) {
       if (name === "inspect_read") await unlink(join(root, asset));
-      const failure = await client.callTool({ name, arguments: { pageId: "home", revision: 3, nodeId: "picture" } });
+      const failure = await client.callTool({
+        name,
+        arguments: { pageId: "home", revision: 3, nodeId: "picture" },
+      });
       expect(failure.isError).toBe(true);
-      const error = JSON.parse((failure.content as { type: string; text: string }[]).find(row => row.type === "text")!.text);
+      const error = JSON.parse(
+        (failure.content as { type: string; text: string }[]).find(
+          (row) => row.type === "text",
+        )!.text,
+      );
       expect(error.error).toBe("IMAGE_RESOURCE_UNAVAILABLE");
     }
+    // A missing image in another subtree does not block isolated layer export.
+    const isolatedWithMissingNeighbor = await client.callTool({
+      name: "document_render",
+      arguments: {
+        pageId: "home",
+        revision: 3,
+        nodeId: "stroked",
+        boundsMode: "visual",
+        captureMode: "isolated",
+      },
+    });
+    expect(
+      isolatedWithMissingNeighbor.isError,
+      JSON.stringify(isolatedWithMissingNeighbor.content),
+    ).not.toBe(true);
+    const independent = isolatedWithMissingNeighbor.content as {
+      type: string;
+      text?: string;
+      data?: string;
+    }[];
+    expectNativePixels(
+      await decodePixels(
+        independent.find((row) => row.type === "image")!.data!,
+        [[5, 40]],
+      ),
+      120,
+      100,
+      [[255, 0, 0, 255]],
+    );
     expect(await readFile(join(root, "project.json"), "utf8")).toBe(before);
-  } catch (error) { primaryError = error; throw error; }
-  finally {
-    await finishNativeTest({ primaryError,
-      attach: () => testInfo.attach("desktop-image-diagnostics", { body: logs, contentType: "text/plain" }),
+  } catch (error) {
+    primaryError = error;
+    throw error;
+  } finally {
+    await finishNativeTest({
+      primaryError,
+      attach: () =>
+        testInfo.attach("desktop-image-diagnostics", {
+          body: logs,
+          contentType: "text/plain",
+        }),
       diagnostics: async () => {},
       closeClients: () => client.close(),
-      closeApp: async () => { if (app) await closeOwnedNativeApp(app); },
+      closeApp: async () => {
+        if (app) await closeOwnedNativeApp(app);
+      },
       removeFixture: () => rm(temp, { recursive: true, force: true }),
     });
   }

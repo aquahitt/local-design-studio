@@ -10,7 +10,9 @@
   "revision": 7,
   "viewport": { "width": 390, "height": 844 },
   "nodeId": "optional-node-id",
-  "theme": "optional-theme-id"
+  "theme": "optional-theme-id",
+  "captureMode": "isolated",
+  "boundsMode": "visual"
 }
 ```
 
@@ -114,3 +116,40 @@ Service и native Electron проверяют результат image barrier �
 и исходный документ остаются неизменными; font fallback сохраняет свой контракт.
 Pixel fixtures проверяют общий рисунок cover/contain/crop/tile, SVG UV mapping,
 порядок заливок, обводку, скругления и отличия Resize от Scale.
+
+## Режимы PNG и полное оформление
+
+Новые необязательные поля `captureMode: scene|isolated` и `boundsMode: layout|visual`
+независимы. Без них сохраняется прежний scene/layout и прежняя форма метаданных.
+`bounds` всегда описывает исходную геометрию DOM, а `captureBounds` — область PNG в
+координатах preview. Layout сохраняет дробный origin, округляя размеры вверх;
+visual округляет все края наружу. Media queries, viewport и документ не меняются.
+Без nodeId снимается viewport; isolated требует выбранный узел.
+
+Новый UI «PNG» по умолчанию выбирает отдельный слой и всё оформление. Сначала он
+готовит и показывает снимок, затем позволяет скачать его. Изменение выделения,
+revision или настроек отменяет устаревшую подготовку. Несохранённый draft блокирует
+экспорт. В demo файловый renderer недоступен.
+
+Isolated сохраняет DOM ancestry, transforms, opacity и наследование стилей, скрывает
+соседей, удаляет оформление и clipping предков выбранного слоя. Собственный clip и
+скрытые дети сохраняются; фон PNG прозрачен. Ресурсная готовность проверяется только
+для выбранного поддерева и необходимых для наследования шрифтов предков. Scene
+сохраняет окружение и проверяет ресурсы страницы. Порталы вне поверхности preview,
+неоднозначные node IDs и зависимые от окружения filter/backdrop/blend предков дают
+`ISOLATED_CAPTURE_UNSUPPORTED`, вместо визуально неверного успешного PNG.
+
+Visual измеряет фактические DOM paint envelopes, включая внешние обводки, известные
+CSS box shadows и видимое содержимое. Метаданные содержат `visualBounds`,
+`visualBoundsStatus: conservative` и `visualBoundsPolicy`.
+Policy `dom-paint-envelope-v1/css-raster-envelope-6sigma-plus-2px` использует конечную
+консервативную область raster-тени, а не математически бесконечный Gaussian и не
+точный alpha crop. Текст измеряется DOM ranges с запасом для выступающих глифов;
+повёрнутые/скруглённые clipping bounds могут оставлять прозрачные поля. Неподдержанные
+filters, pseudo-elements и другие неизмеримые эффекты дают
+`VISUAL_BOUNDS_UNSUPPORTED`. Пользователь может явно выбрать layout. Растровые лимиты
+сохраняются; автоматического уменьшения PNG нет.
+
+Прозрачный default background задаётся только disposable isolated renderer через
+[CDP Emulation.setDefaultBackgroundColorOverride](https://github.com/ChromeDevTools/devtools-protocol/blob/master/pdl/domains/Emulation.pdl)
+с RGBA alpha0; CSS фон html/body очищается отдельно. Viewport metrics не переопределяются.

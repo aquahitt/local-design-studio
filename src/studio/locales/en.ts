@@ -1,3 +1,5 @@
+import { captureEnglish } from "./en-capture";
+import { strokePaintCopy, strokesEnglish } from "./en-strokes";
 import { guidesEnglish } from "./en-guides";
 import { imagesEnglish } from "./en-images";
 import { transformsEnglish } from "./en-transforms";
@@ -141,4 +143,20 @@ export const english: Record<string, string> = {
   ...imagesEnglish,
   ...guidesEnglish,
   ...desktopEnglish,
+  ...captureEnglish,
 };
+
+for (const [source, target] of Object.entries(strokePaintCopy)) {
+  const text = english[source];
+  if (text)
+    english[target] = text
+      .replace(/fills/g, "strokes")
+      .replace(/Fills/g, "Strokes")
+      .replace(/fill/g, "stroke")
+      .replace(/Fill/g, "Stroke");
+}
+Object.assign(english, strokesEnglish, {
+  "Обводки фрейма": "Frame strokes",
+  "Обводок нет. Прежняя обводка не используется.":
+    "No strokes. The legacy stroke is not used.",
+});

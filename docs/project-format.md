@@ -64,7 +64,7 @@ immutable; удаление/used учитывает ссылки заливок.
 обводка и внутренние тени рисуются над заливками, дети сохраняют прежние координаты.
 
 Advanced paint на text/vector/component/image пока отвергается явно. Несколько
-strokes и masks остаются следующими частями #10.
+strokes поддерживаются у frame; masks остаются следующей частью #10.
 Обычные `setNodeMetadata` используют ту же проверку, baseRevision, atomic save и
 undo/redo, что и остальные изменения документа.
 
@@ -128,3 +128,30 @@ ProjectStore с captured baseRevision, atomic save, receipts и Undo/Redo. За�
 направляющих не становятся scene nodes, не меняют размеры слоёв и не рисуются в
 продуктовом preview/PNG/React handoff. UI preferences видимости/привязки отделены
 от файла проекта. MCP project/page reads сохраняют guides и при пагинации nodes.
+
+## Несколько обводок фрейма
+
+`scene.strokes` — необязательный массив до16 обводок прямоугольного frame. Элемент
+повторяет Paint (solid/linear/radial/image, id/enabled/opacity/blendMode) и добавляет
+`width` (конечное число0..4096 CSS px) и `alignment` (`inside`, `center`, `outside`).
+Нулевая строка сверху; IDs уникальны внутри стека, но могут совпадать с IDs fills.
+Явный массив, включая[], заменяет прежние `stroke/strokeWidth`. Отсутствие массива
+сохраняет legacy inset-поведение и не переписывается при чтении.
+
+Обводки не добавляют padding/border и не сдвигают детей. `clip` самого фрейма обрезает
+детей, сохраняя собственную внешнюю обводку; clip предка продолжает обрезать всё
+потомство. У radius0 внешние углы остаются квадратными. Image mapping обводки
+относится к её внешнему paint bbox; image fills по-прежнему относятся к frame bbox.
+Ссылки ресурсов, готовность изображений и переносимый ZIP учитывают оба стека;
+невидимые (нулевая ширина/opacity или disabled) image strokes не задерживают render,
+но сохраняются в полном списке переносимых ресурсов.
+
+Инспектор использует общий revisioned draft. Прежняя обводка преобразуется явно;
+непреобразуемый точно цвет/ширина сохраняется до явного удаления. Нет скрытой замены
+на приближённый цвет. Изменение типа paint сохраняет width/alignment строки по ID.
+
+Snapshot API сохраняет layout/scene по умолчанию и поддерживает явные visual bounds
+и isolated capture. Новый UI PNG экспорт выбирает visual/isolated; полные условия
+и ограничения описаны в [render.md](render.md). Shadow envelope использует явную
+finite raster policy, не tight alpha bounds. Исходные координаты/размеры документа
+и смысл bounds остаются прежними.

@@ -19,6 +19,17 @@ export const PAINT_CAPABILITIES = Object.freeze({
     limits: AFFINE_LIMITS,
   },
   maxFills: 16,
+  strokes: {
+    maxStrokes: 16,
+    width: { min: 0, max: 4096, units: "css-pixels" },
+    alignments: ["inside", "center", "outside"],
+    order: "top-first",
+    legacyPrecedence: "explicit-array-replaces-inset-stroke",
+    imageMappingBox: "outer-stroke-bounds",
+    snapshotBounds: "layout",
+    snapshotBoundsModes: ["layout", "visual"],
+    captureModes: ["scene", "isolated"],
+  },
 });
 import type { LibraryMetadata } from "../library/sdk";
 import type { Project, ProjectNode } from "../core/project";

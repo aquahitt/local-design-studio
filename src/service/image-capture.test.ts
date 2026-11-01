@@ -71,3 +71,18 @@ it("never echoes arbitrary warning text or unrelated resource paths", () => {
     }
   }
 });
+
+it("preserves safe capture-mode failures across native reply", () => {
+  for (const code of [
+    "VISUAL_BOUNDS_UNSUPPORTED",
+    "ISOLATED_CAPTURE_UNSUPPORTED",
+  ]) {
+    const reply = captureErrorReply(
+      new CoreError(code, "private CSS must not escape"),
+    );
+    expect(reply).toEqual({ error: code, errorCode: code });
+    expect(
+      captureErrorFromReply(JSON.parse(JSON.stringify(reply))),
+    ).toMatchObject({ code });
+  }
+});

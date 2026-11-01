@@ -2,7 +2,12 @@ import { validateAffineLinear } from "./affine-validation";
 import { validateTextStyle, type TextStyle } from "./text-style";
 import { CoreError } from "./tokens";
 import type { Project, ProjectNode } from "./project";
-import { validateFramePaint, type Paint, type Shadow } from "./paint";
+import {
+  validateFramePaint,
+  type Paint,
+  type Shadow,
+  type Stroke,
+} from "./paint";
 
 /** Scene coordinates are CSS pixels in the parent's local coordinate system. */
 export type SceneMetadata = {
@@ -16,6 +21,7 @@ export type SceneMetadata = {
   opacity?: number;
   fill?: string;
   fills?: Paint[];
+  strokes?: Stroke[];
   shadows?: Shadow[];
   stroke?: string;
   strokeWidth?: number;
@@ -59,6 +65,7 @@ export function validateScene(value: unknown, path: string): SceneMetadata {
     "opacity",
     "fill",
     "fills",
+    "strokes",
     "shadows",
     "stroke",
     "strokeWidth",

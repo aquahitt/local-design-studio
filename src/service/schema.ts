@@ -98,6 +98,22 @@ const paints = {
     ],
   },
 };
+const strokes = {
+  ...paints,
+  description:
+    "Top stroke first; IDs must be unique within this stack, independently of fills (checked by the document parser). Frame surfaces only. Explicit strokes, including [], replace legacy stroke/strokeWidth.",
+  items: {
+    oneOf: paints.items.oneOf.map((paint) => ({
+      ...paint,
+      properties: {
+        ...paint.properties,
+        width: { type: "number", minimum: 0, maximum: 4096 },
+        alignment: { enum: ["inside", "center", "outside"] },
+      },
+      required: [...paint.required, "width", "alignment"],
+    })),
+  },
+};
 const shadowOffset = { type: "number", minimum: -4096, maximum: 4096 };
 const shadows = {
   type: "array",
@@ -124,7 +140,13 @@ const framePaintConstraint = {
     required: ["kind"],
   },
   then: {
-    not: { anyOf: [{ required: ["fills"] }, { required: ["shadows"] }] },
+    not: {
+      anyOf: [
+        { required: ["fills"] },
+        { required: ["strokes"] },
+        { required: ["shadows"] },
+      ],
+    },
   },
 };
 const fontId = { type: "string", pattern: "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$" };
@@ -214,6 +236,7 @@ const sceneFields = {
   opacity: { type: "number", minimum: 0, maximum: 1 },
   fill: { type: "string" },
   fills: paints,
+  strokes,
   shadows,
   stroke: { type: "string" },
   strokeWidth: { type: "number", minimum: 0, maximum: 1_000_000 },

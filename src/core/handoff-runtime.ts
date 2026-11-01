@@ -1,9 +1,9 @@
 /** Portable generated React runtime; receives only an explicitly supplied registered library. */
 export const handoffRuntime = `import { Component, createElement, type ComponentType, type CSSProperties, type ReactNode } from "react";
 import { resolveImageAsset } from "./imageResources";
-export type PaintTree = {tag:"div"|"img"|"svg"|"defs"|"pattern"|"image"|"rect";props:Record<string,unknown>;children:PaintTree[]};
+export type PaintTree = {tag:"div"|"img"|"svg"|"defs"|"pattern"|"image"|"rect"|"path"|"clipPath";props:Record<string,unknown>;children:PaintTree[]};
 function PaintLayer({tree,assetBaseURL}:{tree:PaintTree;assetBaseURL?:string}):ReactNode{const props={...tree.props};for(const key of ["src","href"])if(typeof props[key]==="string")props[key]=resolveImageAsset(props[key],assetBaseURL);return createElement(tree.tag,props,...tree.children.map((child,index)=><PaintLayer key={index} tree={child} assetBaseURL={assetBaseURL}/>))}
-export type HandoffNode = { id:string; type:string; props:Record<string,unknown>; slots:Record<string,HandoffNode[]>; hidden?:boolean; paintTree?:PaintTree; scene?:{kind:string;width:number;height:number;fill?:string;stroke?:string;strokeWidth?:number;path?:string;fontSize?:number;textStyle?:{direction?:"ltr"|"rtl"|"auto"}}; style:Record<string,string|number>; contentStyle?:Record<string,string|number> };
+export type HandoffNode = { id:string; type:string; props:Record<string,unknown>; slots:Record<string,HandoffNode[]>; hidden?:boolean; paintTree?:PaintTree; scene?:{kind:string;width:number;height:number;fill?:string;stroke?:string;strokeWidth?:number;path?:string;fontSize?:number;textStyle?:{direction?:"ltr"|"rtl"|"auto"}}; style:Record<string,string|number>; contentClipStyle?:Record<string,string|number>; contentStyle?:Record<string,string|number> };
 export type RegisteredLibrary = { id:string; version:string; components:Record<string,{defaultProps:Record<string,unknown>;render:ComponentType<Record<string,any>>}> };
 class Boundary extends Component<{children:ReactNode},{error:string}> {
   state={error:""}; static getDerivedStateFromError(error:Error){return {error:error.message}};
@@ -20,7 +20,7 @@ export function RenderNodes({nodes,library,expected,assetBaseURL}:{nodes:Handoff
     else if((node.scene?.kind==="frame"||node.type==="SceneFrame")) content=Object.entries(node.slots).map(([slot,rows])=><RenderNodes key={slot} nodes={rows} library={library} expected={expected} assetBaseURL={assetBaseURL}/>);
     else if(definition){const Renderer=definition.render;content=<Boundary><Renderer {...definition.defaultProps} {...node.props} {...(children.length?{children}:{})}/></Boundary>}
     else content=<div role="status">Недоступен {node.type} · исходные данные сохранены</div>;
-    return <div key={node.id} data-node-id={node.id} style={node.style as CSSProperties}>{node.paintTree?<PaintLayer tree={node.paintTree} assetBaseURL={assetBaseURL}/>:null}{content}</div>;
+    return <div key={node.id} data-node-id={node.id} style={node.style as CSSProperties}>{node.paintTree?<PaintLayer tree={node.paintTree} assetBaseURL={assetBaseURL}/>:null}{node.contentClipStyle?<div style={node.contentClipStyle as CSSProperties}>{content}</div>:content}</div>;
   })}</>;
 }
 `;

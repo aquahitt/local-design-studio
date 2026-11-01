@@ -15,6 +15,7 @@ import { LayerActions } from "./LayerActions";
 import { NodeLayoutInspector } from "./NodeLayoutInspector";
 import { Annotations } from "./Annotations";
 import { Handoff } from "./Handoff";
+import { PngExport } from "./PngExport";
 import { StudioLanguageChoice } from "./i18n";
 import { useStudioShortcuts } from "./shortcuts";
 import { desktopMetadataLibrary } from "./desktopLibraries";
@@ -1343,6 +1344,15 @@ export function StudioApp({
                         page={page}
                         nodeId={selected}
                         client={client}
+                      />
+                    )}
+                    {client && (
+                      <PngExport
+                        project={project}
+                        page={page}
+                        nodeId={selected}
+                        client={client}
+                        disabled={dirty}
                       />
                     )}
                     <div className="document-editor">

@@ -8,6 +8,7 @@ import "./PaintFields.css";
 import { Numeric, PendingNumbers } from "./PaintNumbers";
 import { ImagePaintFields } from "./ImagePaintFields";
 import type { ImageAsset } from "../service/image-assets";
+import { strokePaintCopy } from "./locales/en-strokes";
 
 const white: RGBA = { r: 255, g: 255, b: 255, a: 1 };
 const black: RGBA = { r: 0, g: 0, b: 0, a: 1 };
@@ -26,7 +27,7 @@ function fromHex(value: string, alpha: number): RGBA {
 }
 /** Exact conversion for legacy hex and numeric rgb(a); other CSS colors are
  * explicitly replaced rather than silently approximated during editing. */
-function legacyColor(value: string | undefined): RGBA | undefined {
+export function legacyPaintColor(value: string | undefined): RGBA | undefined {
   if (!value) return undefined;
   if (value.toLowerCase() === "transparent") return { ...black, a: 0 };
   const match = /^#([\da-f]{3}|[\da-f]{4}|[\da-f]{6}|[\da-f]{8})$/i.exec(value);
@@ -229,6 +230,23 @@ export function isRenderableFramePaintDraft(
       }))
   )
     return false;
+  if (value.strokes !== undefined) {
+    if (
+      !Array.isArray(value.strokes) ||
+      !value.strokes.every(
+        (stroke) =>
+          object(stroke) &&
+          numeric(stroke.width) &&
+          typeof stroke.alignment === "string",
+      ) ||
+      !isRenderableFramePaintDraft({
+        ...value,
+        strokes: undefined,
+        fills: value.strokes,
+      })
+    )
+      return false;
+  }
   return (
     value.shadows === undefined ||
     (Array.isArray(value.shadows) &&
@@ -244,6 +262,23 @@ export function isRenderableFramePaintDraft(
   );
 }
 
+export type PaintFieldsProps = {
+  scene: SceneMetadata;
+  disabled: boolean;
+  onChange: (next: SceneMetadata) => void;
+  onPendingChange: (pending: boolean) => void;
+  imageAssets?: ImageAsset[];
+  onImportImage?: (file: File) => Promise<ImageAsset>;
+  scope?: string;
+  revision?: number;
+  mode?: "fills" | "strokes";
+  renderPaintControls?: (paint: Paint, index: number) => ReactNode;
+  paintSize?: (
+    paint: Paint,
+    index: number,
+  ) => { width: number; height: number };
+};
+
 /** Controlled fields only: NodeLayoutInspector owns the single revisioned draft. */
 export function PaintFields({
   scene,
@@ -254,17 +289,16 @@ export function PaintFields({
   onImportImage,
   scope = "",
   revision = 0,
-}: {
-  scene: SceneMetadata;
-  disabled: boolean;
-  onChange: (next: SceneMetadata) => void;
-  onPendingChange: (pending: boolean) => void;
-  imageAssets?: ImageAsset[];
-  onImportImage?: (file: File) => Promise<ImageAsset>;
-  scope?: string;
-  revision?: number;
-}) {
-  const { t } = useI18n();
+  mode = "fills",
+  renderPaintControls,
+  paintSize,
+}: PaintFieldsProps) {
+  const { t: translate } = useI18n();
+  const t = (source: string, values?: Record<string, string | number>) =>
+    translate(
+      mode === "strokes" ? (strokePaintCopy[source] ?? source) : source,
+      values,
+    );
   const [importing, setImporting] = useState(false),
     [imageError, setImageError] = useState("");
   const mounted = useRef(true);
@@ -274,7 +308,7 @@ export function PaintFields({
       mounted.current = false;
     };
   }, []);
-  const identity = JSON.stringify([scope, scene]);
+  const identity = JSON.stringify([scope, revision, scene]);
   const latest = useRef({ identity, disabled, onChange });
   latest.current = { identity, disabled, onChange };
   const root = useRef<HTMLDivElement>(null);
@@ -297,7 +331,7 @@ export function PaintFields({
   useEffect(() => () => onPendingChange(false), [onPendingChange]);
   const fills = scene.fills ?? [];
   const shadows = scene.shadows ?? [];
-  const legacy = legacyColor(scene.fill);
+  const legacy = legacyPaintColor(scene.fill);
   const canAddImage = scene.fills !== undefined || !scene.fill || !!legacy;
   const appendImage = (asset: ImageAsset): Paint[] => [
     {
@@ -347,6 +381,15 @@ export function PaintFields({
     blur: t("Размытие тени {0}"),
     spread: t("Расширение тени {0}"),
   };
+  const paintDimensions = (paint: Paint, index: number) =>
+    paintSize?.(paint, index) ?? {
+      width: scene.width ?? 1,
+      height: scene.height ?? 1,
+    };
+  const validPaintDimensions = (paint: Paint, index: number) =>
+    Object.values(paintDimensions(paint, index)).every(
+      (value) => Number.isFinite(value) && value > 0,
+    );
   const fillLabel = (key: string, index: number) => t(key, { 0: index + 1 });
   function listActions<T extends { enabled?: boolean }>(
     items: T[],
@@ -476,6 +519,7 @@ export function PaintFields({
               ],
               "fill",
             )}
+            {renderPaintControls?.(paint, index)}
             <StudioSelect
               label={t("Тип заливки {0}", { 0: index + 1 })}
               value={paint.kind}
@@ -566,12 +610,15 @@ export function PaintFields({
             {paint.kind === "image" ? (
               <ImagePaintFields
                 paint={paint}
-                width={scene.width ?? 1}
-                height={scene.height ?? 1}
+                width={paintDimensions(paint, index).width}
+                height={paintDimensions(paint, index).height}
+                usage={mode}
                 scope={scope}
                 revision={revision}
                 assets={imageAssets}
-                disabled={disabled || importing}
+                disabled={
+                  disabled || importing || !validPaintDimensions(paint, index)
+                }
                 onImport={onImportImage}
                 onChange={(next) => updateFill(index, next)}
               />
@@ -809,94 +856,101 @@ export function PaintFields({
             {t("Фон прозрачен. Прежняя заливка не используется.")}
           </p>
         )}
-        <h4>{t("Тени")}</h4>
-        {shadows.map((shadow, index) => (
-          <fieldset
-            key={shadow.id}
-            className="paint-row"
-            data-paint-list="shadow"
-          >
-            <legend>{t("Тень {0}", { 0: index + 1 })}</legend>
-            {listActions(
-              shadows,
-              index,
-              setShadows,
-              [
-                t("Показать тень {0}"),
-                t("Скрыть тень {0}"),
-                t("Поднять тень {0}"),
-                t("Опустить тень {0}"),
-                t("Удалить тень {0}"),
-              ],
-              "shadow",
-            )}
-            <StudioSelect
-              label={t("Тип тени {0}", { 0: index + 1 })}
-              value={shadow.kind}
-              disabled={disabled}
-              onChange={(kind) =>
-                updateShadow(index, { ...shadow, kind: kind as Shadow["kind"] })
-              }
-              sections={[
-                {
-                  label: "",
-                  options: [
-                    { value: "outer", label: t("Внешняя") },
-                    { value: "inner", label: t("Внутренняя") },
+        {mode === "fills" && (
+          <>
+            <h4>{t("Тени")}</h4>
+            {shadows.map((shadow, index) => (
+              <fieldset
+                key={shadow.id}
+                className="paint-row"
+                data-paint-list="shadow"
+              >
+                <legend>{t("Тень {0}", { 0: index + 1 })}</legend>
+                {listActions(
+                  shadows,
+                  index,
+                  setShadows,
+                  [
+                    t("Показать тень {0}"),
+                    t("Скрыть тень {0}"),
+                    t("Поднять тень {0}"),
+                    t("Опустить тень {0}"),
+                    t("Удалить тень {0}"),
                   ],
-                },
-              ]}
-            />
-            <div className="paint-numbers">
-              {(["x", "y", "blur", "spread"] as const).map((field) => (
-                <Numeric
-                  key={field}
-                  label={t(shadowNumbers[field], { 0: index + 1 })}
+                  "shadow",
+                )}
+                <StudioSelect
+                  label={t("Тип тени {0}", { 0: index + 1 })}
+                  value={shadow.kind}
                   disabled={disabled}
-                  value={shadow[field]}
-                  min={field === "blur" ? 0 : -4096}
-                  max={4096}
-                  onChange={(value) =>
-                    updateShadow(index, { ...shadow, [field]: value })
+                  onChange={(kind) =>
+                    updateShadow(index, {
+                      ...shadow,
+                      kind: kind as Shadow["kind"],
+                    })
+                  }
+                  sections={[
+                    {
+                      label: "",
+                      options: [
+                        { value: "outer", label: t("Внешняя") },
+                        { value: "inner", label: t("Внутренняя") },
+                      ],
+                    },
+                  ]}
+                />
+                <div className="paint-numbers">
+                  {(["x", "y", "blur", "spread"] as const).map((field) => (
+                    <Numeric
+                      key={field}
+                      label={t(shadowNumbers[field], { 0: index + 1 })}
+                      disabled={disabled}
+                      value={shadow[field]}
+                      min={field === "blur" ? 0 : -4096}
+                      max={4096}
+                      onChange={(value) =>
+                        updateShadow(index, { ...shadow, [field]: value })
+                      }
+                    />
+                  ))}
+                </div>
+                <Color
+                  label={t("Цвет тени {0}", { 0: index + 1 })}
+                  alphaLabel={t("Альфа тени {0}", { 0: index + 1 })}
+                  disabled={disabled}
+                  value={shadow.color}
+                  onChange={(color) =>
+                    updateShadow(index, { ...shadow, color })
                   }
                 />
-              ))}
-            </div>
-            <Color
-              label={t("Цвет тени {0}", { 0: index + 1 })}
-              alphaLabel={t("Альфа тени {0}", { 0: index + 1 })}
-              disabled={disabled}
-              value={shadow.color}
-              onChange={(color) => updateShadow(index, { ...shadow, color })}
-            />
-          </fieldset>
-        ))}
-        <button
-          type="button"
-          data-paint-add="shadow"
-          disabled={disabled || shadows.length >= 8}
-          onClick={() =>
-            setShadows([
-              ...shadows,
-              {
-                id: crypto.randomUUID(),
-                kind: "outer",
-                x: 0,
-                y: 4,
-                blur: 8,
-                spread: 0,
-                color: { ...black, a: 0.25 },
-              },
-            ])
-          }
-        >
-          {t("Добавить тень")}
-        </button>
-        <p className="paint-hint">
-          {t(
-            "Заливки и тени доступны для фреймов. Маски и несколько обводок ещё не поддерживаются.",
-          )}
-        </p>
+              </fieldset>
+            ))}
+            <button
+              type="button"
+              data-paint-add="shadow"
+              disabled={disabled || shadows.length >= 8}
+              onClick={() =>
+                setShadows([
+                  ...shadows,
+                  {
+                    id: crypto.randomUUID(),
+                    kind: "outer",
+                    x: 0,
+                    y: 4,
+                    blur: 8,
+                    spread: 0,
+                    color: { ...black, a: 0.25 },
+                  },
+                ])
+              }
+            >
+              {t("Добавить тень")}
+            </button>
+            <p className="paint-hint">
+              {t("Заливки и тени доступны для фреймов.")}
+            </p>
+          </>
+        )}
       </div>
     </PendingNumbers.Provider>
   );

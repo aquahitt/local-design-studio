@@ -40,7 +40,10 @@ export function assertImageResourcesReady(
 /** The native render channel only extends its existing message with this one typed error. */
 export function captureErrorReply(error: unknown): {
   error: string;
-  errorCode?: "IMAGE_RESOURCE_UNAVAILABLE";
+  errorCode?:
+    | "IMAGE_RESOURCE_UNAVAILABLE"
+    | "VISUAL_BOUNDS_UNSUPPORTED"
+    | "ISOLATED_CAPTURE_UNSUPPORTED";
   imageAssets?: string[];
 } {
   if (
@@ -62,6 +65,12 @@ export function captureErrorReply(error: unknown): {
       imageAssets,
     };
   }
+  if (
+    error instanceof CoreError &&
+    (error.code === "VISUAL_BOUNDS_UNSUPPORTED" ||
+      error.code === "ISOLATED_CAPTURE_UNSUPPORTED")
+  )
+    return { error: error.code, errorCode: error.code };
   return { error: error instanceof Error ? error.message : "RENDER_FAILED" };
 }
 
@@ -85,6 +94,11 @@ export function captureErrorFromReply(reply: {
       reply.imageAssets.join(", "),
       reply.imageAssets[0],
     );
+  if (
+    reply.errorCode === "VISUAL_BOUNDS_UNSUPPORTED" ||
+    reply.errorCode === "ISOLATED_CAPTURE_UNSUPPORTED"
+  )
+    return new CoreError(reply.errorCode);
   return new Error(
     typeof reply.error === "string" ? reply.error : "RENDER_FAILED",
   );
@@ -194,5 +208,40 @@ export async function withCaptureTimeout<T>(operation: Promise<T>): Promise<T> {
     ]);
   } finally {
     clearTimeout(timer);
+  }
+}
+
+/** One crop policy shared by headless Chromium and the native compositor. */
+export function resolveCaptureBounds(
+  layout: Pick<RenderBounds, "x" | "y" | "width" | "height">,
+  visual: Pick<RenderBounds, "x" | "y" | "width" | "height"> | undefined,
+  mode: "layout" | "visual",
+) {
+  let bound = layout;
+  if (mode === "visual") {
+    if (!visual) throw new CoreError("VISUAL_BOUNDS_UNSUPPORTED");
+    captureRectangle(visual);
+    const x = Math.floor(visual.x),
+      y = Math.floor(visual.y);
+    bound = {
+      x,
+      y,
+      width: Math.ceil(visual.x + visual.width) - x,
+      height: Math.ceil(visual.y + visual.height) - y,
+    };
+  }
+  const { width, height } = captureRectangle(bound);
+  return { x: bound.x, y: bound.y, width, height };
+}
+
+export function assertCaptureDiagnostics(
+  diagnostics: readonly { code: string; feature?: string }[],
+): void {
+  if (diagnostics.length) {
+    const code =
+      diagnostics[0].code === "ISOLATED_CAPTURE_UNSUPPORTED"
+        ? "ISOLATED_CAPTURE_UNSUPPORTED"
+        : "VISUAL_BOUNDS_UNSUPPORTED";
+    throw new CoreError(code);
   }
 }

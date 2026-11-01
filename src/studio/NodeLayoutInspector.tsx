@@ -1,3 +1,4 @@
+import { StrokeFields } from "./StrokeFields";
 import type { StudioClient } from "./client";
 import { useImagePaintAssets } from "./useImagePaintAssets";
 import { useI18n } from "./i18n";
@@ -286,6 +287,7 @@ export function NodeLayoutInspector({
   const [draft, setDraft] = useState(() => beginDraft(data, project.revision)),
     [error, setError] = useState(""),
     [pendingPaint, setPendingPaint] = useState(false),
+    [pendingStroke, setPendingStroke] = useState(false),
     [pendingText, setPendingText] = useState(false),
     [textReset, setTextReset] = useState(0);
   useEffect(
@@ -293,7 +295,7 @@ export function NodeLayoutInspector({
       setDraft((current) => {
         // An unfinished numeric token is still user input. Preserve its source
         // revision even when the canonical JSON has not changed yet.
-        if (pendingPaint || pendingText || current.conflict)
+        if (pendingPaint || pendingStroke || pendingText || current.conflict)
           return {
             ...current,
             conflict:
@@ -301,12 +303,25 @@ export function NodeLayoutInspector({
           };
         return receiveDraft(current, data, project.revision);
       }),
-    [node, project.revision, pendingPaint, pendingText],
+    [node, project.revision, pendingPaint, pendingStroke, pendingText],
   );
   useEffect(() => {
-    onDirty(draft.dirty || draft.conflict || pendingPaint || pendingText);
+    onDirty(
+      draft.dirty ||
+        draft.conflict ||
+        pendingPaint ||
+        pendingStroke ||
+        pendingText,
+    );
     return () => onDirty(false);
-  }, [draft.dirty, draft.conflict, pendingPaint, pendingText, onDirty]);
+  }, [
+    draft.dirty,
+    draft.conflict,
+    pendingPaint,
+    pendingStroke,
+    pendingText,
+    onDirty,
+  ]);
   let value: typeof data;
   let validationError = "";
   try {
@@ -326,7 +341,7 @@ export function NodeLayoutInspector({
         throw new Error("Invalid frame paint draft");
     } catch (e) {
       validationError =
-        t("Исправьте заливки или тени в JSON либо в полях ниже.") +
+        t("Исправьте заливки, обводки или тени в JSON либо в полях ниже.") +
         " " +
         (e as Error).message;
     }
@@ -339,7 +354,8 @@ export function NodeLayoutInspector({
   }
   async function apply() {
     try {
-      if (validationError || pendingPaint || pendingText) return;
+      if (validationError || pendingPaint || pendingStroke || pendingText)
+        return;
       const next = JSON.parse(draft.value),
         operations: Operation[] = [
           {
@@ -484,6 +500,7 @@ export function NodeLayoutInspector({
       {value.scene?.kind === "frame" &&
         isRenderableFramePaintDraft(value.scene) && (
           <PaintFields
+            key={textReset}
             scene={value.scene}
             imageAssets={images.assets}
             onImportImage={images.importImage}
@@ -496,6 +513,25 @@ export function NodeLayoutInspector({
             disabled={disabled || !!node.locked}
             onChange={(scene) => change("scene", scene)}
             onPendingChange={setPendingPaint}
+          />
+        )}
+      {value.scene?.kind === "frame" &&
+        isRenderableFramePaintDraft(value.scene) && (
+          <StrokeFields
+            key={"strokes-" + textReset}
+            scene={value.scene}
+            imageAssets={images.assets}
+            onImportImage={images.importImage}
+            scope={JSON.stringify([
+              project.projectId,
+              node.id,
+              project.revision,
+              "strokes",
+            ])}
+            revision={project.revision}
+            disabled={disabled || !!node.locked}
+            onChange={(scene) => change("scene", scene)}
+            onPendingChange={setPendingStroke}
           />
         )}
       {images.error && <p role="alert">{t(images.error)}</p>}
@@ -570,6 +606,7 @@ export function NodeLayoutInspector({
           !!error ||
           !!validationError ||
           pendingPaint ||
+          pendingStroke ||
           pendingText
         }
         onClick={() => void apply()}
@@ -581,6 +618,8 @@ export function NodeLayoutInspector({
           setDraft(beginDraft(data, project.revision));
           setTextReset((value) => value + 1);
           setPendingText(false);
+          setPendingPaint(false);
+          setPendingStroke(false);
           setError("");
         }}
       >
