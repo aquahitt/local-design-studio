@@ -272,7 +272,9 @@ export function CanvasSurface({
   const viewRef = useRef(view);
   viewRef.current = view;
   const updateView = useCallback(
-    (next: SceneView | ((current: SceneView) => SceneView)) =>
+    (next: SceneView | ((current: SceneView) => SceneView)) => {
+      // Once a view is chosen, a delayed initial measurement must not refit it.
+      fitted.current = true;
       setView((current) => {
         const v = typeof next === "function" ? next(current) : next;
         return {
@@ -280,7 +282,8 @@ export function CanvasSurface({
           panX: Math.max(-1e9, Math.min(1e9, v.panX)),
           panY: Math.max(-1e9, Math.min(1e9, v.panY)),
         };
-      }),
+      });
+    },
     [],
   );
   useEffect(() => {

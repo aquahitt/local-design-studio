@@ -640,3 +640,92 @@ test("transparent canvas preserves the dark studio background across iframe colo
     await f.cleanup();
   }
 });
+
+test("a manual 100% zoom survives the first delayed canvas measurement", async ({
+  page,
+}) => {
+  const f = await setup(page);
+  try {
+    await page.evaluate((id) => {
+      const held: MessageEvent[] = [];
+      const intercept = (event: MessageEvent) => {
+        const frame = document.querySelector<HTMLIFrameElement>(
+          `iframe[title="Холст ${id}"]`,
+        );
+        if (
+          event.source !== frame?.contentWindow ||
+          event.data?.type !== "studio-preview-geometry"
+        )
+          return;
+        event.stopImmediatePropagation();
+        held.push(event);
+        document.documentElement.dataset.heldFirstCanvasMeasurement = "true";
+      };
+      window.addEventListener("message", intercept, true);
+      Object.assign(window, {
+        releaseFirstCanvasMeasurement() {
+          window.removeEventListener("message", intercept, true);
+          for (const event of held)
+            window.dispatchEvent(
+              new MessageEvent("message", {
+                data: event.data,
+                origin: event.origin,
+                source: event.source,
+              }),
+            );
+        },
+      });
+    }, f.id);
+    await page.getByRole("button", { name: "Экраны", exact: true }).click();
+    await selectStudioOption(page, "Экран", f.id);
+    const edit = page.getByRole("button", {
+      name: "Редактирование холста",
+      exact: true,
+    });
+    if ((await edit.getAttribute("aria-pressed")) !== "true")
+      await edit.click();
+    await expect(page.locator("html")).toHaveAttribute(
+      "data-held-first-canvas-measurement",
+      "true",
+    );
+    const canvas = page.getByRole("region", {
+      name: "Свободный холст",
+      exact: true,
+    });
+    await page
+      .getByRole("button", { name: "Масштаб 100%", exact: true })
+      .click();
+    await expect(canvas).toHaveAttribute("data-zoom", "1");
+    await page.evaluate(async () => {
+      (
+        window as unknown as { releaseFirstCanvasMeasurement(): void }
+      ).releaseFirstCanvasMeasurement();
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+      );
+    });
+    await expect
+      .poll(() =>
+        page.evaluate(
+          async ({ headers, id }) => {
+            const response = await fetch("/api/context", { headers });
+            const { context } = await response.json();
+            return (
+              context?.pageId === id &&
+              context.camera?.bounds.some(
+                (row: { id: string }) => row.id === id + "-root",
+              )
+            );
+          },
+          { headers: f.headers, id: f.id },
+        ),
+      )
+      .toBe(true);
+    await expect(canvas).toHaveAttribute("data-zoom", "1");
+    expect((await f.read()).revision).toBe(f.revision);
+  } finally {
+    await f.cleanup();
+  }
+});
