@@ -1559,7 +1559,14 @@ export function StudioApp({
                         {node && (
                           <div className="inspector">
                             <StudioButton
-                              disabled={transformDirty}
+                              disabled={transformDirty || !!node.maskSource}
+                              title={
+                                node.maskSource
+                                  ? t(
+                                      "Сначала сними маску или выбери другой источник.",
+                                    )
+                                  : undefined
+                              }
                               onClick={() =>
                                 void mutate(
                                   [{ type: "removeNode", nodeId: node.id }],

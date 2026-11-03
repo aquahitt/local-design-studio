@@ -42,7 +42,7 @@ Fills/shadows реализованы PR75, image fills PR84; трансформ�
        raw conflict survives, one Apply/Undo. RU/EN/light/dark/keyboard.
 6. [x] Compatible capture API/IPC/MCP and visual measurement contract; rasterlimits,
        outward rounding, no viewport/media query change. New UI PNG control defaultsvisual.
-7. [ ] Service/native/handoff pixel parity, proposal, old API compatibility, full gates and PR.
+7. [x] Service/native/handoff pixel parity, proposal, old API compatibility, full gates and PR.
 
 Не закрывать #10: masks и расширенные text/vector paints остаются после этой вертикали.
 Никаких релизов/тегов или закрытия ручных gates.
@@ -62,3 +62,9 @@ pseudo-elements. Pixel fixture проверяет blur shadow alpha/envelope и 
 Fresh packaged MacARM: signature verify +4native tests passed, включая настоящий
 MCP и RGBA PNG. Clean MCP smoke и performance budgets passed (failures=[]).
 Локальные обязательные gates завершены; PR и cross-platform CI — следующий шаг.
+
+
+Завершено: [PR86](https://github.com/aquahitt/local-design-studio/pull/86) влит в main
+47fe2f77bc0dc7c73c2dc68b68d3cb966a9cf2b9 после всех7CI checks. Релиз пропущен.
+Первый CI performance запуск дал одиночный saveMs выброс; artifact сохранён,
+один контрольный повтор того же head прошёл без изменения кода или бюджета.

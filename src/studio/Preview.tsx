@@ -1,10 +1,11 @@
+import { MaskLayer } from "./MaskLayer";
 import type { PageGuide } from "../core/guides";
 import { FramePaintLayer, FrameContentClip } from "./FramePaintLayer";
 import { collectImagePaintReferences } from "../core/image-paint";
 import { compileTextStyle } from "../core/text-style";
 import { validCanvasBounds, type CanvasBounds } from "./canvasCamera";
 import type { SceneView } from "../core/scene";
-import { layerStyle } from "../core/handoff";
+import { layerStyle } from "../core/layer-style";
 import {
   withTransientGeometry,
   type SceneGeometryMap,
@@ -109,18 +110,29 @@ export function Preview({
   const { locale, t } = useI18n();
   const desktopLibrary = useContext(DesktopLibraryContext);
   const ref = useRef<HTMLIFrameElement>(null);
+  const resolvedPreviewNodes = resolveSceneNodes(project, nodes ?? []);
   const imageAssets = new Set(
-    collectImagePaintReferences(
-      resolveSceneNodes(project, nodes ?? []),
-      "rendered",
-    ).map((ref) => ref.asset),
+    collectImagePaintReferences(resolvedPreviewNodes, "rendered").map(
+      (ref) => ref.asset,
+    ),
   );
+  const maskNames = new Map<string, string>();
+  const indexMasks = (rows: ProjectNode[]) => {
+    for (const node of rows) {
+      if (node.scene?.kind === "mask")
+        maskNames.set(node.id, node.name ?? node.id);
+      for (const children of Object.values(node.slots)) indexMasks(children);
+    }
+  };
+  indexMasks(resolvedPreviewNodes);
+  const maskIds = new Set(maskNames.keys());
   const live = useRef({
     canvas,
     revision: project.revision,
     projectId: project.projectId,
     fonts: project.fonts,
     imageAssets,
+    maskIds,
     nodes,
     onGeometry,
     onPick,
@@ -131,6 +143,7 @@ export function Preview({
     projectId: project.projectId,
     fonts: project.fonts,
     imageAssets,
+    maskIds,
     nodes,
     onGeometry,
     onPick,
@@ -150,9 +163,11 @@ export function Preview({
   const [ready, setReady] = useState(false);
   const [fontWarnings, setFontWarnings] = useState<string[]>([]);
   const [imageWarnings, setImageWarnings] = useState<string[]>([]);
+  const [maskWarnings, setMaskWarnings] = useState<string[]>([]);
   useEffect(() => {
     setFontWarnings([]);
     setImageWarnings([]);
+    setMaskWarnings([]);
   }, [project.projectId, project.revision, nodes]);
   const [measuredHeight, setMeasuredHeight] = useState(height);
   useEffect(() => {
@@ -234,6 +249,35 @@ export function Preview({
         )
           live.current.onPick?.(event.data.id, event.data.requestId);
       }
+      if (
+        event.data?.type === "studio-preview-mask-status" &&
+        event.data.projectId === live.current.projectId &&
+        event.data.revision === live.current.revision &&
+        (!live.current.canvas ||
+          (event.data.surfaceId === live.current.canvas.surfaceId &&
+            event.data.epoch === live.current.canvas.epoch)) &&
+        Array.isArray(event.data.warnings) &&
+        event.data.warnings.length <= 1000 &&
+        event.data.warnings.every(
+          (warning: { maskId?: unknown; code?: unknown }) =>
+            warning &&
+            typeof warning.maskId === "string" &&
+            live.current.maskIds.has(warning.maskId) &&
+            [
+              "MASK_SOURCE_UNSUPPORTED",
+              "MASK_SOURCE_LIMIT",
+              "MASK_IMAGE_UNAVAILABLE",
+              "MASK_RENDER_UNAVAILABLE",
+            ].includes(String(warning.code)),
+        )
+      )
+        setMaskWarnings([
+          ...new Set<string>(
+            event.data.warnings.map(
+              (warning: { maskId: string }) => warning.maskId,
+            ),
+          ),
+        ]);
       if (
         autoHeight &&
         event.data?.type === "studio-preview-size" &&
@@ -381,7 +425,7 @@ export function Preview({
   ) : null;
   return (
     <div className="studio-preview-ui" style={{ position: "relative" }}>
-      {imageWarnings.length > 0 && (
+      {(imageWarnings.length > 0 || maskWarnings.length > 0) && (
         <p
           role="status"
           className="preview-font-warning"
@@ -394,8 +438,19 @@ export function Preview({
             overflow: "auto",
           }}
         >
-          {t("Не удалось загрузить изображения проекта:")}{" "}
-          {imageWarnings.join(", ")}
+          {imageWarnings.length > 0 && (
+            <>
+              {t("Не удалось загрузить изображения проекта:")}{" "}
+              {imageWarnings.join(", ")}
+            </>
+          )}
+          {imageWarnings.length > 0 && maskWarnings.length > 0 && <br />}
+          {maskWarnings.length > 0 && (
+            <>
+              {t("Не удалось подготовить маски. Проверь их источники:")}{" "}
+              {maskWarnings.map((id) => maskNames.get(id) ?? id).join(", ")}
+            </>
+          )}
         </p>
       )}
       {warning}
@@ -457,6 +512,8 @@ export function Nodes({
   inheritedLocked = false,
   materializedNodes = false,
   geometry = {},
+  geometryOnly = false,
+  revealMaskSourceFor,
 }: {
   nodes: ProjectNode[];
   library: ComponentLibrary;
@@ -467,6 +524,8 @@ export function Nodes({
   inheritedLocked?: boolean;
   materializedNodes?: boolean;
   geometry?: SceneGeometryMap;
+  geometryOnly?: boolean;
+  revealMaskSourceFor?: string;
 }) {
   const { t } = useI18n();
   const hasInstance = (rows: ProjectNode[]): boolean =>
@@ -492,6 +551,28 @@ export function Nodes({
             node.type === "StudioImage" || node.scene?.kind === "image"
               ? resolveProps(node.props as Props, project)
               : node.props;
+          const source =
+            node.scene?.kind === "mask"
+              ? node.slots.children.find((child) => child.maskSource)
+              : undefined;
+          const selectedSource = (row: ProjectNode): boolean =>
+            row.id === selected ||
+            row.id === revealMaskSourceFor ||
+            selectedIds.includes(row.id) ||
+            Object.values(row.slots).some((rows) => rows.some(selectedSource));
+          const sourceVisible = !!source && selectedSource(source);
+          const childProps = {
+            library,
+            project,
+            selected,
+            selectedIds,
+            onSelect,
+            geometry,
+            geometryOnly,
+            revealMaskSourceFor,
+            materializedNodes: true,
+            inheritedLocked: inheritedLocked || !!node.locked,
+          };
           return (
             <div
               key={node.id}
@@ -520,10 +601,42 @@ export function Nodes({
                 } as CSSProperties
               }
             >
-              {node.scene?.kind === "frame" && (
+              {!geometryOnly && node.scene?.kind === "frame" && (
                 <FramePaintLayer nodeId={node.id} scene={node.scene} />
               )}
-              {node.scene?.kind === "text" ? (
+              {geometryOnly ? (
+                <>
+                  {Object.entries(node.slots).map(([slot, rows]) => (
+                    <Nodes
+                      key={slot}
+                      {...childProps}
+                      nodes={rows}
+                      geometryOnly
+                    />
+                  ))}
+                </>
+              ) : node.scene?.kind === "mask" ? (
+                <MaskLayer
+                  node={node}
+                  project={project}
+                  geometry={geometry}
+                  sourceVisible={sourceVisible}
+                  source={
+                    <Nodes
+                      {...childProps}
+                      nodes={source ? [source] : []}
+                      geometryOnly={!sourceVisible}
+                    />
+                  }
+                >
+                  <Nodes
+                    {...childProps}
+                    nodes={node.slots.children.filter(
+                      (child) => !child.maskSource,
+                    )}
+                  />
+                </MaskLayer>
+              ) : node.scene?.kind === "text" ? (
                 <div
                   style={compileTextStyle(node.scene, project) as CSSProperties}
                   dir={node.scene.textStyle?.direction}
@@ -570,6 +683,8 @@ export function Nodes({
                         inheritedLocked: inheritedLocked || !!node.locked,
                         materializedNodes: true,
                         geometry,
+                        geometryOnly,
+                        revealMaskSourceFor,
                         library,
                         project,
                         selected,
@@ -598,6 +713,8 @@ export function Nodes({
                                   inheritedLocked || !!node.locked,
                                 materializedNodes: true,
                                 geometry,
+                                geometryOnly,
+                                revealMaskSourceFor,
                                 library,
                                 project,
                                 selected,

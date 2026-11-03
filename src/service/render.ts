@@ -1,3 +1,7 @@
+import {
+  assertMaskResourcesReady,
+  maskResourceWarningsExpression,
+} from "./mask-capture";
 import { isProjectAssetPath, projectAssetMediaType } from "./project-assets";
 import {
   captureRectangle,
@@ -349,6 +353,14 @@ export async function renderSnapshot(
       collectImagePaintReferences(resourceNodes, "rendered").map(
         (ref) => ref.asset,
       ),
+    );
+    const maskNodes = definitionNodes(resourceNodes);
+    assertMaskResourcesReady(
+      await withCaptureTimeout(page.evaluate(maskResourceWarningsExpression)),
+      [...maskNodes.values()]
+        .filter((node) => node.scene?.kind === "mask")
+        .map((node) => node.id),
+      [...maskNodes.keys()],
     );
     await withCaptureTimeout(page.evaluate(settleCaptureExpression));
     const bounds = await page.locator("[data-node-id]").evaluateAll((nodes) =>

@@ -307,13 +307,7 @@
           "additionalProperties": {}
         },
         "slots": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "array",
-            "items": {
-              "$ref": "#/$defs/node"
-            }
-          }
+          "type": "object"
         },
         "name": {
           "type": "string",
@@ -325,11 +319,17 @@
         "locked": {
           "type": "boolean"
         },
+        "maskSource": {
+          "const": true
+        },
         "scene": {
           "type": "object",
           "properties": {
             "kind": {
-              "enum": ["frame", "text", "vector", "component", "image"]
+              "enum": ["frame", "text", "vector", "component", "image", "mask"]
+            },
+            "maskMode": {
+              "enum": ["alpha", "luminance"]
             },
             "x": {
               "type": "number",
@@ -1373,6 +1373,78 @@
               "not": {
                 "required": ["rotation", "linearTransform"]
               }
+            },
+            {
+              "if": {
+                "properties": {
+                  "kind": {
+                    "const": "mask"
+                  }
+                },
+                "required": ["kind"]
+              },
+              "then": {
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": ["fill"]
+                    },
+                    {
+                      "required": ["fills"]
+                    },
+                    {
+                      "required": ["strokes"]
+                    },
+                    {
+                      "required": ["shadows"]
+                    },
+                    {
+                      "required": ["stroke"]
+                    },
+                    {
+                      "required": ["strokeWidth"]
+                    },
+                    {
+                      "required": ["radius"]
+                    },
+                    {
+                      "required": ["clip"]
+                    },
+                    {
+                      "required": ["path"]
+                    },
+                    {
+                      "required": ["fontSize"]
+                    },
+                    {
+                      "required": ["textStyle"]
+                    }
+                  ]
+                }
+              },
+              "else": {
+                "if": {
+                  "required": ["kind"]
+                },
+                "then": {
+                  "not": {
+                    "required": ["maskMode"]
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "kind": {
+                    "const": "mask"
+                  }
+                },
+                "required": ["kind"]
+              },
+              "then": {
+                "required": ["maskMode"]
+              }
             }
           ]
         },
@@ -1400,7 +1472,192 @@
         }
       },
       "required": ["id", "type", "props", "slots"],
-      "additionalProperties": false
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "scene": {
+                "properties": {
+                  "kind": {
+                    "const": "mask"
+                  }
+                },
+                "required": ["kind"]
+              }
+            },
+            "required": ["scene"]
+          },
+          "then": {
+            "not": {
+              "required": ["instance"]
+            },
+            "properties": {
+              "slots": {
+                "type": "object",
+                "properties": {
+                  "children": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/maskChild"
+                    },
+                    "contains": {
+                      "properties": {
+                        "maskSource": {
+                          "const": true
+                        }
+                      },
+                      "required": ["maskSource"]
+                    },
+                    "minContains": 1,
+                    "maxContains": 1
+                  }
+                },
+                "required": ["children"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "slots": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/node"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "not": {
+            "required": ["maskSource"]
+          }
+        }
+      ]
+    },
+    "maskChild": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "props": {
+          "type": "object",
+          "additionalProperties": {}
+        },
+        "slots": {
+          "type": "object"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "hidden": {
+          "type": "boolean"
+        },
+        "locked": {
+          "type": "boolean"
+        },
+        "maskSource": {
+          "const": true
+        },
+        "scene": {
+          "$ref": "#/$defs/scene"
+        },
+        "instance": {
+          "type": "object",
+          "properties": {
+            "definitionId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "variant": {
+              "type": "string",
+              "minLength": 1
+            },
+            "overrides": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": {}
+              }
+            }
+          },
+          "required": ["definitionId"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["id", "type", "props", "slots"],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "scene": {
+                "properties": {
+                  "kind": {
+                    "const": "mask"
+                  }
+                },
+                "required": ["kind"]
+              }
+            },
+            "required": ["scene"]
+          },
+          "then": {
+            "not": {
+              "required": ["instance"]
+            },
+            "properties": {
+              "slots": {
+                "type": "object",
+                "properties": {
+                  "children": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/maskChild"
+                    },
+                    "contains": {
+                      "properties": {
+                        "maskSource": {
+                          "const": true
+                        }
+                      },
+                      "required": ["maskSource"]
+                    },
+                    "minContains": 1,
+                    "maxContains": 1
+                  }
+                },
+                "required": ["children"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "slots": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/node"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
     },
     "page": {
       "type": "object",
@@ -1536,7 +1793,10 @@
       "type": "object",
       "properties": {
         "kind": {
-          "enum": ["frame", "text", "vector", "component", "image"]
+          "enum": ["frame", "text", "vector", "component", "image", "mask"]
+        },
+        "maskMode": {
+          "enum": ["alpha", "luminance"]
         },
         "x": {
           "type": "number",
@@ -2579,6 +2839,78 @@
         {
           "not": {
             "required": ["rotation", "linearTransform"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "mask"
+              }
+            },
+            "required": ["kind"]
+          },
+          "then": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": ["fill"]
+                },
+                {
+                  "required": ["fills"]
+                },
+                {
+                  "required": ["strokes"]
+                },
+                {
+                  "required": ["shadows"]
+                },
+                {
+                  "required": ["stroke"]
+                },
+                {
+                  "required": ["strokeWidth"]
+                },
+                {
+                  "required": ["radius"]
+                },
+                {
+                  "required": ["clip"]
+                },
+                {
+                  "required": ["path"]
+                },
+                {
+                  "required": ["fontSize"]
+                },
+                {
+                  "required": ["textStyle"]
+                }
+              ]
+            }
+          },
+          "else": {
+            "if": {
+              "required": ["kind"]
+            },
+            "then": {
+              "not": {
+                "required": ["maskMode"]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "mask"
+              }
+            },
+            "required": ["kind"]
+          },
+          "then": {
+            "required": ["maskMode"]
           }
         }
       ]

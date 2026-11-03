@@ -1,3 +1,28 @@
+/** Rendering limits are explicit; the document may preserve unsupported imported sources. */
+export const MASK_CAPABILITIES = Object.freeze({
+  kind: "mask",
+  slot: "children",
+  sourceRole: "maskSource",
+  maxSources: 1,
+  modes: ["alpha", "luminance"],
+  order: "preserved",
+  sources: {
+    kinds: ["frame", "vector"],
+    images: false,
+    text: false,
+    libraryComponents: false,
+    paintKinds: ["solid", "linear", "radial"],
+    instances: "materialized-declarative-trees",
+    nestedMasks: false,
+  },
+  content: "ordinary-dom-subtree",
+  portals: "outside-dom-mask-scope",
+  rendering: "self-contained-svg-mask",
+  bounds: "conservative-envelope",
+  creation: "atomic-batch",
+  operations: ["setMaskSource", "removeMask", "unwrapMask"],
+  clipboard: "copied-source-roots-become-ordinary-layers",
+});
 import { GUIDE_LIMITS } from "../core/guides";
 export const GUIDE_CAPABILITIES = Object.freeze({
   scope: "page",

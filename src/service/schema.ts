@@ -209,6 +209,31 @@ const linearTransform = {
 const transformConstraint = {
   not: { required: ["rotation", "linearTransform"] },
 };
+const maskSceneConstraint = {
+  if: { properties: { kind: { const: "mask" } }, required: ["kind"] },
+  then: {
+    not: {
+      anyOf: [
+        "fill",
+        "fills",
+        "strokes",
+        "shadows",
+        "stroke",
+        "strokeWidth",
+        "radius",
+        "clip",
+        "path",
+        "fontSize",
+        "textStyle",
+      ].map((field) => ({ required: [field] })),
+    },
+  },
+  else: {
+    // A partial setNodeMetadata patch can set maskMode without restating kind.
+    if: { required: ["kind"] },
+    then: { not: { required: ["maskMode"] } },
+  },
+};
 const geometry = {
   ...object(
     {
@@ -226,7 +251,8 @@ const geometry = {
     "Replaces geometry only, removing the previous rotation or linearTransform when absent; preserves kind, paint, text and child geometry.",
 };
 const sceneFields = {
-  kind: { enum: ["frame", "text", "vector", "component", "image"] },
+  kind: { enum: ["frame", "text", "vector", "component", "image", "mask"] },
+  maskMode: { enum: ["alpha", "luminance"] },
   x: coordinate,
   y: coordinate,
   width: dimension,
@@ -248,7 +274,16 @@ const sceneFields = {
 };
 const scene = {
   ...object(sceneFields, ["kind", "x", "y", "width", "height"]),
-  allOf: [framePaintConstraint, textStyleConstraint, transformConstraint],
+  allOf: [
+    framePaintConstraint,
+    textStyleConstraint,
+    transformConstraint,
+    maskSceneConstraint,
+    {
+      if: { properties: { kind: { const: "mask" } }, required: ["kind"] },
+      then: { required: ["maskMode"] },
+    },
+  ],
 };
 const overrides = {
   type: "object",
@@ -257,23 +292,79 @@ const overrides = {
 const instance = object({ definitionId: str, variant: str, overrides }, [
   "definitionId",
 ]);
-const node = object(
+const rawNode = object(
   {
     id: str,
     type: str,
     props: { type: "object", additionalProperties: json },
     slots: {
       type: "object",
-      additionalProperties: { type: "array", items: { $ref: "#/$defs/node" } },
+      additionalProperties: {
+        type: "array",
+        items: { $ref: "#/$defs/rawNode" },
+      },
     },
     name: str,
     hidden: { type: "boolean" },
     locked: { type: "boolean" },
+    maskSource: { const: true },
     scene,
     instance,
   },
   ["id", "type", "props", "slots"],
 );
+const maskNodeConstraint = {
+  if: {
+    properties: {
+      scene: { properties: { kind: { const: "mask" } }, required: ["kind"] },
+    },
+    required: ["scene"],
+  },
+  then: {
+    not: { required: ["instance"] },
+    properties: {
+      slots: object({
+        children: {
+          type: "array",
+          items: { $ref: "#/$defs/maskChild" },
+          contains: {
+            properties: { maskSource: { const: true } },
+            required: ["maskSource"],
+          },
+          minContains: 1,
+          maxContains: 1,
+        },
+      }),
+    },
+  },
+  else: {
+    properties: {
+      slots: {
+        type: "object",
+        additionalProperties: {
+          type: "array",
+          items: { $ref: "#/$defs/node" },
+        },
+      },
+    },
+  },
+};
+// Raw insertions are validated in their final destination by parseProject.
+// Persisted nodes carry a role only through the maskChild contextual schema.
+const maskChild = {
+  ...rawNode,
+  properties: {
+    ...rawNode.properties,
+    scene: { $ref: "#/$defs/scene" },
+    slots: { type: "object" },
+  } as typeof rawNode.properties,
+  allOf: [maskNodeConstraint],
+};
+const node = {
+  ...maskChild,
+  properties: { ...maskChild.properties, scene },
+  allOf: [...maskChild.allOf, { not: { required: ["maskSource"] } }],
+};
 const componentDefinition = object(
   {
     id: str,
@@ -414,7 +505,7 @@ export const projectSchema = {
     ],
   ),
   $schema: "https://json-schema.org/draft/2020-12/schema",
-  $defs: { node, page, scene, componentDefinition },
+  $defs: { node, maskChild, page, scene, componentDefinition },
 };
 const op = (
   type: string,
@@ -448,6 +539,7 @@ export const batchSchema = {
                     framePaintConstraint,
                     textStyleConstraint,
                     transformConstraint,
+                    maskSceneConstraint,
                   ],
                 },
               },
@@ -470,6 +562,9 @@ export const batchSchema = {
               locked: { type: "boolean" },
             }),
             op("setNodeGeometry", { nodeId: str, geometry }),
+            op("setMaskSource", { nodeId: str, sourceNodeId: str }),
+            op("unwrapMask", { nodeId: str }),
+            op("removeMask", { nodeId: str }),
             op("addProjectFont", { font: projectFont }),
             op("updateProjectFont", { fontId, font: projectFont }),
             op("removeProjectFont", { fontId }),
@@ -482,7 +577,7 @@ export const batchSchema = {
             }),
             op(
               "insertNode",
-              { ...destination, node: { $ref: "#/$defs/node" } },
+              { ...destination, node: { $ref: "#/$defs/rawNode" } },
               ["pageId", "index", "node"],
             ),
             op("moveNode", { ...destination, nodeId: str }, [
@@ -515,7 +610,7 @@ export const batchSchema = {
     },
     ["requestId", "baseRevision", "operations"],
   ),
-  $defs: { node, page, scene, componentDefinition },
+  $defs: { node, maskChild, rawNode, page, scene, componentDefinition },
 };
 export function validateComponentProps(
   project: Project,

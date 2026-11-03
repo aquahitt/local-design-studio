@@ -153,3 +153,7 @@ filters, pseudo-elements и другие неизмеримые эффекты �
 Прозрачный default background задаётся только disposable isolated renderer через
 [CDP Emulation.setDefaultBackgroundColorOverride](https://github.com/ChromeDevTools/devtools-protocol/blob/master/pdl/domains/Emulation.pdl)
 с RGBA alpha0; CSS фон html/body очищается отдельно. Viewport metrics не переопределяются.
+
+Маски проходят отдельный scoped readiness barrier до измерения и PNG. Ошибки
+источника возвращаются типизированно; поведение изоляции и пределы описаны в
+[masks.md](masks.md).

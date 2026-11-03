@@ -2,7 +2,7 @@ import { chromium } from "@playwright/test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
 import { expect, it } from "vitest";
-import { layerStyle } from "./handoff";
+import { layerStyle } from "./layer-style";
 import type { ProjectNode } from "./project";
 
 const node = (

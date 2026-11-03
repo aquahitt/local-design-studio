@@ -1,3 +1,5 @@
+import { createMaskReadinessRuntime } from "../library/mask-readiness";
+import { definitionNodes } from "../core/design-components";
 import { previewResourceScope } from "./previewResources";
 import { parseGuides } from "../core/guides";
 import { createImageResourceLoader } from "../library/image-resource-runtime";
@@ -159,8 +161,10 @@ export function PreviewApp() {
     delete document.documentElement.dataset.studioPreviewRevision;
     delete document.documentElement.dataset.studioPreviewFontWarnings;
     delete document.documentElement.dataset.studioPreviewImageWarnings;
+    delete document.documentElement.dataset.studioPreviewMaskWarnings;
     if (!input || !library) return;
     const loader = (fontLoader.current ??= createProjectFontLoader(document));
+    const maskAbort = new AbortController();
     let active = true,
       first = 0,
       second = 0;
@@ -185,7 +189,13 @@ export function PreviewApp() {
         revision: input.project.revision,
         assets,
       }),
-    ]).then(([{ warnings }, imageStatus]) => {
+      createMaskReadinessRuntime(document).wait({
+        ids: [...definitionNodes(resources.imageNodes).values()]
+          .filter((node) => node.scene?.kind === "mask")
+          .map((node) => node.id),
+        signal: maskAbort.signal,
+      }),
+    ]).then(([{ warnings }, imageStatus, maskStatus]) => {
       if (!active) return;
       parent.postMessage(
         {
@@ -212,6 +222,20 @@ export function PreviewApp() {
         },
         __STUDIO_DESKTOP__ ? "studio://app" : location.origin,
       );
+      document.documentElement.dataset.studioPreviewMaskWarnings =
+        JSON.stringify(maskStatus.warnings);
+      parent.postMessage(
+        {
+          type: "studio-preview-mask-status",
+          projectId: input.project.projectId,
+          revision: input.project.revision,
+          ...(input.canvas
+            ? { surfaceId: input.canvas.surfaceId, epoch: input.canvas.epoch }
+            : {}),
+          warnings: maskStatus.warnings,
+        },
+        __STUDIO_DESKTOP__ ? "studio://app" : location.origin,
+      );
       first = requestAnimationFrame(() => {
         second = requestAnimationFrame(() => {
           if (active)
@@ -223,6 +247,7 @@ export function PreviewApp() {
     });
     return () => {
       active = false;
+      maskAbort.abort();
       loader.cancel();
       images.cancel();
       cancelAnimationFrame(first);
@@ -412,6 +437,9 @@ export function PreviewApp() {
               library={library}
               project={project}
               geometry={input.canvas?.geometry}
+              revealMaskSourceFor={
+                input.resourceNodeId ?? input.selected ?? undefined
+              }
               selected={input.canvas ? null : (input.selected ?? null)}
               selectedIds={input.canvas ? [] : input.selectedIds}
               onSelect={(id, additive) =>

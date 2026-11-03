@@ -175,6 +175,14 @@ function errorCopy(error: unknown) {
       return "Не удалось определить границы оформления этого слоя. Выбери геометрические границы.";
     case "ISOLATED_CAPTURE_UNSUPPORTED":
       return "Этот слой зависит от окружения. Выбери фрагмент сцены, чтобы сохранить его вид.";
+    case "MASK_SOURCE_UNSUPPORTED":
+      return "Источник маски использует неподдерживаемое оформление. Выбери другой источник или сними маску.";
+    case "MASK_IMAGE_UNAVAILABLE":
+      return "Не удалось подготовить изображения источника маски. Проверь ресурсы проекта.";
+    case "MASK_SOURCE_LIMIT":
+      return "Область источника маски слишком велика. Уменьши её и повтори попытку.";
+    case "MASK_RENDER_UNAVAILABLE":
+      return "Не удалось отрисовать маску. Повтори попытку.";
     case "RENDER_TIMEOUT":
       return "Подготовка PNG заняла слишком много времени. Повтори попытку.";
     case PNG_ERROR:
