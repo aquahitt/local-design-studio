@@ -593,10 +593,13 @@ test("transparent canvas preserves the dark studio background across iframe colo
   try {
     await f.open();
     await page.getByLabel("Тема студии", { exact: true }).selectOption("dark");
-    // This test samples document background, excluding editor-only ruler chrome.
+    // Sample the document background with ruler and grid chrome disabled.
     const rulers = page.getByRole("button", { name: "Линейки", exact: true });
     if ((await rulers.getAttribute("aria-pressed")) === "true")
       await rulers.click();
+    const grid = page.getByRole("button", { name: "Сетка холста", exact: true });
+    if ((await grid.getAttribute("aria-pressed")) === "true")
+      await grid.click();
     const canvas = page.getByRole("region", {
       name: "Свободный холст",
       exact: true,

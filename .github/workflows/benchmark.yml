@@ -25,7 +25,7 @@ concurrency:
 jobs:
   budgets:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
         with:
@@ -36,13 +36,58 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
+      - name: Check out the pull request base on the same runner
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: .benchmark-base
+          persist-credentials: false
+      - name: Record measured revisions
+        run: |
+          printf "candidate %s\n" "$(git rev-parse HEAD)" > benchmark-revisions.txt
+          if test -d .benchmark-base; then
+            printf "base %s\n" "$(git -C .benchmark-base rev-parse HEAD)" >> benchmark-revisions.txt
+          fi
+      - name: Measure base with the same fixture and harness
+        if: github.event_name == 'pull_request'
+        working-directory: .benchmark-base
+        run: |
+          npm ci
+          npx playwright install chromium
+          cp -R ../scripts/benchmarks/. scripts/benchmarks/
+          node --expose-gc --import tsx scripts/benchmarks/run.ts --browser --report-only --output ../benchmark-base.json
       - name: Run core and actual Preview renderer budgets
         run: node --expose-gc --import tsx scripts/benchmarks/run.ts --browser --output benchmark-results.json
+      - name: Summarize paired storage latency
+        if: always() && github.event_name == 'pull_request'
+        run: |
+          if test -f benchmark-base.json && test -f benchmark-results.json; then
+            node --input-type=module <<'NODE' >> "$GITHUB_STEP_SUMMARY"
+          import { readFileSync } from "node:fs";
+          const base = JSON.parse(readFileSync("benchmark-base.json", "utf8"));
+          const candidate = JSON.parse(readFileSync("benchmark-results.json", "utf8"));
+          console.log("| Layers | Operation | Base p95 / max (ms) | Candidate p95 / max (ms) |");
+          console.log("|---:|---|---:|---:|");
+          for (const row of candidate.cases.filter(entry => entry.status === "supported")) {
+            const reference = base.cases.find(entry => entry.count === row.count);
+            for (const metric of ["loadMs", "saveMs"]) {
+              const format = (entry) => entry?.metrics[metric] === undefined
+                ? "—"
+                : Math.round(entry.metrics[metric]) + " / " + Math.round(entry.maxima[metric]);
+              console.log("| " + [row.count, metric, format(reference), format(row)].join(" | ") + " |");
+            }
+          }
+          NODE
+          fi
       - name: Keep measurements and machine characteristics even on regression
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: scene-performance-${{ github.sha }}
-          path: benchmark-results.json
+          path: |
+            benchmark-results.json
+            benchmark-base.json
+            benchmark-revisions.txt
           if-no-files-found: warn
           retention-days: 30
