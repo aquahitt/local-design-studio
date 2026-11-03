@@ -1,3 +1,4 @@
+import {assertMaskResourcesReady,maskResourceWarningsExpression} from "../src/service/mask-capture";
 import {
   captureRectangle,
   resolveCaptureBounds,
@@ -125,6 +126,8 @@ export async function captureDesktopSnapshot(
         (ref) => ref.asset,
       ),
     );
+    const maskNodes=definitionNodes(resourceNodes);
+    assertMaskResourcesReady(await withCaptureTimeout(window.webContents.executeJavaScript(maskResourceWarningsExpression)),[...maskNodes.values()].filter(node=>node.scene?.kind==='mask').map(node=>node.id),[...maskNodes.keys()]);
     mark("settle-animation");
     await withCaptureTimeout(
       window.webContents.executeJavaScript(settleCaptureExpression),

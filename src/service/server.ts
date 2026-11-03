@@ -1,4 +1,8 @@
-import { PAINT_CAPABILITIES, GUIDE_CAPABILITIES } from "./read";
+import {
+  MASK_CAPABILITIES,
+  PAINT_CAPABILITIES,
+  GUIDE_CAPABILITIES,
+} from "./read";
 import { AFFINE_LIMITS } from "../core/scene";
 import {
   readProjectAsset,
@@ -246,6 +250,7 @@ export async function createStudioServer(options: StudioOptions) {
               contextTTL: 15000,
               allowedOrigins: origins,
               paints: PAINT_CAPABILITIES,
+              masks: MASK_CAPABILITIES,
               guides: GUIDE_CAPABILITIES,
               geometry: {
                 affine: true,

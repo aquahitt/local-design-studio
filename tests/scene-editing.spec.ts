@@ -102,7 +102,7 @@ test("scene layers create, edit, move, duplicate, hide and undo through durable 
     await page.getByRole("button", { name: "Применить свойства", exact: true }).click();
     const preview = page.frameLocator('iframe[title="Экран Проверка сцены"]');
     await expect(preview.getByText("Локальный заголовок", { exact: true })).toBeVisible();
-    await selectStudioOption(page, "Фрейм назначения", "Карточка");
+    await selectStudioOption(page, "Контейнер назначения", "Карточка");
     await page.getByRole("button", { name: "Перенести", exact: true }).click();
     await expect(preview.locator('[data-node-id] [data-node-id]').getByText("Локальный заголовок", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Дублировать", exact: true }).click();

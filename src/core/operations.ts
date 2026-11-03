@@ -1,5 +1,6 @@
 import { parseGuides, type PageGuide } from "./guides";
 import { hasLockedSceneDescendant } from "./scene-locks";
+import { unwrappedMaskChildren } from "./mask-groups";
 import { validateProjectFont, type ProjectFont } from "./fonts";
 import {
   createPageVariant,
@@ -30,6 +31,9 @@ export type Operation =
   | { type: "removeGuide"; pageId: string; guideId: string }
   | { type: "setGuideLocked"; pageId: string; guideId: string; locked: boolean }
   | { type: "setNodeGeometry"; nodeId: string; geometry: SceneGeometry }
+  | { type: "setMaskSource"; nodeId: string; sourceNodeId: string }
+  | { type: "unwrapMask"; nodeId: string }
+  | { type: "removeMask"; nodeId: string }
   | { type: "addProjectFont"; font: ProjectFont }
   | { type: "updateProjectFont"; fontId: string; font: ProjectFont }
   | { type: "removeProjectFont"; fontId: string }
@@ -127,6 +131,9 @@ export function applyBatch(project: Project, batch: Batch): Project {
     setDesignComponents: ["definitions"],
     setInstance: ["nodeId", "instance"],
     setNodeGeometry: ["nodeId", "geometry"],
+    setMaskSource: ["nodeId", "sourceNodeId"],
+    unwrapMask: ["nodeId"],
+    removeMask: ["nodeId"],
     setNodeMetadata: ["nodeId", "name", "hidden", "locked", "scene"],
     updateProps: ["nodeId", "props"],
     insertNode: ["pageId", "parentId", "slot", "index", "node"],
@@ -304,6 +311,48 @@ export function applyBatch(project: Project, batch: Batch): Project {
       case "setInstance":
         editable(op.nodeId).node.instance = structuredClone(op.instance);
         break;
+      case "setMaskSource": {
+        const group = editable(op.nodeId).node;
+        if (hasLockedDescendant(group))
+          throw new CoreError("NODE_LOCKED", op.nodeId);
+        if (group.scene?.kind !== "mask")
+          throw new CoreError("NODE_NOT_MASK", op.nodeId);
+        const children = group.slots.children;
+        if (
+          typeof op.sourceNodeId !== "string" ||
+          !children?.some((node) => node.id === op.sourceNodeId)
+        )
+          throw new CoreError("INVALID_MASK_SOURCE", op.nodeId);
+        const sources = children.filter(
+          (node) => node.maskSource || node.id === op.sourceNodeId,
+        );
+        for (const source of sources) {
+          editable(source.id);
+          if (hasLockedDescendant(source))
+            throw new CoreError("NODE_LOCKED", source.id);
+        }
+        for (const child of children) delete child.maskSource;
+        children.find((node) => node.id === op.sourceNodeId)!.maskSource = true;
+        break;
+      }
+      case "removeMask": {
+        const group = editable(op.nodeId).node;
+        if (group.scene?.kind !== "mask")
+          throw new CoreError("NODE_NOT_MASK", op.nodeId);
+        if (hasLockedDescendant(group))
+          throw new CoreError("NODE_LOCKED", op.nodeId);
+        const { maskMode: _mode, ...scene } = group.scene;
+        group.scene = { ...scene, kind: "frame" };
+        if (group.type === "SceneMask") group.type = "SceneFrame";
+        for (const child of group.slots.children) delete child.maskSource;
+        break;
+      }
+      case "unwrapMask": {
+        const group = editable(op.nodeId);
+        const children = unwrappedMaskChildren(next, op.nodeId);
+        group.list.splice(group.index, 1, ...children);
+        break;
+      }
       case "setNodeGeometry": {
         const n = editable(op.nodeId).node;
         if (!n.scene) throw new CoreError("NODE_NOT_SCENE", op.nodeId);
@@ -371,6 +420,7 @@ export function applyBatch(project: Project, batch: Batch): Project {
           (
             [
               "kind",
+              "maskMode",
               "x",
               "y",
               "width",

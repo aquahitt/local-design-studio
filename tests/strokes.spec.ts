@@ -450,7 +450,7 @@ test("minified standalone React handoff preserves stroke pixels and its independ
           build.onResolve(
             {
               filter:
-                /^\.\/(Screen|Runtime|imageResources|styles|tokens|fonts)(\.(tsx?|css))?$/,
+                /^\.\/(Screen|Runtime|imageResources|maskResources|resources|styles|tokens|fonts)(\.(tsx?|css))?$/,
             },
             (args) => ({ path: args.path.slice(2), namespace: "portable" }),
           );
@@ -459,9 +459,9 @@ test("minified standalone React handoff preserves stroke pixels and its independ
               return { contents: "", loader: "empty" };
             const name = args.path.includes(".")
               ? args.path
-              : args.path === "imageResources"
-                ? args.path + ".ts"
-                : args.path + ".tsx";
+              : ["Screen", "Runtime"].includes(args.path)
+                ? args.path + ".tsx"
+                : args.path + ".ts";
             const contents = handoff.files[name];
             if (contents === undefined)
               throw new Error("Missing portable file " + name);

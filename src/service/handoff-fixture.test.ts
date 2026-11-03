@@ -22,7 +22,15 @@ import { computedStylesExpression } from "./computed-styles";
 import type { RenderComputedStyles } from "./render";
 const require = createRequire(import.meta.url);
 
-it.each(["components", "scene", "paint", "fonts", "fonts-wide", "affine"])(
+it.each([
+  "components",
+  "scene",
+  "paint",
+  "fonts",
+  "fonts-wide",
+  "affine",
+  "mask",
+])(
   "exported %s screen builds and renders in an isolated fixture with matching real styles and spacing",
   async (mode) => {
     const viewportWidth = mode === "fonts-wide" ? 1280 : 390;
@@ -290,6 +298,88 @@ it.each(["components", "scene", "paint", "fonts", "fonts-wide", "affine"])(
         },
       });
     }
+    if (mode === "mask") {
+      for (const [index, maskMode] of (
+        ["alpha", "luminance"] as const
+      ).entries())
+        project.pages[0].nodes.push({
+          id: "mask-" + maskMode,
+          type: "SceneMask",
+          props: {},
+          scene: {
+            kind: "mask",
+            maskMode,
+            x: index * 170,
+            y: 280,
+            width: 150,
+            height: 150,
+          },
+          slots: {
+            children: [
+              {
+                id: "source-" + maskMode,
+                type: "SceneFrame",
+                maskSource: true,
+                props: {},
+                slots: {},
+                scene: {
+                  kind: "frame",
+                  x: 10,
+                  y: 10,
+                  width: 120,
+                  height: 80,
+                  fills: [
+                    {
+                      id: "bands",
+                      kind: "linear",
+                      angle: 90,
+                      stops: [
+                        { offset: 0, color: { r: 0, g: 0, b: 0, a: 1 } },
+                        { offset: 0.5, color: { r: 0, g: 0, b: 0, a: 1 } },
+                        {
+                          offset: 0.5,
+                          color: { r: 255, g: 255, b: 255, a: 1 },
+                        },
+                        { offset: 1, color: { r: 255, g: 255, b: 255, a: 1 } },
+                      ],
+                    },
+                  ],
+                },
+              },
+              {
+                id: "content-" + maskMode,
+                type: "SceneFrame",
+                props: {},
+                scene: {
+                  kind: "frame",
+                  x: 0,
+                  y: 0,
+                  width: 150,
+                  height: 150,
+                  fill: "#f00",
+                },
+                slots: {
+                  children: [
+                    {
+                      id: "masked-button-" + maskMode,
+                      type: "Button",
+                      props: { label: "Masked " + maskMode },
+                      slots: {},
+                      scene: {
+                        kind: "component",
+                        x: 80,
+                        y: 30,
+                        width: 100,
+                        height: 44,
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        });
+    }
     const sourceBefore = JSON.stringify(project);
     const metadata = [libraryMetadata(builtinLibrary)];
     const exported = await exportReactHandoff(
@@ -544,6 +634,74 @@ it.each(["components", "scene", "paint", "fonts", "fonts-wide", "affine"])(
           [owned.data, handoffPNG.toString("base64")],
         );
         expect(pixels[0]).toEqual(pixels[1]);
+      }
+      if (mode === "mask") {
+        await page.locator('[data-resource-status="ready"]').waitFor();
+        expect(
+          await page.locator('[data-studio-mask-state="ready"]').count(),
+        ).toBe(2);
+        for (const maskMode of ["alpha", "luminance"]) {
+          expect(
+            await page
+              .locator('[data-node-id="source-' + maskMode + '"]')
+              .count(),
+          ).toBe(1);
+          const sourceBounds = await page
+            .locator('[data-node-id="source-' + maskMode + '"]')
+            .boundingBox();
+          expect(sourceBounds).toMatchObject({ width: 120, height: 80 });
+        }
+        const controlled = page.getByRole("button", {
+          name: "Masked alpha",
+          exact: true,
+        });
+        await controlled.evaluate((element) =>
+          element.addEventListener("click", () =>
+            element.setAttribute("data-clicked", "yes"),
+          ),
+        );
+        await controlled.click({ position: { x: 10, y: 10 } });
+        await controlled
+          .getAttribute("data-clicked")
+          .then((value) => expect(value).toBe("yes"));
+        const snapshot = await ownerRender(project, {
+          pageId: "home",
+          revision: 2,
+        });
+        const png = (
+          await page.screenshot({ animations: "disabled" })
+        ).toString("base64");
+        const colors = await page.evaluate(
+          async (captures) =>
+            Promise.all(
+              captures.map(async (data) => {
+                const image = new Image();
+                image.src = "data:image/png;base64," + data;
+                await image.decode();
+                const canvas = document.createElement("canvas");
+                canvas.width = image.width;
+                canvas.height = image.height;
+                const ctx = canvas.getContext("2d")!;
+                ctx.drawImage(image, 0, 0);
+                return [
+                  [40, 315],
+                  [120, 315],
+                  [25, 315],
+                  [210, 315],
+                  [290, 315],
+                ].map(([x, y]) => [...ctx.getImageData(x, y, 1, 1).data]);
+              }),
+            ),
+          [snapshot.data, png],
+        );
+        const expected = [
+          [255, 0, 0, 255],
+          [255, 0, 0, 255],
+          [255, 255, 255, 255],
+          [255, 255, 255, 255],
+          [255, 0, 0, 255],
+        ];
+        expect(colors).toEqual([expected, expected]);
       }
       if (mode === "scene") {
         const rootBounds = await page.locator(".studio-handoff").boundingBox();

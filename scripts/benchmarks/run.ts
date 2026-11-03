@@ -25,6 +25,7 @@ import {
 export type BenchmarkResult = BenchmarkCase & {
   samples: Record<string, number[]>;
   fixtureBytes: number;
+  maxima?: Record<string, number>;
 };
 export interface BenchmarkReport {
   formatVersion: 1;
@@ -52,7 +53,7 @@ function p95(samples: number[]) {
 }
 export async function runCoreBenchmarks(
   counts = [1000, 10000, 50000],
-  repetitions = 5,
+  repetitions = 20,
 ): Promise<BenchmarkReport> {
   const report: BenchmarkReport = {
     formatVersion: 1,
@@ -67,8 +68,7 @@ export async function runCoreBenchmarks(
       node: process.version,
       gcAvailable: typeof globalThis.gc === "function",
     },
-    methodology:
-      "One unreported warmup followed by five samples; p95 latency ceilings. Each sample creates/saves/reopens a real temporary ProjectStore. Transform is full flatten; hit testing averages 20 world queries; browser metrics use the actual Preview.Nodes renderer in a standalone interaction harness.",
+    methodology: `One unreported warmup followed by ${repetitions} samples; nearest-rank p95 latency ceilings, with maxima reported separately. Each sample creates/saves/reopens a real temporary ProjectStore. Transform is full flatten; hit testing averages 20 world queries; browser metrics use the actual Preview.Nodes renderer in a standalone interaction harness.`,
     repetitions,
     cases: [],
     failures: [],
@@ -267,6 +267,13 @@ async function main() {
       config.cases[count] = { ...config.cases[count], ...limits };
   report.failures = budgetFailures(report.cases, config);
   if (browserFailure) report.failures.push(browserFailure);
+  for (const result of report.cases)
+    result.maxima = Object.fromEntries(
+      Object.entries(result.samples).map(([metric, values]) => [
+        metric,
+        Math.max(...values),
+      ]),
+    );
   await mkdir(dirname(output), { recursive: true });
   await writeFile(output, JSON.stringify(report, null, 2) + "\n");
   for (const result of report.cases)
@@ -276,12 +283,13 @@ async function main() {
         status: result.status,
         rejection: result.rejection,
         metrics: result.metrics,
+        maxima: result.maxima,
       }),
     );
   console.log(`Benchmark report: ${output}`);
   if (report.failures.length) {
     console.error(report.failures.join("\n"));
-    process.exitCode = 1;
+    if (browserFailure || !args.includes("--report-only")) process.exitCode = 1;
   }
 }
 if (

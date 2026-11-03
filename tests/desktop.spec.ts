@@ -759,6 +759,52 @@ test("desktop image paints wait for decode and reject corrupt or missing immutab
       ],
     },
   };
+  const masked = {
+    id: "native-mask",
+    type: "SceneMask",
+    props: {},
+    scene: {
+      kind: "mask",
+      maskMode: "alpha",
+      x: 200,
+      y: 260,
+      width: 150,
+      height: 120,
+    },
+    slots: {
+      children: [
+        {
+          id: "native-mask-source",
+          type: "SceneFrame",
+          maskSource: true,
+          props: {},
+          slots: {},
+          scene: {
+            kind: "frame",
+            x: 10,
+            y: 10,
+            width: 80,
+            height: 60,
+            fill: "#ffffff",
+          },
+        },
+        {
+          id: "native-mask-content",
+          type: "SceneFrame",
+          props: {},
+          slots: {},
+          scene: {
+            kind: "frame",
+            x: 0,
+            y: 0,
+            width: 150,
+            height: 120,
+            fill: "#ff0000",
+          },
+        },
+      ],
+    },
+  };
   await writeFile(
     join(root, "project.json"),
     JSON.stringify({
@@ -802,6 +848,7 @@ test("desktop image paints wait for decode and reject corrupt or missing immutab
               },
             },
             stroked,
+            masked,
           ],
         },
       ],
@@ -1082,6 +1129,48 @@ test("desktop image paints wait for decode and reject corrupt or missing immutab
       );
       expect(sampled.colors[0][3]).toBe(captureMode === "isolated" ? 0 : 255);
     }
+    const nativeMask = await client.callTool({
+      name: "document_render",
+      arguments: {
+        pageId: "home",
+        revision: 3,
+        nodeId: "native-mask",
+        boundsMode: "visual",
+        captureMode: "isolated",
+      },
+    });
+    expect(nativeMask.isError, JSON.stringify(nativeMask.content)).not.toBe(
+      true,
+    );
+    const maskContent = nativeMask.content as {
+      type: string;
+      text?: string;
+      data?: string;
+    }[];
+    const maskMeta = JSON.parse(
+      maskContent.find((row) => row.type === "text")!.text!,
+    );
+    expect(maskMeta.warnings).toEqual([]);
+    expect(
+      maskMeta.bounds.filter((row: any) => row.id === "native-mask-source"),
+    ).toHaveLength(1);
+    expectNativePixels(
+      await decodePixels(
+        maskContent.find((row) => row.type === "image")!.data!,
+        [
+          [2, 2],
+          [15, 15],
+          [100, 100],
+        ],
+      ),
+      150,
+      120,
+      [
+        [0, 0, 0, 0],
+        [255, 0, 0, 255],
+        [0, 0, 0, 0],
+      ],
+    );
     // Only this private asset fixture is damaged; the active document is never rewritten.
     await writeFile(join(root, asset), svg.replace("red", "green"));
     for (const name of ["document_render", "inspect_read"]) {
@@ -1128,6 +1217,70 @@ test("desktop image paints wait for decode and reject corrupt or missing immutab
       [[255, 0, 0, 255]],
     );
     expect(await readFile(join(root, "project.json"), "utf8")).toBe(before);
+    const setMaskSourceKind = (kind: string) =>
+      page.evaluate(async (kind) => {
+        const session = await fetch("/api/session").then((response) =>
+          response.json(),
+        );
+        const headers = {
+          Authorization: "Bearer " + session.token,
+          "Content-Type": "application/json",
+          "x-studio-ui-token": session.uiToken,
+        };
+        const project = await fetch("/api/project", { headers }).then(
+          (response) => response.json(),
+        );
+        const response = await fetch("/api/operations", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            requestId: crypto.randomUUID(),
+            baseRevision: project.revision,
+            operations: [
+              {
+                type: "setNodeMetadata",
+                nodeId: "native-mask-source",
+                scene: { kind },
+              },
+            ],
+          }),
+        });
+        if (!response.ok) throw new Error(await response.text());
+      }, kind);
+    await setMaskSourceKind("component");
+    const unsupportedMask = await client.callTool({
+      name: "document_render",
+      arguments: {
+        pageId: "home",
+        revision: 4,
+        nodeId: "native-mask",
+        captureMode: "isolated",
+      },
+    });
+    expect(unsupportedMask.isError).toBe(true);
+    expect(
+      JSON.parse(
+        (unsupportedMask.content as { type: string; text: string }[]).find(
+          (row) => row.type === "text",
+        )!.text,
+      ).error,
+    ).toBe("MASK_SOURCE_UNSUPPORTED");
+    await setMaskSourceKind("frame");
+    const restoredMask = await client.callTool({
+      name: "document_render",
+      arguments: {
+        pageId: "home",
+        revision: 5,
+        nodeId: "native-mask",
+        captureMode: "isolated",
+      },
+    });
+    expect(restoredMask.isError, JSON.stringify(restoredMask.content)).not.toBe(
+      true,
+    );
+    expect(
+      JSON.parse(await readFile(join(root, "project.json"), "utf8")),
+    ).toEqual({ ...JSON.parse(before), revision: 5 });
   } catch (error) {
     primaryError = error;
     throw error;

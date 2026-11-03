@@ -356,6 +356,14 @@ export function measureCaptureDOM(
           continue;
         if (ancestor === containingBlock) belowContainingBlock = false;
         const style = css(ancestor);
+        // A known mask clips the entire composed subtree. Isolation clears its
+        // CSS mask before measurement, so an isolated content child escapes it.
+        if (
+          ancestor.hasAttribute("data-studio-mask-content") &&
+          style.maskImage &&
+          style.maskImage !== "none"
+        )
+          rect = intersection(rect, box(ancestor));
         // A fixed descendant may escape an intermediate overflow containing block.
         // Ignoring those clips is conservative and never cuts its actual pixels.
         if (
@@ -371,6 +379,7 @@ export function measureCaptureDOM(
     },
   };
   for (const element of elements) {
+    if (element.hasAttribute("data-studio-mask-content")) continue;
     if (element.hasAttribute("data-studio-paint-envelope")) {
       const owner = byId.get(
         element.getAttribute("data-studio-paint-envelope")!,

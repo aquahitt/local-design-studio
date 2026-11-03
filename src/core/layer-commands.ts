@@ -83,7 +83,9 @@ export function moveLayersToEnd(
   nodeIds: string[],
   destination: Omit<LayerDestination, "index">,
 ): Operation[] {
-  const page = project.pages.find((page) => page.screenId === destination.pageId);
+  const page = project.pages.find(
+    (page) => page.screenId === destination.pageId,
+  );
   if (!page) throw new CoreError("PAGE_NOT_FOUND");
   let list = page.nodes;
   if (destination.parentId) {
@@ -112,6 +114,9 @@ export function copyLayers(
   nodeIds: string[],
 ): LayerClipboard {
   const nodes = structuredClone(selectedRoots(project, nodeIds));
+  // The source role belongs to direct membership in its original mask. Preserve
+  // markers deeper inside whole copied masks, but normalize detached roots.
+  for (const node of nodes) delete node.maskSource;
   const definitionIds = new Set<string>();
   function references(nodes: ProjectNode[]) {
     definitionNodes(nodes).forEach((node) => {
@@ -178,6 +183,7 @@ export function pasteLayers(
   // Canonical serialization rejects cycles/executable JS before traversing imported data.
   stableStringify(clipboard);
   const copied = structuredClone(clipboard);
+  for (const node of copied.nodes) delete node.maskSource;
   const idMap: Record<string, string> = Object.create(null);
   const definitionMap = new Map<string, string>();
   const usedIds = new Set<string>();

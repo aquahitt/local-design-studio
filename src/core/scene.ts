@@ -11,7 +11,8 @@ import {
 
 /** Scene coordinates are CSS pixels in the parent's local coordinate system. */
 export type SceneMetadata = {
-  kind: "frame" | "text" | "vector" | "component" | "image";
+  kind: "frame" | "text" | "vector" | "component" | "image" | "mask";
+  maskMode?: "alpha" | "luminance";
   x: number;
   y: number;
   width: number;
@@ -45,6 +46,8 @@ export type SceneLayer = {
   transform: Matrix;
   hidden: boolean;
   locked: boolean;
+  /** Source subtrees are kept for geometry, but are not ordinary painted layers. */
+  maskSourceOf?: string;
   clips: { transform: Matrix; width: number; height: number }[];
 };
 
@@ -56,6 +59,7 @@ export function validateScene(value: unknown, path: string): SceneMetadata {
   const scene = value as Record<string, unknown>;
   const fields = [
     "kind",
+    "maskMode",
     "x",
     "y",
     "width",
@@ -77,11 +81,26 @@ export function validateScene(value: unknown, path: string): SceneMetadata {
   ];
   if (Object.keys(scene).some((key) => !fields.includes(key))) fail();
   if (
-    !["frame", "text", "vector", "component", "image"].includes(
+    !["frame", "text", "vector", "component", "image", "mask"].includes(
       String(scene.kind),
     )
   )
     fail();
+  if (scene.kind === "mask") {
+    if (scene.maskMode !== "alpha" && scene.maskMode !== "luminance") fail();
+    const maskFields = [
+      "kind",
+      "maskMode",
+      "x",
+      "y",
+      "width",
+      "height",
+      "rotation",
+      "linearTransform",
+      "opacity",
+    ];
+    if (Object.keys(scene).some((key) => !maskFields.includes(key))) fail();
+  } else if (scene.maskMode !== undefined) fail();
   for (const key of ["x", "y", "width", "height"]) {
     if (
       typeof scene[key] !== "number" ||
@@ -234,6 +253,8 @@ export function sceneLayers(nodes: ProjectNode[]): SceneLayer[] {
     hidden: boolean,
     locked: boolean,
     clips: SceneLayer["clips"],
+    sourceOf?: string,
+    parentMask?: string,
   ) {
     for (const node of nodes) {
       const layer = {
@@ -241,6 +262,9 @@ export function sceneLayers(nodes: ProjectNode[]): SceneLayer[] {
         transform: multiplyTransforms(transform, nodeTransform(node)),
         hidden: hidden || !!node.hidden,
         locked: locked || !!node.locked,
+        ...((sourceOf ?? (node.maskSource ? parentMask : undefined))
+          ? { maskSourceOf: sourceOf ?? parentMask }
+          : {}),
         clips,
       };
       result.push(layer);
@@ -255,7 +279,15 @@ export function sceneLayers(nodes: ProjectNode[]): SceneLayer[] {
           ]
         : clips;
       for (const children of Object.values(node.slots))
-        walk(children, layer.transform, layer.hidden, layer.locked, childClips);
+        walk(
+          children,
+          layer.transform,
+          layer.hidden,
+          layer.locked,
+          childClips,
+          layer.maskSourceOf,
+          node.scene?.kind === "mask" ? node.id : undefined,
+        );
     }
   }
   walk(nodes, [1, 0, 0, 1, 0, 0], false, false, []);
@@ -270,7 +302,7 @@ function contains(
   const local = transformPoint(point, inverseTransform(transform));
   return local.x >= 0 && local.y >= 0 && local.x <= width && local.y <= height;
 }
-/** Bounding-box picking; vector path interiors and glyph outlines are not sampled. */
+/** Bounding-box picking; mask source roles are excluded. Path/glyph/mask alpha pixels are not sampled. */
 export function hitTestScene(
   nodes: ProjectNode[],
   point: Point,
@@ -279,7 +311,14 @@ export function hitTestScene(
   for (let index = layers.length - 1; index >= 0; index--) {
     const layer = layers[index],
       scene = layer.node.scene;
-    if (!scene || layer.hidden || layer.locked || scene.opacity === 0) continue;
+    if (
+      !scene ||
+      layer.hidden ||
+      layer.locked ||
+      layer.maskSourceOf ||
+      scene.opacity === 0
+    )
+      continue;
     if (
       layer.clips.some(
         (clip) => !contains(point, clip.transform, clip.width, clip.height),

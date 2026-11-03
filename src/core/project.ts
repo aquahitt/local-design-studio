@@ -34,6 +34,8 @@ export type ProjectNode = {
   name?: string;
   hidden?: boolean;
   locked?: boolean;
+  /** Membership role: only a direct child of a mask group's children slot. */
+  maskSource?: true;
   scene?: SceneMetadata;
   instance?: DesignInstance;
 };
@@ -218,7 +220,12 @@ export function parseProject(input: unknown): Project {
     )
       throw new CoreError("UNSAFE_ASSET_REFERENCE", path, path);
   }
-  function nodes(input: unknown, path: string, depth = 0): ProjectNode[] {
+  function nodes(
+    input: unknown,
+    path: string,
+    depth = 0,
+    maskChildren = false,
+  ): ProjectNode[] {
     if (depth > PROJECT_LIMITS.depth) throw new CoreError("MAX_DEPTH");
     if (!Array.isArray(input)) throw new CoreError("INVALID_NODES");
     return input.map((raw, index) => {
@@ -234,7 +241,17 @@ export function parseProject(input: unknown): Project {
         "locked",
         "scene",
         "instance",
+        "maskSource",
       ]);
+      if (
+        n.maskSource !== undefined &&
+        (!maskChildren || n.maskSource !== true)
+      )
+        throw new CoreError(
+          "INVALID_MASK_SOURCE",
+          `${nodePath}.maskSource`,
+          `${nodePath}.maskSource`,
+        );
       if (n.name !== undefined) string(n.name);
       for (const field of ["hidden", "locked"])
         if (n[field] !== undefined && typeof n[field] !== "boolean")
@@ -274,12 +291,34 @@ export function parseProject(input: unknown): Project {
       const type = string(n.type);
       const props = object(n.props) as JSONRecord;
       json(props, `${nodePath}.props`);
+      const isMask = (n.scene as SceneMetadata | undefined)?.kind === "mask";
+      if (
+        isMask &&
+        (n.instance !== undefined ||
+          !n.slots ||
+          typeof n.slots !== "object" ||
+          Array.isArray(n.slots) ||
+          Object.keys(n.slots).length !== 1 ||
+          !Object.hasOwn(n.slots, "children") ||
+          !Array.isArray((n.slots as Record<string, unknown>).children))
+      )
+        throw new CoreError("INVALID_MASK_GROUP", nodePath, nodePath);
       const slots = object(n.slots);
       const result: Record<string, ProjectNode[]> = {};
       for (const [name, children] of Object.entries(slots)) {
         if (!/^[\w-]+$/.test(name)) throw new CoreError("INVALID_SLOT");
-        result[name] = nodes(children, `${nodePath}.slots.${name}`, depth + 1);
+        result[name] = nodes(
+          children,
+          `${nodePath}.slots.${name}`,
+          depth + 1,
+          isMask && name === "children",
+        );
       }
+      if (
+        isMask &&
+        result.children.filter((child) => child.maskSource).length !== 1
+      )
+        throw new CoreError("INVALID_MASK_GROUP", nodePath, nodePath);
       const known: Record<string, { fields: string[]; slots: string[] }> = {
         Stack: { fields: ["gap"], slots: ["content"] },
         Card: { fields: ["title"], slots: ["content"] },

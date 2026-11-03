@@ -1,10 +1,24 @@
 import { it, expect } from "vitest";
+import { AjvJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/ajv";
+import { sceneProject } from "../core/scene-fixtures";
+import { parseProject } from "../core/project";
 import { batchSchema, projectSchema, validateComponentProps } from "./schema";
 it("publishes recursive project and discriminated operation JSON schema", () => {
-  expect(
-    (projectSchema as any).$defs.node.properties.slots.additionalProperties
-      .items.$ref,
-  ).toBe("#/$defs/node");
+  const validate = new AjvJsonSchemaValidator().getValidator(
+    projectSchema as never,
+  );
+  const document = parseProject(sceneProject());
+  const children = document.pages[0].nodes[0].slots.content;
+  children[0].slots.nested = [
+    { id: "recursive-child", type: "FutureComponent", props: {}, slots: {} },
+  ];
+  expect(validate(document).valid).toBe(true);
+  const invalid = structuredClone(document);
+  (
+    invalid.pages[0].nodes[0].slots.content[0].slots
+      .nested[0] as unknown as Record<string, unknown>
+  ).unexpected = true;
+  expect(validate(invalid).valid).toBe(false);
   expect(
     (batchSchema as any).properties.operations.items.oneOf.map(
       (v: any) => v.properties.type.const,

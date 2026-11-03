@@ -1,3 +1,4 @@
+import { MASK_CAPTURE_CODES, type MaskCaptureCode } from "./mask-capture";
 import { CoreError } from "../core/project";
 import type { RenderBounds } from "./render";
 
@@ -37,13 +38,14 @@ export function assertImageResourcesReady(
   }
 }
 
-/** The native render channel only extends its existing message with this one typed error. */
+/** Only typed capture errors cross the native bridge; resource details stay bounded. */
 export function captureErrorReply(error: unknown): {
   error: string;
   errorCode?:
     | "IMAGE_RESOURCE_UNAVAILABLE"
     | "VISUAL_BOUNDS_UNSUPPORTED"
-    | "ISOLATED_CAPTURE_UNSUPPORTED";
+    | "ISOLATED_CAPTURE_UNSUPPORTED"
+    | MaskCaptureCode;
   imageAssets?: string[];
 } {
   if (
@@ -71,6 +73,11 @@ export function captureErrorReply(error: unknown): {
       error.code === "ISOLATED_CAPTURE_UNSUPPORTED")
   )
     return { error: error.code, errorCode: error.code };
+  if (
+    error instanceof CoreError &&
+    MASK_CAPTURE_CODES.includes(error.code as MaskCaptureCode)
+  )
+    return { error: error.code, errorCode: error.code as MaskCaptureCode };
   return { error: error instanceof Error ? error.message : "RENDER_FAILED" };
 }
 
@@ -99,6 +106,8 @@ export function captureErrorFromReply(reply: {
     reply.errorCode === "ISOLATED_CAPTURE_UNSUPPORTED"
   )
     return new CoreError(reply.errorCode);
+  if (MASK_CAPTURE_CODES.includes(reply.errorCode as MaskCaptureCode))
+    return new CoreError(reply.errorCode as string);
   return new Error(
     typeof reply.error === "string" ? reply.error : "RENDER_FAILED",
   );

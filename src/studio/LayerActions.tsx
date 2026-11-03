@@ -1,3 +1,4 @@
+import { MaskActions } from "./MaskActions";
 import { useI18n } from "./i18n";
 import { useEffect, useState } from "react";
 import type { Project, ProjectPage, ProjectNode } from "../core/project";
@@ -45,6 +46,7 @@ export function LayerActions({
     [destinationPage, setDestinationPage] = useState(page.screenId),
     [parent, setParent] = useState("");
   const [definition, setDefinition] = useState("");
+  const [maskDirty, setMaskDirty] = useState(false);
   const [definitionDraft, setDefinitionDraft] = useState<{
     id: string;
     revision: number;
@@ -63,8 +65,13 @@ export function LayerActions({
       ...Object.values(node.slots).flatMap(all),
     ]);
   }
+  const protectedSource = all(page.nodes).some(
+    (node) => node.maskSource && selectedIds.includes(node.id),
+  );
   const frames = all(target.nodes).filter(
-    (node) => node.scene?.kind === "frame" && !node.locked,
+    (node) =>
+      (node.scene?.kind === "frame" || node.scene?.kind === "mask") &&
+      !node.locked,
   );
   async function run(work: () => Promise<void>) {
     if (busy || disabled) return;
@@ -82,10 +89,10 @@ export function LayerActions({
     definitionDraft && definitionDraft.text !== definitionDraft.original,
   );
   useEffect(() => {
-    onDirty?.(definitionDirty);
+    onDirty?.(definitionDirty || maskDirty);
     return () => onDirty?.(false);
-  }, [definitionDirty, onDirty]);
-  const blocked = disabled || busy || definitionDirty;
+  }, [definitionDirty, maskDirty, onDirty]);
+  const blocked = disabled || busy || definitionDirty || maskDirty;
   const selectionEnabled = () =>
     !blocked && !definitionDirty && selectedIds.length > 0;
   const duplicate = () =>
@@ -102,13 +109,15 @@ export function LayerActions({
       );
     });
   const remove = () =>
-    run(async () => {
-      await mutate(
-        layerCommandOperations(project, selectedIds, { type: "delete" }),
-        t("Удалить слои"),
-      );
-      onSelection([]);
-    });
+    protectedSource
+      ? undefined
+      : run(async () => {
+          await mutate(
+            layerCommandOperations(project, selectedIds, { type: "delete" }),
+            t("Удалить слои"),
+          );
+          onSelection([]);
+        });
   useStudioShortcuts([
     {
       id: "duplicate",
@@ -126,13 +135,13 @@ export function LayerActions({
     {
       id: "delete",
       shortcut: "Delete",
-      enabled: selectionEnabled,
+      enabled: () => selectionEnabled() && !protectedSource,
       run: remove,
     },
     {
       id: "delete-backspace",
       shortcut: "Backspace",
-      enabled: selectionEnabled,
+      enabled: () => selectionEnabled() && !protectedSource,
       run: remove,
     },
   ]);
@@ -244,6 +253,15 @@ export function LayerActions({
   }
   return (
     <section className="panel layer-actions" aria-label={t("Команды слоёв")}>
+      <MaskActions
+        project={project}
+        page={page}
+        selectedIds={selectedIds}
+        disabled={disabled || busy || definitionDirty}
+        mutate={mutate}
+        onSelection={onSelection}
+        onDirty={setMaskDirty}
+      />
       {selectedIds.length > 1 && (
         <GeometryActions
           project={project}
@@ -314,7 +332,12 @@ export function LayerActions({
           {t("Разблокировать")}
         </button>
         <button
-          disabled={blocked || !selectedIds.length}
+          disabled={blocked || !selectedIds.length || protectedSource}
+          title={
+            protectedSource
+              ? t("Сначала сними маску или выбери другой источник.")
+              : undefined
+          }
           aria-keyshortcuts="Delete Backspace"
           onClick={() => void remove()}
         >
@@ -341,7 +364,7 @@ export function LayerActions({
           ]}
         />
         <StudioSelect
-          label={t("Фрейм назначения")}
+          label={t("Контейнер назначения")}
           value={parent}
           disabled={blocked}
           onChange={setParent}

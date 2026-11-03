@@ -1,3 +1,4 @@
+import { masksEnglish } from "./en-masks";
 import { captureEnglish } from "./en-capture";
 import { strokePaintCopy, strokesEnglish } from "./en-strokes";
 import { guidesEnglish } from "./en-guides";
@@ -144,6 +145,7 @@ export const english: Record<string, string> = {
   ...guidesEnglish,
   ...desktopEnglish,
   ...captureEnglish,
+  ...masksEnglish,
 };
 
 for (const [source, target] of Object.entries(strokePaintCopy)) {

@@ -1,3 +1,6 @@
+import { compileMaskSource } from "./mask-source";
+import { serializeMaskSVG } from "./mask-svg";
+import { createMaskReadinessRuntime } from "../library/mask-readiness";
 import {
   compileFrameDecorationTree,
   frameContentClipStyle,
@@ -15,7 +18,8 @@ import { resolveTokens, serializeCSSValue, type TokenType } from "./tokens";
 import { resolveSceneNodes, definitionNodes } from "./design-components";
 import type { LibraryMetadata } from "../library/sdk";
 import { handoffRuntime } from "./handoff-runtime";
-import { compileFramePaint, hasLayeredFramePaint } from "./paint";
+import { layerStyle } from "./layer-style";
+export { layerStyle } from "./layer-style";
 import { collectImagePaintReferences } from "./image-paint";
 import { createImageResourceLoader } from "../library/image-resource-runtime";
 export type HandoffOptions = { pageId: string; revision: number };
@@ -26,52 +30,6 @@ export type HandoffDiagnostic = {
 };
 export type TokenReference = { path: string; token: string; value: JSONValue };
 
-export function layerStyle(node: ProjectNode): Record<string, string | number> {
-  const s = node.scene;
-  if (!s)
-    return {
-      position: "relative",
-      padding: 8,
-      outline: "1px dashed #ddd",
-      borderRadius: 6,
-      marginBottom: 12,
-    };
-  const paintStyle = compileFramePaint(s);
-  const strokeShadow =
-    s.stroke &&
-    s.strokes === undefined &&
-    s.kind !== "vector" &&
-    !hasLayeredFramePaint(s)
-      ? `inset 0 0 0 ${s.strokeWidth ?? 1}px ${s.stroke}`
-      : undefined;
-  return Object.fromEntries(
-    Object.entries({
-      position: "absolute",
-      padding: 0,
-      left: s.x,
-      top: s.y,
-      width: s.width,
-      height: s.height,
-      transform: s.linearTransform
-        ? `matrix(${s.linearTransform.join(", ")}, 0, 0)`
-        : `rotate(${s.rotation ?? 0}deg)`,
-      transformOrigin: "0 0",
-      opacity: s.opacity ?? 1,
-      overflow: s.clip && !frameContentClipStyle(s) ? "hidden" : "visible",
-      isolation:
-        s.kind === "frame" && s.strokes !== undefined ? "isolate" : undefined,
-      background:
-        s.kind === "text" || s.fills !== undefined ? undefined : s.fill,
-      color: s.kind === "text" ? s.fill : undefined,
-      ...paintStyle,
-      boxShadow:
-        [strokeShadow, paintStyle.boxShadow].filter(Boolean).join(", ") ||
-        undefined,
-      borderRadius: s.radius ?? 0,
-      boxSizing: "border-box",
-    }).filter(([, value]) => value !== undefined),
-  ) as Record<string, string | number>;
-}
 function pageSnapshot(project: Project, options: HandoffOptions) {
   if (
     !options ||
@@ -202,7 +160,11 @@ export function createReactHandoff(
     else if (value && typeof value === "object")
       Object.values(value).forEach((row) => assets(row, target));
   }
-  function map(nodes: ProjectNode[], parentVisible = true): unknown[] {
+  function map(
+    nodes: ProjectNode[],
+    parentVisible = true,
+    sourceOnly = false,
+  ): unknown[] {
     return nodes.map((node) => {
       const definition =
         library && Object.hasOwn(library.components, node.type)
@@ -210,16 +172,21 @@ export function createReactHandoff(
           : undefined;
       const primitive =
         (node.scene &&
-          ["frame", "text", "vector", "image"].includes(node.scene.kind)) ||
+          ["frame", "text", "vector", "image", "mask"].includes(
+            node.scene.kind,
+          )) ||
         node.type === "StudioImage" ||
         node.type === "SceneFrame";
-      if (!node.hidden && !primitive && !definition)
+      const source = sourceOnly || !!node.maskSource;
+      const visible =
+        parentVisible && !node.hidden && !(source && node.scene?.opacity === 0);
+      if (visible && !source && !primitive && !definition)
         diagnostics.push({
           code: "UNREGISTERED_COMPONENT",
           nodeId: node.id,
           message: `Component ${node.type} is not registered in the required library`,
         });
-      if (!node.hidden && definition?.support === "requires-context")
+      if (visible && !source && definition?.support === "requires-context")
         diagnostics.push({
           code: "REQUIRES_CONTEXT",
           nodeId: node.id,
@@ -236,11 +203,30 @@ export function createReactHandoff(
         props = resolveProps(raw, tokens);
       refs[node.id] = tokenReferences(raw, tokens);
       assets(props);
-      const visible = parentVisible && !node.hidden;
-      if (visible) assets(props, renderedImagePaths);
+      if (visible && !source) assets(props, renderedImagePaths);
+      let maskData;
+      if (visible && !source && node.scene?.kind === "mask") {
+        const descriptor = compileMaskSource(snapshot, node),
+          serialized = serializeMaskSVG(descriptor);
+        maskData = {
+          ...serialized,
+          bounds: descriptor.bounds,
+          groupSize: descriptor.groupSize,
+          mode: descriptor.mode,
+          sourceId: descriptor.sourceId,
+        };
+        diagnostics.push(
+          ...serialized.diagnostics.map((d) => ({
+            code: d.code,
+            nodeId: d.nodeId,
+            message: "Mask source could not be prepared: " + d.feature,
+          })),
+        );
+      }
       return {
         ...node,
         props,
+        ...(maskData ? { maskData } : {}),
         style: layerStyle(node),
         ...(node.scene
           ? {
@@ -254,13 +240,16 @@ export function createReactHandoff(
         slots: Object.fromEntries(
           Object.entries(node.slots).map(([slot, rows]) => [
             slot,
-            map(rows, visible),
+            map(rows, visible, source),
           ]),
         ),
       };
     });
   }
   const resolvedNodes = resolveSceneNodes(snapshot, page.nodes);
+  const maskIds = [...definitionNodes(resolvedNodes).values()]
+    .filter((node) => node.scene?.kind === "mask")
+    .map((node) => node.id);
   const nodes = map(resolvedNodes);
   for (const ref of collectImagePaintReferences(resolvedNodes, "all"))
     assetPaths.add(ref.asset);
@@ -314,7 +303,7 @@ export function createReactHandoff(
     `Explicit trusted runtime ${snapshot.library.id}@${snapshot.library.version} supplied as Screen.library`,
     "Required trusted-library CSS/fonts and product providers must be supplied by the integrator; used project fonts are bundled in fonts.css and assets/",
     "Copy manifest assets beneath the served app base assets/ using their content hashes (for Vite, copy into public/assets/ before build); provide assetBaseURL when embedding beneath another route",
-    "Wait for waitForImageResources() from imageResources and inspect warnings before using a rendered frame; getImageResourceStatus() exposes pending/settled resources",
+    "Wait for waitForResources() from resources before using a rendered frame; it combines images and masks. The legacy image-only barrier remains available",
     "Snapshot of supported geometry and component props only; application routes, data loading, actions and editor state are not generated",
   ];
   const manifest = {
@@ -347,8 +336,36 @@ export function createReactHandoff(
     ? (page.viewport.height ?? 850)
     : undefined;
   const files: Record<string, string> = {
-    "Screen.tsx": `import { useEffect, useState } from "react";\nimport { waitForImageResources } from "./imageResources";\nimport { RenderNodes, type HandoffNode, type RegisteredLibrary } from "./Runtime";\nimport "./styles.css";\nimport "./tokens.css";\nimport "./fonts.css";\nconst nodes=${JSON.stringify(nodes)} as HandoffNode[];\nconst expected=${JSON.stringify(snapshot.library)};\nconst variables=${JSON.stringify(cssVariables)};\nconst theme=${JSON.stringify(theme ?? {})} as {className?:string;attributes?:Record<string,string>};\nexport function Screen({library,assetBaseURL}:{library:RegisteredLibrary;assetBaseURL?:string}){\n  const [imageStatus,setImageStatus]=useState("pending");\n  useEffect(()=>{let active=true;setImageStatus("pending");void waitForImageResources({baseURL:assetBaseURL}).then(result=>{if(active)setImageStatus(result.warnings.length?"unavailable":"ready")});return()=>{active=false}},[assetBaseURL]);\n  useEffect(()=>{document.documentElement.className=theme.className??"";for(const [key,value] of Object.entries((theme as {attributes?:Record<string,string>}).attributes??{}))document.documentElement.setAttribute(key,value);for(const [key,value] of Object.entries(variables))document.body.style.setProperty(key,value)},[]);\n  return <main className="studio-handoff" data-image-resource-status={imageStatus}${sceneMinHeight === undefined ? "" : ` style={{minHeight:${sceneMinHeight}}}`}><RenderNodes nodes={nodes} library={library} expected={expected} assetBaseURL={assetBaseURL}/></main>;\n}\n`,
+    "Screen.tsx": `import { useEffect, useState } from "react";
+import { waitForResources } from "./resources";
+import { RenderNodes, type HandoffNode, type RegisteredLibrary } from "./Runtime";
+import "./styles.css";
+import "./tokens.css";
+import "./fonts.css";
+const nodes=${JSON.stringify(nodes)} as HandoffNode[];
+const expected=${JSON.stringify(snapshot.library)};
+const variables=${JSON.stringify(cssVariables)};
+const theme=${JSON.stringify(theme ?? {})} as {className?:string;attributes?:Record<string,string>};
+export function Screen({library,assetBaseURL}:{library:RegisteredLibrary;assetBaseURL?:string}){
+  const [status,setStatus]=useState({images:"pending",all:"pending"});
+  useEffect(()=>{let active=true;setStatus({images:"pending",all:"pending"});void waitForResources({baseURL:assetBaseURL}).then(result=>{if(active)setStatus({images:result.imageWarnings.length?"unavailable":"ready",all:result.warnings.length?"unavailable":"ready"})});return()=>{active=false}},[assetBaseURL]);
+  useEffect(()=>{document.documentElement.className=theme.className??"";for(const [key,value] of Object.entries((theme as {attributes?:Record<string,string>}).attributes??{}))document.documentElement.setAttribute(key,value);for(const [key,value] of Object.entries(variables))document.body.style.setProperty(key,value)},[]);
+  return <main className="studio-handoff" data-image-resource-status={status.images} data-resource-status={status.all}${sceneMinHeight === undefined ? "" : ` style={{minHeight:${sceneMinHeight}}}`}><RenderNodes nodes={nodes} library={library} expected={expected} assetBaseURL={assetBaseURL}/></main>;
+}
+`,
     "Runtime.tsx": handoffRuntime,
+    "maskResources.ts": `// Generated closed browser barrier; no studio imports.
+// @ts-nocheck
+export const createMaskReadinessRuntime=${createMaskReadinessRuntime.toString()};
+const ids=${JSON.stringify(maskIds)};let owner;let runtime;let epoch=0;let status={pending:true,warnings:[]};
+export function getMaskResourceStatus(){return status}
+export async function waitForMaskResources(){if(owner!==document){owner=document;runtime=createMaskReadinessRuntime(owner)}const current=++epoch;status={pending:true,warnings:[]};const result=await runtime.wait({ids});if(current===epoch)status={pending:false,...result};return result}
+`,
+    "resources.ts": `// @ts-nocheck
+import {waitForImageResources} from "./imageResources";
+import {waitForMaskResources} from "./maskResources";
+export async function waitForResources(options={}){const [images,masks]=await Promise.all([waitForImageResources(options),waitForMaskResources()]);return {...images,imageWarnings:images.warnings,maskWarnings:masks.warnings,warnings:[...images.warnings,...masks.warnings]}}
+`,
     "imageResources.ts": `// Generated closed browser runtime; no project-controlled code.\n// @ts-nocheck\nexport const createImageResourceLoader=${createImageResourceLoader.toString()};\nconst input=${JSON.stringify({ projectId: snapshot.projectId, revision: snapshot.revision, assets: [...renderedImagePaths].sort() })};\nlet owner;let loader;let status={pending:true,dimensions:{},warnings:[]};let epoch=0;\nexport function getImageResourceStatus(){return status}\nfunction resourceLoader(){if(owner!==document){loader?.dispose();owner=document;loader=createImageResourceLoader(owner)}return loader}\nexport function resolveImageAsset(asset,baseURL){if(!/^assets\\/[a-f0-9]{64}\\.(png|svg)$/.test(asset))return asset;const url=resourceLoader().resolveAssetURL(asset,baseURL??new URL(".",document.location.href).href);if(!url)throw new Error("IMAGE_RESOURCE_BASE_UNAVAILABLE");return url}\nexport async function waitForImageResources(options={}){const loader=resourceLoader();const current=++epoch;status={pending:true,dimensions:{},warnings:[]};const result=await loader.load({...input,baseURL:options.baseURL??new URL(".",document.location.href).href});await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));if(current===epoch)status={pending:false,...result};return result}\n`,
     "styles.css":
       "html,body{margin:0;min-height:100vh;box-sizing:border-box;background:var(--bg,#fff);color:var(--text-primary,#17202c);font-family:system-ui,sans-serif}body{padding:20px}.studio-handoff{display:flow-root;position:relative}\n",
